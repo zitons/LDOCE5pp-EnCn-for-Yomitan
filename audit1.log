@@ -1,0 +1,27 @@
+entry records=64659 unique=64390
+redirect records=218252 alias words(with distinct target)=186424
+alias rows produced=181274
+dropped alias count=0
+
+DROPPED BREAKDOWN:
+
+SKIP-KEY SAMPLES (from classify, recount):
+    1907  ACTIV:
+     184  ldoceNNNjpg
+      15  other
+    2106  TOTAL skipped
+     other sample: 'LDOCE4 Page A1' :: '<div class="ldoce4page"><img src="file://media/lm4/1.jpg"/><'
+     other sample: 'LDOCE4 Page A10' :: '<div class="ldoce4page"><img src="file://media/lm4/10.jpg"/>'
+     other sample: 'LDOCE4 Page A11' :: '<div class="ldoce4page"><img src="file://media/lm4/11.jpg"/>'
+     other sample: 'LDOCE4 Page A12' :: '<div class="ldoce4page"><img src="file://media/lm4/12.jpg"/>'
+     other sample: 'LDOCE4 Page A13' :: '<div class="ldoce4page"><img src="file://media/lm4/13.jpg"/>'
+     other sample: 'LDOCE4 Page A14-1' :: '<div class="ldoce4page"><img src="file://media/lm4/14.jpg"/>'
+     other sample: 'LDOCE4 Page A14-2' :: '<div class="ldoce4page"><img src="file://media/lm4/15.jpg"/>'
+     other sample: 'LDOCE4 Page A2' :: '<div class="ldoce4page"><img src="file://media/lm4/2.jpg"/><'
+     other sample: 'LDOCE4 Page A3' :: '<div class="ldoce4page"><img src="file://media/lm4/3.jpg"/><'
+     other sample: 'LDOCE4 Page A4' :: '<div class="ldoce4page"><img src="file://media/lm4/4.jpg"/><'
+     other sample: 'LDOCE4 Page A5' :: '<div class="ldoce4page"><img src="file://media/lm4/5.jpg"/><'
+     other sample: 'LDOCE4 Page A6' :: '<div class="ldoce4page"><img src="file://media/lm4/6.jpg"/><'
+     other sample: 'LDOCE4 Page A7' :: '<div class="ldoce4page"><img src="file://media/lm4/7.jpg"/><'
+     other sample: 'LDOCE4 Page A8' :: '<div class="ldoce4page"><img src="file://media/lm4/8.jpg"/><'
+     other sample: 'LDOCE4 Page A9' :: '<div class="ldoce4page"><img src="file://media/lm4/9.jpg"/><'

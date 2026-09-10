@@ -1,0 +1,2644 @@
+@charset "utf-8"; /* CSS Document */
+.cloud {
+    margin-bottom: 10px;
+    padding: 0;
+}
+
+.cloud.full {
+    display: none;
+}
+
+.cloud li {
+    display: inline-block;
+}
+
+/* end */
+.EXAMPLE {
+    color: #778899;
+    margin-left: 20px;
+}
+
+.entry_content .dictionary .defRef {
+    border-bottom: thin dotted gray;
+}
+
+.entry_content .dictionary .cn_txt .defRef {
+    font-weight: bold;
+}
+
+.error_content p a {
+    text-decoration: underline;
+}
+
+.topic .content .topic_1 {
+    color: #2B6EFF;
+}
+
+.topic .content .topic_2 {
+    color: #B7BFCC;
+}
+
+.topic .content .topic_3 {
+    color: #EC0F8C;
+}
+
+.topic .content .topic_4 {
+    font-size: 1.5em;
+    color: #FF801A;
+}
+
+.topic .content .topic_5 {
+    font-size: 0.9em;
+    color: #00A9FF;
+}
+
+.topic .content .topic_6 {
+    font-size: 1.1em;
+    color: #FFC300;
+}
+
+.topic .content .topic_7 {
+    color: #74AFAD;
+}
+
+.topic .content .topic_8 {
+    color: #A51890;
+}
+
+.topic .content .topic_9 {
+    color: #2ECC40;
+}
+
+.topic .content .topic_10 {
+    font-size: 1.2em;
+    color: #FF3333;
+}
+
+.topicCloud {
+    margin-bottom: 20px;
+}
+
+/* mobile */
+@media screen and (max-width: 500px) {
+    h1 {
+        font-size: 1.6em;
+        margin-top: 5px;
+    }
+
+    .dictionary, .topicCloud {
+        margin-bottom: 10px;
+    }
+
+    .dictionary_intro, .topic_intro {
+        margin: 5px 0 10px 0px !important
+    }
+}
+
+/* *** FREEONLINE*** */
+.pagetitle, h1.topicpagetitle {
+    font-size: 1.6em;
+    font-weight: bold;
+}
+
+.topicpagetitle a {
+    font-style: italic;
+}
+
+.topicpagetitle a:hover {
+    color: #314089;
+}
+
+.exaGroup .title:before, .exaGroup .title:before {
+    content: '';
+}
+
+.Crossrefto {
+    color: blue;
+    font-weight: bold
+}
+
+.assetref, .assetref {
+    display: block;
+}
+
+.assettype {
+    font-weight: bold;
+    color: #364395;
+}
+
+.dictentry {
+    display: block;
+    margin-bottom: 25px;
+}
+
+.dictionary_intro, .topic_intro {
+    display: block;
+    background-color: #314089;
+    color: #fff;
+    padding-left: 10px;
+    margin: 5px 0 10px -7px;
+}
+
+.assets_intro, .asset_intro {
+    border: 1px solid #f1d600;
+    background-color: #f1d600;
+    color: #fff;
+    font-weight: normal;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    padding-left: 3px;
+    padding-right: 3px;
+}
+
+.yellow_box {
+    margin-top: 22px;
+}
+
+/* ****  LDOCE  ************************** */
+.ldoceEntry .Entry {
+    font-size: 12pt;
+    text-align: justify;
+    display: block;
+    margin-top: 8px;
+}
+
+.ldoceEntry .Thesref {
+    color: #364395;
+}
+
+.ldoceEntry .ABBR {
+    font-weight: bold;
+}
+
+.ldoceEntry .ACTIV {
+    display: none;
+}
+
+.ldoceEntry .AMEQUIV {
+    font-weight: bold;
+}
+
+.ldoceEntry .BOX {
+    display: none;
+}
+
+.ldoceEntry .BREQUIV {
+    font-weight: bold;
+}
+
+.ldoceEntry .COLLO {
+    font-weight: bold;
+    margin-left: 20px;
+}
+
+.ldoceEntry .ColloExa {
+    display: block;
+}
+
+.ldoceEntry .COLLOINEXA {
+    font-weight: bold;
+}
+
+.ldoceEntry .COMMENT {
+    display: none;
+}
+
+.ldoceEntry .COMP {
+    font-weight: bold;
+}
+
+.ldoceEntry .Crossrefto {
+    font-weight: bold;
+    font-size: 120%;
+}
+
+.ldoceEntry .DERIV {
+    font-weight: bold;
+    font-size: 120%;
+}
+
+.ldoceEntry .Entry {
+    font-size: 11pt;
+    text-align: justify;
+}
+
+.ldoceEntry .ErrorBox {
+    display: block;
+}
+
+.ldoceEntry .EXAMPLE {
+    display: block;
+    margin-left: 20px;
+    color: gray;
+}
+
+.ldoceEntry .EXAMPLE > span.english:first-child:before {
+    content: '•';
+    position: absolute;
+    margin-left: -12px;
+}
+
+.ldoceEntry .FIELD {
+    display: none;
+}
+
+.ldoceEntry .AC, .ldoceEntry .synopp {
+    color: #fff;
+    border-color: #f1d600;
+    background-color: #f1d600;
+}
+
+.ldoceEntry .FREQ {
+    color: red;
+    border-color: red;
+}
+
+.ldoceEntry .LEVEL {
+    color: red;
+    font-size: 120%;
+}
+
+.ldoceEntry .FULLFORM {
+    font-weight: bold;
+}
+
+.ldoceEntry .GEO, .ldoceEntry .geo {
+    font-weight: normal;
+    color: #364395;
+}
+
+.ldoceEntry .GLOSS {
+    color: #364395;
+    font-weight: normal;
+    font-style: normal;
+}
+
+.ldoceEntry .GRAM, .bussdictEntry .GRAM {
+    color: green;
+    font-weight: bold;
+    margin: 0 5px 10px 3px
+}
+
+.ldoceEntry .GramExa {
+    display: block;
+}
+
+.ldoceEntry .frequent .HOMNUM {
+    vertical-align: super;
+    font-size: 12pt;
+    color: red;
+    font-weight: bold;
+}
+
+.ldoceEntry .frequent .HYPHENATION {
+    color: red;
+    font-size: 160%;
+}
+
+.ldoceEntry .HOMNUM {
+    vertical-align: super;
+    font-size: 12pt;
+    color: red;
+    font-weight: bold;
+}
+
+.ldoceEntry .HWD {
+    display: none;
+}
+
+.ldoceEntry .HYPHENATION, .ldoceEntry .PHRVBHWD {
+    font-weight: bold;
+    font-size: 160%;
+    color: red;
+}
+
+.ldoceEntry .LEXUNIT, .ldoceEntry .LEXVAR {
+    font-weight: bold;
+}
+
+.ldoceEntry .LINKWORD {
+    color: #364395;
+}
+
+.ldoceEntry .NOTE, .ldoceEntry .Noteprompt {
+    display: none;
+}
+
+.ldoceEntry .OBJECT {
+    font-weight: normal;
+}
+
+.ldoceEntry .OPP, .ldoceEntry .ORTHVAR, .ldoceEntry .PASTPART, .ldoceEntry .PASTTENSE {
+    font-weight: bold;
+}
+
+.ldoceEntry .PhrVbEntry {
+    display: block;
+}
+
+.ldoceEntry .PIC, .ldoceEntry .PICCAL {
+    display: none;
+}
+
+.ldoceEntry .PLURALFORM {
+    font-weight: bold;
+}
+
+.ldoceEntry .POS, .bussdictEntry .POS {
+    color: green;
+    font-weight: bold;
+    margin: 0 0 0 10px
+}
+
+.ldoceEntry .PRESPART, .ldoceEntry .PRESPARTX {
+    font-weight: bold;
+}
+
+.ldoceEntry .PROPFORM {
+    font-weight: bold;
+    margin-left: 20px;
+}
+
+.ldoceEntry .PROPFORMPREP {
+    font-weight: bold;
+    margin-left: 20px;
+}
+
+.ldoceEntry .PTandPP, .ldoceEntry .PTandPPX {
+    font-weight: bold;
+}
+
+.ldoceEntry .REFHOMNUM {
+    vertical-align: super;
+    font-size: 60%;
+}
+
+.ldoceEntry .REFHWD {
+    font-weight: bold;
+    font-style: normal;
+}
+
+.ldoceEntry .REFLEX {
+    font-weight: bold;
+}
+
+.ldoceEntry .REGISTERLAB {
+    color: purple;
+    font-style: italic;
+}
+
+.ldoceEntry .RELATEDWD, .ldoceEntry .HOMOPHONE {
+    font-weight: bold;
+    color: blue;
+}
+
+.ldoceEntry .RunOn {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.ldoceEntry .Sense {
+    display: block;
+    margin-left: 20px;
+    margin-bottom: 15px;
+    border-top: 1px solid hsla(0, 0%, 50%, 0.15);
+}
+
+.ldoceEntry .SIGNPOST {
+    background-color: #f18500;
+    color: white;
+    font-weight: bold;
+    font-size: 79%;
+    text-transform: uppercase;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    padding: 1px 5px 2px;
+    letter-spacing: 1px;
+}
+
+.ldoceEntry .STRONG {
+    font-style: italic;
+}
+
+.ldoceEntry .Subsense {
+    display: block;
+    margin-left: 10px;
+}
+
+.ldoceEntry .SUPERL, .ldoceEntry .SYN, .ldoceEntry .T3PERSSING, .ldoceEntry .T3PERSSINGX {
+    font-weight: bold;
+}
+
+.ldoceEntry .UNCLASSIFIED {
+    font-weight: bold;
+}
+
+.ldoceEntry .USAGE {
+    display: none;
+}
+
+.ldoceEntry .GramBox .CROSS .neutral {
+    color: red;
+    margin-right: 10px;
+}
+
+.ldoceEntry .neutral {
+    color: black;
+    font-style: normal;
+    font-weight: normal;
+    font-variant: normal;
+}
+
+.ldoceEntry .EXPL .cross, .ldoceEntry .GramBox .EXPL .dont_say, .ldoceEntry .BADEXA {
+    color: red;
+}
+
+.ldoceEntry .italic {
+    font-style: italic;
+    font-weight: normal;
+}
+
+.ldoceEntry .infllab {
+    font-style: italic;
+    font-weight: normal;
+}
+
+.ldoceEntry .warning {
+    font-style: normal;
+    font-weight: bold;
+    color: red;
+}
+
+.ldoceEntry .sensenum {
+    font-style: normal;
+    font-weight: bold;
+    color: black;
+}
+
+.ldoceEntry .synopp, .ldoceEntry .FREQ, .ldoceEntry .AC {
+    display: inline-block;
+    font-style: normal;
+    font-weight: bold;
+    text-transform: uppercase;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border: solid 1px;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.ldoceEntry .ColloBox, .ldoceEntry .ThesBox, .ldoceEntry .F2NBox, .ldoceEntry .GramBox {
+    display: block;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border: solid #364395 1px;
+    padding: 15px;
+    margin: 8px 0;
+}
+
+.GramBox {
+    background-color: #fff;
+    color: #000
+}
+
+.GramBox .boxheader {
+    line-height: 2em
+}
+
+.ColloBox .heading {
+    line-height: 2em;
+    margin: 0 10px 0 0
+}
+
+.ThesBox .heading {
+    line-height: 2em
+}
+
+.ldoceEntry .HEADING, .ldoceEntry .heading {
+    font-weight: bold;
+    font-size: 120%;
+    color: #364395;
+}
+
+.ldoceEntry .HEADING.newline {
+    display: block;
+}
+
+.ldoceEntry .SECHEADING, .ldoceEntry .subheading {
+    display: table;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border: solid #6f469d 2px;
+    padding-left: 4px;
+    padding-right: 20px;
+    margin: 25px 0 10px 0;
+    font-weight: bold;
+    color: white;
+    text-transform: uppercase;
+    background-color: #6f469d;
+}
+
+.ldoceEntry .Collocate, .ldoceEntry .Exponent {
+    display: block;
+    margin: 15px 0 0 6px;
+}
+
+.ldoceEntry .EXPL {
+    display: block;
+}
+
+.ldoceEntry .COLLOC, .ldoceEntry .EXP, .ldoceEntry .EXPR {
+    font-weight: bold;
+}
+
+.ldoceEntry .keycollo {
+    font-weight: bold;
+    color: #364395;
+}
+
+.ldoceEntry .THESPROPFORM {
+    font-weight: bold;
+}
+
+.ldoceEntry .COLLEXA, .ldoceEntry .THESEXA {
+    color: gray;
+    display: block;
+}
+
+.ldoceEntry .LearnerItem {
+    display: block;
+}
+
+.ldoceEntry .GOODCOLLO {
+    font-style: italic;
+}
+
+.ldoceEntry .BADCOLLO {
+    text-decoration: line-through;
+}
+
+.ldoceEntry .DEFBOLD {
+    font-weight: bold;
+}
+
+.ldoceEntry .exafile {
+    color: gray;
+    font-style: normal;
+    font-size: 120%;
+    padding: 5px;
+}
+
+.ldoceEntry .amefile {
+    color: #4693db;
+    font-size: 130%;
+    padding-left: 5px;
+}
+
+.ldoceEntry .brefile {
+    color: #fa6360;
+    font-size: 130%;
+    padding-left: 5px;
+}
+
+/* ****  BUSSDICT  ************************** */
+.bussdictEntry .Entry {
+    font-size: 12pt;
+    text-align: justify;
+    display: block;
+    margin-top: 8px;
+}
+
+.bussdictEntry .supp {
+    background-color: gray;
+}
+
+.bussdictEntry .ABBR, .bussdictEntry .AMEQUIV, .bussdictEntry .BREQUIV, .bussdictEntry .COLLO, .bussdictEntry .COMP {
+    font-weight: bold;
+}
+
+.bussdictEntry .ACTIV, .bussdictEntry .BOX, .bussdictEntry .COMMENT {
+    display: none;
+}
+
+.bussdictEntry .ColloExa {
+    display: block;
+    margin-left: 10px;
+}
+
+.bussdictEntry .COLLOINEXA {
+    font-style: italic;
+    font-weight: bold;
+}
+
+.bussdictEntry .DERIV {
+    font-weight: bold;
+    font-size: 120%;
+}
+
+.bussdictEntry .ErrorBox {
+    display: block;
+}
+
+.bussdictEntry .EXAMPLE {
+    display: block;
+    margin-left: 15px;
+    color: gray;
+}
+
+.Example_blue .bussdictEntry .EXAMPLE {
+    color: rgb(82, 94, 163);
+}
+
+.bussdictEntry .FIELD {
+    display: none;
+}
+
+.bussdictEntry .FREQ, .bussdictEntry .LEVEL {
+    font-weight: bold;
+    color: red;
+}
+
+.bussdictEntry .FULLFORM {
+    font-weight: bold;
+}
+
+.bussdictEntry .GEO, span.geo {
+    font-weight: normal;
+    font-style: italic;
+    color: #364395;
+}
+
+.bussdictEntry .GLOSS {
+    font-weight: normal;
+    font-style: normal;
+    color: #364395;
+}
+
+.bussdictEntry .GramExa {
+    display: block;
+    margin-left: 10px;
+}
+
+.bussdictEntry .HINTBOLD, .bussdictEntry .HINTTITLE {
+    font-weight: bold;
+}
+
+.bussdictEntry .HINTITALIC {
+    font-style: italic;
+}
+
+.bussdictEntry .HOMNUM {
+    vertical-align: super;
+    font-size: 12pt;
+    font-weight: bold;
+}
+
+.bussdictEntry .HWD {
+    display: none;
+}
+
+.bussdictEntry .HYPHENATION {
+    font-weight: bold;
+    font-size: 160%;
+}
+
+.bussdictEntry .LEXUNIT, .bussdictEntry .LEXVAR {
+    font-weight: bold;
+}
+
+.bussdictEntry .LINKWORD {
+    color: #364395;
+}
+
+.bussdictEntry .NOTE, .bussdictEntry .Noteprompt {
+    display: none;
+}
+
+.bussdictEntry .OBJECT {
+    font-weight: normal;
+}
+
+.bussdictEntry .OPP, .bussdictEntry .ORTHVAR, .bussdictEntry .PASTPART, .bussdictEntry .PASTTENSE {
+    font-weight: bold;
+}
+
+.bussdictEntry .PhrVbEntry {
+    display: block;
+}
+
+.bussdictEntry .PHRVBHWD {
+    font-weight: bold;
+    color: #364395;
+    font-size: 120%;
+}
+
+.bussdictEntry .PIC, .bussdictEntry .PICCAL {
+    display: none;
+}
+
+.bussdictEntry .PLURALFORM {
+    font-weight: bold;
+}
+
+.bussdictEntry .PRESPART, .bussdictEntry .PRESPARTX, .bussdictEntry .PROPFORM, .bussdictEntry .PROPFORMPREP, .bussdictEntry .PTandPP, .bussdictEntry .PTandPPX {
+    font-weight: bold;
+}
+
+.bussdictEntry .REFHOMNUM {
+    vertical-align: super;
+    font-size: 60%;
+}
+
+.bussdictEntry .REFHWD {
+    text-transform: lowercase;
+    font-style: normal;
+    font-variant: small-caps;
+}
+
+.bussdictEntry .FIELDXX, .bussdictEntry .Crossrefto .REFLEX {
+    display: none;
+}
+
+.bussdictEntry .REFLEX {
+    font-weight: bold;
+}
+
+.bussdictEntry .REGISTERLAB {
+    color: #364395;
+    font-style: italic;
+}
+
+.bussdictEntry .RELATEDWD {
+    font-weight: bold;
+}
+
+.bussdictEntry .Sense {
+    display: block;
+    margin-left: 20px;
+    margin-bottom: 15px;
+}
+
+.bussdictEntry .SIGNPOST {
+    background-color: gray;
+    color: white;
+    font-weight: bold;
+}
+
+.bussdictEntry .STRONG {
+    font-style: italic;
+}
+
+.bussdictEntry .Subsense {
+    display: block;
+    margin-left: 10px;
+}
+
+.bussdictEntry .SUPERL, .bussdictEntry .SYN, .bussdictEntry .T3PERSSING, .bussdictEntry .T3PERSSINGX, .bussdictEntry .UNCLASSIFIED {
+    font-weight: bold;
+}
+
+.bussdictEntry .USAGE {
+    display: none;
+}
+
+span.neutral {
+    font-style: normal;
+    font-weight: normal;
+    font-variant: normal;
+}
+
+span.italic, span.infllab {
+    font-style: italic;
+    font-weight: normal;
+    font-family: "Times New roman";
+}
+
+span.warning {
+    font-style: normal;
+    font-weight: bold;
+    color: red;
+}
+
+span.sensenum {
+    font-style: normal;
+    font-weight: bold;
+    margin-right: 5px;
+    margin-left: 3px;
+}
+
+span.synopp {
+    font-style: normal;
+    font-weight: bold;
+    color: darkblue;
+}
+
+.bussdictEntry .ColloBox, .bussdictEntry .ThesBox, .bussdictEntry .F2NBox, .bussdictEntry .GramBox, .bussdictEntry .UsageBox {
+    display: block;
+    border-style: solid;
+}
+
+.bussdictEntry .GramBox.nobox {
+    display: inline;
+    border-style: none;
+    background-color: none;
+}
+
+.bussdictEntry .GramBox.nobox .EXPL {
+    display: inline;
+}
+
+.bussdictEntry .HEADING, span.heading, .bussdictEntry .Gramref {
+    font-weight: bold;
+    font-size: 120%;
+    color: #364395;
+}
+
+.bussdictEntry .gramref {
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.bussdictEntry .HEADING.newline {
+    display: block;
+}
+
+.bussdictEntry .SECHEADING, span.subheading {
+    display: block;
+    font-weight: bold;
+    font-style: italic;
+    text-decoration: underline;
+}
+
+.bussdictEntry .Collocate.newline, .bussdictEntry .Exponent, .bussdictEntry .GramBox .EXPL, .bussdictEntry .EXPL.newline {
+    display: block;
+}
+
+.bussdictEntry .Collocate.inline {
+    display: inline;
+}
+
+.bussdictEntry .COLLOC, .bussdictEntry .EXP, .bussdictEntry .EXPR {
+    font-weight: bold;
+}
+
+.bussdictEntry .COLLOC.key {
+    color: #364395;
+}
+
+span.keycollo {
+    font-weight: bold;
+    color: #364395;
+}
+
+.bussdictEntry .THESPROPFORM {
+    font-weight: bold;
+}
+
+.bussdictEntry .COLLEXA, .bussdictEntry .THESEXA, .bussdictEntry .GOODCOLLO {
+    font-style: italic;
+}
+
+.bussdictEntry .LearnerItem {
+    display: block;
+}
+
+.bussdictEntry .BADCOLLO, .bussdictEntry .BADEXA {
+    text-decoration: line-through;
+}
+
+.bussdictEntry .DEFBOLD {
+    font-weight: bold;
+}
+
+.bussdictEntry .CompareWord, .bussdictEntry .CompareWord, .bussdictEntry .EXP {
+    display: block;
+}
+
+.bussdictEntry .UNDERLINE {
+    text-decoration: underline;
+}
+
+.bussdictEntry .boxheader {
+    display: block;
+    background-color: #364395;
+    color: white;
+    font-weight: bold;
+}
+
+.bussdictEntry .SubEntry.embedded {
+    margin-top: -5px;
+    margin-bottom: 0px;
+    margin-left: 30px;
+}
+
+.bussdictEntry .SubEntry {
+    display: block;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    margin-left: 20px;
+}
+
+.bussdictEntry .SubEntry .HWD {
+    display: inline;
+    font-weight: bold;
+    font-size: 120%;
+    color: #364395;
+}
+
+/* **** EXAS ***** */
+.exaGroup .exaEntry {
+    margin-bottom: 20px;
+    display: block;
+}
+
+.exaGroup .exaGroup {
+    display: block;
+    margin-bottom: 20px;
+}
+
+.exaGroup .title {
+    font-size: 110%;
+    font-weight: bold;
+    color: black;
+    display: block;
+    margin-left: 5px;
+    margin-top: 15px;
+}
+
+.exaGroup .exa {
+    display: block;
+    color: gray;
+    margin-left: 20px;
+}
+
+.Sense .exaGroup .exa {
+    margin-left: 15px;
+}
+
+.exaGroup .exa:before {
+    content:"•";
+    position: absolute;
+    margin-left: -.7em;
+}
+.exaGroup .exa > .neutral {
+    display: none;
+}
+
+.Example_blue .exaGroup .exa {
+    color: rgb(82, 94, 163);
+}
+
+.exaGroup .NodeW {
+    font-weight: bold;
+}
+
+.asset {
+    margin-top: 30px;
+}
+
+/* **** TOPIC ***** */
+.Entry .related_topics {
+    padding: 0 4px 1px 0;
+    font-size: 16px;
+    font-family: Tahoma, Arial, Helvetica;
+    color: #000;
+}
+
+.Entry .topic, .topicCloud .topic_other {
+    color: red;
+    text-decoration: underline
+}
+
+.topicCloud .topic_other .range:before {
+    content: "all";
+}
+
+.topicCloud .topic_other.full .range:before {
+    content: "common";
+}
+
+@media screen and (max-width: 500px) {
+    .topicCloud .topic_other .range:before {
+        content: "All";
+    }
+
+    .topicCloud .topic_other.full .range:before {
+        content: "Common";
+    }
+
+    .topicCloud .topic_other .verbose {
+        display: none;
+    }
+}
+
+.Entry .topic:hover, .topicCloud .topic_other:hover {
+    color: #4693db;
+}
+
+/* ** WORD FAMILY ** */
+.pos {
+    color: green;
+    font-weight: normal;
+}
+
+.wordfams {
+    font-weight: bold;
+}
+
+.wordfams .crossRef, .wordfams .w {
+    margin: 0 6px;
+}
+
+.wordfams .w.rootword {
+    color: red;
+}
+
+.wordfams .crossRef {
+    border-bottom: thin dotted gray;
+}
+
+/* ** ETYM ** */
+.etym .Head {
+    font-weight: bold;
+}
+
+.etym .Head .HOMNUM {
+    vertical-align: super;
+    font-size: 12pt;
+}
+
+.wordfams {
+    word-break: break-all;
+}
+
+.lm5ppbody {
+    line-height: 1.5em;
+    font-family: arial, helvetica, sans-serif;
+    background: #fff;
+    display: block;
+    color: #333333;
+}
+
+.lm5ppbody.not-white {
+    border: 1px solid #d7d7d7;
+    border-radius: 8px;
+    -webkit-box-shadow: 0 0 1.6em rgba(0,0,0,.09);
+    box-shadow: 0 0 1.6em rgba(0,0,0,.09);
+}
+
+/*script[src*="eudic"] ~ .lm5ppbody, script[src*="var"] ~ .lm5ppbody {*/
+/*font-family: 'Open Sans', sans-serif;*/
+/*}*/
+.eudicnt.lm5ppbody {
+    font-size: 16px;
+}
+
+.PronCodes {
+    font-family: arial, helvetica, sans-serif;
+}
+
+.lm5ppbody a {
+    color: inherit;
+    text-decoration: inherit;
+    -webkit-transition: color 0.5s, background-color 0.5s;
+    transition: color 0.5s, background-color 0.5s;
+}
+
+.lm5ppbody a:hover {
+    cursor: pointer;
+}
+
+script[src^="bres"] + .lm5ppbody {
+    font-size: 17px;
+}
+
+script[src^="bres"] + .lm5ppbody .entry_content {
+    clear: both;
+}
+
+/* patch for vanilla */
+.entry_content, .page_content, .error_content {
+    margin: 5px 8px 5px 8px;
+}
+
+/* conflict with Goldendict embedded CSS */
+.lm5ppbody .topic .topicCloud.content {
+    min-height: initial;
+    margin: 0 0 20px 0;
+}
+
+/* '.POS' classname seems to conflict with edict ??? */
+/* change to lm5pp_POS */
+.ldoceEntry .lm5pp_POS, .bussdictEntry .lm5pp_POS {
+    color: green;
+    font-weight: bold;
+    margin: 0 0 0 0px;
+}
+
+.lejEntry.latamEntry .lm5pp_POS {
+    color: green;
+    font-style: italic;
+}
+
+/* patch for vanilla */
+/* distance between words */
+.dictentry {
+    margin-bottom: 10px;
+}
+
+/* patch form vanilla */
+.ldoceEntry .Sense {
+    margin-left: 20px;
+    margin-bottom: 5px;
+}
+
+.ldoceEntry .GramExa, .ldoceEntry .ColloExa {
+    margin-left: 18px;
+}
+
+.ldoceEntry .GramExa .EXAMPLE, .ldoceEntry .ColloExa .EXAMPLE {
+    margin-left: 24px;
+}
+
+.ldoceEntry .COLLO, .ldoceEntry .PROPFORM, .ldoceEntry .PROPFORMPREP {
+    margin-left: 0px;
+}
+
+.Sense img {
+    float: right;
+    max-width: 40%;
+    max-height: 170px;
+    height: auto;
+    border: .1em solid transparent;
+}
+
+.not-white .Sense img {
+    border: .1em solid #fff9f9;
+}
+
+.cn_txt, .cn_title, .cn_txt_menu {
+    font-family: "Microsoft Yahei";
+    font-size: 90%;
+}
+
+.cn_txt .en_txt {
+    font-size: 111%;
+}
+
+.en_txt {
+    font-family: arial, helvetica, sans-serif;
+}
+
+script[src*="eudic"] ~ .lm5ppbody .en_txt {
+    font-family: 'Open Sans', arial, helvetica, sans-serif;
+}
+
+.ldoceEntry .EXAMPLE {
+    margin-left: 42px;
+}
+
+.EXAMPLE .cn_txt {
+    margin-top: 2px;
+}
+
+.EXAMPLE ~ .EXAMPLE, .GramExa ~ .EXAMPLE, .ColloExa ~ .EXAMPLE {
+    margin-top: 5px;
+}
+
+.ErrorBox .Error + .Error {
+    margin-left: 18px;
+}
+
+.collo .cn_txt {
+    display: inline-block;
+    margin-left: 5px;
+}
+
+a[title="Play Example"] {
+    float: left;
+    width: 25px;
+    position: absolute;
+    left: -25px;
+}
+
+.EXAMPLE {
+    position: relative;
+}
+
+.english {
+}
+
+.frequency img {
+    max-width: 100%;
+    height: auto;
+}
+
+.PhrVbEntry .Sense ~ .Tail {
+    margin-left: 20px;
+    margin-bottom: 15px;
+}
+
+.ldoceEntry .HWD, .ldoceEntry .Head.suppressedLEXVAR .suppressed {
+    display: inherit;
+    font-weight: bold;
+    font-size: 160%;
+    color: red;
+}
+
+.ldoceEntry .Head.suppressedLEXVAR .HWD {
+    font-size: 0.9em;
+    color: inherit;
+    margin-left: 0.5em;
+}
+
+.ldoceEntry .HYPHENATION {
+    display: none;
+}
+
+.ldoceEntry .UsageBox, .ldoceEntry .SpokenSect {
+    display: block;
+}
+
+.ldoceEntry .Hint, .ldoceEntry .Error {
+    margin: 8px 0;
+    margin-left: 14px;
+    padding-left: 5px;
+    border-left: 1px solid rgba(255, 0, 0, 0.3);
+    display: block;
+}
+
+.ldoceEntry .Hint:before, .ldoceEntry .Error:before {
+    content: '►';
+    position: absolute;
+    margin-left: -1.3em;
+    font-style: normal;
+    font-weight: bold;
+    font-size: 1em;
+    color: red;
+}
+
+.ldoceEntry .Hint .cn_txt, .ldoceEntry .Error .cn_txt {
+    margin-top: 0.15em;
+    padding-top: 0.15em;
+}
+
+.ldoceEntry .HINTBOLD {
+    font-weight: bold;
+}
+
+.ldoceEntry .HINTITALIC {
+    font-style: italic;
+}
+
+.ldoceEntry .HINTTITLE {
+    font-weight: bold;
+}
+
+.ldoceEntry .UsageBox {
+    border-radius: 5px;
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border: solid #364395 1px;
+    padding: 15px;
+    margin: 8px 0;
+}
+
+.ldoceEntry .ColloBox, .ldoceEntry .ThesBox, .ldoceEntry .F2NBox, .ldoceEntry .GramBox {
+    padding-top: 7px;
+    padding-bottom: 9px;
+}
+
+.ldoceEntry .SECHEADING, .ldoceEntry .subheading {
+    margin: 7px 0 7px 0;
+}
+
+.ldoceEntry .Collocate, .ldoceEntry .Exponent {
+    display: block;
+    margin: 9px 0 0 6px;
+}
+
+.iphone.eudic .ldoceEntry .Collocate .collo {
+    display: inline-block;
+    margin-left: 0px;
+}
+
+.ldoceEntry .lm5ppBox .EXAMPLE {
+    line-height: 1.2em;
+    margin-left: 20px;
+}
+
+.ldoceEntry .lm5ppBox .EXAMPLE ~ .EXAMPLE {
+    margin-top: 7px;
+}
+
+.ldoceEntry .REFHWD + .lm5pp_POS {
+    margin-left: -5px;
+}
+
+/* DEBUG DEBUG DEBUG */
+* [type=phrv] {
+    text-decoration-line: line-through;
+    background-color: beige;
+    display: none;
+}
+
+/* ---------------------------- hide Corpus &  Business Dictionary =========== */
+.bussdict, .corpus {
+    display: none;
+}
+
+.pagetitle, h1.topicpagetitle {
+    display: none;
+}
+
+.topics_container {
+}
+
+/* --------------------------- Topic Cloud-------------------------------------------- */
+.topics_container {
+    font-size: 0.9em;
+    margin-top: 2px;
+}
+
+.Entry .related_topics {
+    font-size: inherit;
+}
+
+.intro_active {
+    cursor: pointer;
+    transition: color 0.5s, background-color 0.5s;
+    -webkit-transition: color 0.5s, background-color 0.5s, text-shadow 0.5s;
+}
+
+.intro_active:hover {
+}
+
+.cloud li {
+    margin-right: 5px;
+}
+
+.cloud li .cn_txt {
+    margin-left: 2px;
+    font-size: 81%;
+}
+
+/* --------------------------- sign of folding/unfolding sense  ---------------------- */
+span.sensenum {
+    margin-right: 3px;
+}
+
+.LDOCE5pp_sensefold {
+    cursor: pointer;
+    display: inline-block;
+    z-index: 1;
+}
+
+.LDOCE5pp_sensefold_other {
+    cursor: pointer;
+}
+
+.LDOCE5pp_sensefold.fixed {
+    cursor: auto;
+}
+
+.Sense > .LDOCE5pp_sensefold {
+    margin-right: -10px;
+}
+
+.SpokenSect > .LDOCE5pp_sensefold .foldsign {
+    margin-right: -10px;
+}
+
+.lm5ppBox .foldsign {
+    color: #384595;
+    margin-right: -10px;
+}
+
+.LDOCE5pp_sensefold + .REFHWD {
+    margin-left: -4px;
+}
+
+.ldoceEntry .SIGNPOST ~ .REFHWD {
+    margin-left: 6px;
+}
+
+.foldsign, .foldsignbox {
+    display: inline-block;
+    position: relative;
+    width: 25px;
+}
+
+@media screen and (max-width: 500px) {
+    .Sense .LDOCE5pp_sensefold .foldsign, .Sense .LDOCE5pp_sensefold .foldsignbox {
+        width: 18px;
+    }
+}
+
+.foldsignbar1, .foldsignbar2 {
+    width: 7px;
+    height: 1px;
+    background-color: #333;
+    transition: 0.4s;
+    -webkit-transition: 0.4s;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    -webkit-transform: translateY(-50%);
+    left: 0px;
+}
+
+.lm5ppBoxHead .foldsignbar1, .lm5ppBoxHead .foldsignbar2 {
+    width: 10px;
+}
+
+.fixed .foldsignbar1, .fixed .foldsignbar2 {
+    opacity: 0;
+}
+
+.wordfams .foldsign {
+    margin-left: 5px;
+}
+
+.wordfams .foldsignbar1, .wordfams .foldsignbar2 {
+    width: 12px;
+}
+
+.foldsign_fold .foldsignbar1 {
+    transform: rotate(-90deg);
+    -webkit-transform: rotate(-90deg);
+}
+
+/* --------------------------- margin for Crosssense   ------------------------------- */
+.merge_sense {
+    margin-right: 10px;
+}
+
+/* --------------------------- show/hide syllable -------------------------------------- */
+.HWD .HYP {
+    display: none;
+}
+
+/* --------------------------- Box show/hide controls  ------------------------------- */
+.BoxTitle {
+    margin-left: 6px;
+    font-weight: bold;
+    font-size: 94%;
+    color: #364395;
+}
+
+.BoxPanel {
+    display: block;
+    margin-left: 6px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+
+@media screen and (max-width: 500px) {
+    .BoxPanel {
+        margin-top: 2px;
+    }
+}
+
+.BoxHide .BoxPanel {
+}
+
+.ldoceEntry .lm5ppBox > .lm5ppBoxHead, .ldoceEntry .lm5ppBox > .lm5ppBoxHead .boxheader {
+    line-height: 1em;
+    font-size: 100%;
+}
+
+.lm5ppBox > [class*="LDOCEVERSIONLOGO_"] {
+    position: absolute;
+    left: -2px;
+    top: -1px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 85%;
+}
+
+.lm5ppbody .ldoceEntry .lm5ppBox {
+    padding: 10px;
+    transition: padding-bottom 0.3s, padding-top 0.3s;
+    -webkit-transition: padding-bottom 0.3s, padding-top 0.3s;
+    overflow: hidden;
+}
+
+@media screen and (max-width: 500px) {
+    .lm5ppbody .ldoceEntry .lm5ppBox {
+        padding: 5px 6px;
+    }
+}
+
+.lm5ppbody .ldoceEntry .BoxHide.lm5ppBox {
+    cursor: pointer;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.ldoceEntry .lm5ppBox:not(.BoxHide) > .lm5ppBoxHead {
+    cursor: pointer;
+}
+
+/* --------------------------- LDOCE Online content/5th content   ------------------------------- */
+* [class*="LDOCEVERSION_"] {
+    position: relative;
+}
+
+* [class*="LDOCEVERSIONLOGO_"] {
+    font-weight: bold;
+    font-size: 80%;
+    display: inline-block;
+    text-transform: uppercase;
+    font-family: serif;
+    width: 15px;
+    height: 15px;
+    line-height: 15px;
+    border-radius: 50%;
+    -webkit-border-radius: 50%;
+    text-align: center;
+}
+
+.LDOCEVERSIONLOGO_new {
+    background-color: transparent;
+    color: #ff0002;
+    font-size: 70%;
+    font-weight: 700;
+}
+
+.LDOCEVERSIONLOGO_5 {
+    background-color: transparent;
+    color: #35a3ff;
+}
+
+.Sense > [class*="LDOCEVERSIONLOGO_"], .Subsense > [class*="LDOCEVERSIONLOGO_"], .EXAMPLE > [class*="LDOCEVERSIONLOGO_"], .Exponent > [class*="LDOCEVERSIONLOGO_"], .GramExa > [class*="LDOCEVERSIONLOGO_"], .ColloExa > [class*="LDOCEVERSIONLOGO_"], .Collocate > [class*="LDOCEVERSIONLOGO_"], .ErrorBox > [class*="LDOCEVERSIONLOGO_"], .ldoceEntry > [class*="LDOCEVERSIONLOGO_"] {
+    position: absolute;
+    left: -42px;
+    top: 4px;
+}
+
+.EXAMPLE > [class*="LDOCEVERSIONLOGO_"] {
+    left: -22px;
+    top: 1px;
+}
+
+.Sense .EXAMPLE > [class*="LDOCEVERSIONLOGO_"] {
+    left: -22px;
+    top: 0.3em;
+}
+
+.lm5ppbody a.speaker, .lm5ppbody a.PronCodes {
+    outline: 0 none;
+}
+
+.EXAMPLE.speaker > [class*="LDOCEVERSIONLOGO_"] {
+    left: -39px;
+}
+
+.Sense > [class*="LDOCEVERSIONLOGO_"], .Subsense > [class*="LDOCEVERSIONLOGO_"] {
+    left: -16px;
+}
+
+.Exponent > [class*="LDOCEVERSIONLOGO_"] {
+    left: -18px;
+}
+
+.ErrorBox > [class*="LDOCEVERSIONLOGO_"] {
+    left: -16px;
+    top: 5px;
+}
+
+.Collocate > [class*="LDOCEVERSIONLOGO_"] {
+    left: -18px;
+}
+
+.GramExa > [class*="LDOCEVERSIONLOGO_"], .ColloExa > [class*="LDOCEVERSIONLOGO_"] {
+    left: -14px;
+}
+
+.ldoceEntry > .Head > [class*="LDOCEVERSIONLOGO_"] {
+    display: inline-block;
+    position: relative;
+    top: -8px;
+}
+
+.lm5ppBoxHead > [class*="LDOCEVERSIONLOGO_"] {
+    margin-right: 3px;
+    margin-bottom: 5px;
+}
+
+.Crossref.ldoce4img {
+    color: #4058a4;
+}
+
+/* --------------------------- Intro Menu ------------------------------- */
+/* Vanilla */
+.dictentry:not(.bussdict) .dictionary_intro {
+    padding-left: 0px;
+    margin: 6px 0px;
+    height: 26px;
+    overflow: hidden;
+}
+
+.lm5ppMenu {
+    display: table;
+    color: white;
+    width: 100%;
+    height: 100%;
+    padding-bottom: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+#lm5ppMenu_logo {
+    display: table-cell;
+    width: 115px;
+    /* padding-top: 3px; */
+    position: relative;
+    cursor: auto;
+}
+
+#lm5ppMenu_logo #longman_logo {
+    fill: white;
+    width: 100%;
+    height: 20px;
+    padding-left: 5px;
+}
+
+#lm5ppMenu_logo.halfgold svg #ldoce_logo{
+    fill: yellow;
+}
+
+#lm5ppMenu_logo.halfgold svg:nth-child(2) #ldoce_title{
+    fill: yellow;
+}
+
+#lm5ppMenu_logo svg {
+    position: absolute;
+    left: 0px;
+    top: 3px;
+    -webkit-transition: all 1s;
+    transition: all 0.5s;
+}
+
+#lm5ppMenu_logo svg:first-child,
+#lm5ppMenu_logo.goldlogo.switch_version:hover svg:first-child
+{
+    -webkit-transform: translateY(0%);
+    transform: translateY(0%);
+    opacity: 1;
+}
+
+#lm5ppMenu_logo svg:nth-child(2),
+#lm5ppMenu_logo.switch_version.goldlogo:hover svg:nth-child(2)
+{
+    -webkit-transform: translateY(110%);
+    transform: translateY(110%);
+    opacity:0;
+}
+
+#lm5ppMenu_logo.goldlogo svg:first-child,
+#lm5ppMenu_logo.switch_version:hover svg:first-child
+{
+    -webkit-transform: translateY(-110%);
+    transform: translateY(-110%);
+    opacity:0;
+}
+
+.lm5ppMenu.online #lm5ppMenu_logo svg:first-child{
+    -webkit-transform: translateY(0%);
+    transform: translateY(0%);
+    opacity: 1;
+    fill: yellow;
+}
+
+.lm5ppMenu.online #lm5ppMenu_logo #longman_logo{
+    fill: yellow;
+}
+
+#lm5ppMenu_logo.goldlogo svg:nth-child(2),
+#lm5ppMenu_logo.switch_version:hover svg:nth-child(2)
+{
+    -webkit-transform: translateY(0%);
+    transform: translateY(0%);
+    opacity:1;
+}
+
+#lm5ppMenu_logo.switch_version {
+    cursor: pointer;
+}
+
+#lm5ppMenu_logo #longman_logo #ldoce_title {
+    -webkit-transition: all 2s;
+}
+
+.windowsnt #lm5ppMenu_logo.switch_version:hover, .windowsnt .en_show.lm5ppMenu_title:hover {
+}
+
+.lm5ppbody .ui.dropdown .menu .item {
+    min-width: 200px;
+    max-height: 15px;
+}
+
+#lm5ppMenu_items {
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    -webkit-box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+}
+
+/* ugly selectors , just for overriding the existed css */
+/*.nottouch#lm5ppMenu_logo:hover .menu_hide#lm5ppMenu_items,*/
+.lm5ppbody .entry_content .menu_hide#lm5ppMenu_items {
+    display: none;
+}
+
+.lm5ppMenu_title * {
+    line-height: 26px;
+}
+
+.lm5ppMenu_title {
+    line-height: 24px;
+    vertical-align: middle;
+    position: relative;
+    padding-right: 10px;
+    padding-left: 10px;
+    display: table-cell;
+    text-align: right;
+    width: 22em;
+}
+
+.goldlogo.lm5ppMenu_title {
+    color: hsl(60, 95%, 50%);
+}
+
+.intro_active:hover .en_title {
+    -webkit-transform: translateY(-100%);
+    transform: translateY(-100%);
+    opacity: 0;
+}
+
+.intro_active:hover .cn_title {
+    -webkit-transform: translateY(0%);
+    transform: translateY(0%);
+    opacity: 1;
+}
+
+.lm5ppMenu_title .en_title, .lm5ppMenu_title .cn_title {
+    position: absolute;
+    top: 0;
+    right: 8px;
+    height: 100%;
+    -webkit-transition: -webkit-transform .5s, opacity .5s;
+    transition: transform .5s, opacity .5s;
+}
+
+.en_show.lm5ppMenu_title .cn_title, .lm5ppMenu_title .cn_title {
+    -webkit-transform: translateY(0%);
+    transform: translateY(0%);
+    opacity: 1;
+}
+
+.en_show.lm5ppMenu_title .en_title, .lm5ppMenu_title .en_title{
+    -webkit-transform: translateY(-100%);
+    transform: translateY(-100%);
+    opacity: 0;
+}
+
+.lm5ppMenu.online .lm5ppMenu_title .en_title {
+    -webkit-transform: translateY(0%);
+    transform: translateY(0%);
+    opacity: 1;
+}
+
+.lm5ppMenu.online .lm5ppMenu_title .cn_title {
+    -webkit-transform: translateY(100%);
+    transform: translateY(100%);
+    opacity: 0;
+}
+
+.lm5ppMenu_title.mini {
+    display: none;
+}
+
+#lm5ppMenu_items > .item:last-of-type {
+    background-color: hsl(0, 0%, 95%);
+}
+
+/* =========================================  popup menu =============================================== */
+.lm5pp_popup {
+    cursor: none;
+    position: fixed;
+    right: 10px;
+    bottom: 20px;
+    margin: 0;
+    padding: 0 0;
+    font-size: 1em;
+    text-align: left;
+    background: #fff;
+    pointer-events: none;
+    z-index: 10;
+    visibility: hidden;
+}
+
+.mobile .lm5pp_popup {
+    bottom: 50px;
+    right: 10px;
+}
+
+.active.lm5pp_popup {
+    cursor: pointer;
+    box-shadow: 0 2px 3px 0 rgba(34, 36, 38, .35);
+    border: 1px solid rgba(34, 36, 38, .15);
+    border-radius: .28571429rem;
+    pointer-events: initial;
+    visibility: visible;
+}
+
+.lm5pp_popup > span {
+    position: relative;
+    display: inline-block;
+}
+
+.lm5pp_popupitem {
+    position: relative;
+    cursor: pointer;
+    display: -webkit-box;
+    -webkit-box-align: center;
+    -webkit-box-pack: justify;
+    border: none;
+    height: 40px;
+    line-height: 16px;
+    color: rgba(0, 0, 0, .87);
+    padding: 0 13px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: tahoma, Verdana;
+    box-shadow: none;
+    min-width: 192px;
+    overflow: visible;
+    -webkit-box-sizing: content-box;
+}
+
+.active .lm5pp_popupitem {
+}
+
+.lm5pp_popupitem > * {
+    white-space: nowrap;
+}
+
+.active .lm5pp_popupitem:hover {
+    background: rgba(0, 0, 0, .05);
+    color: rgba(0, 0, 0, .95);
+}
+
+.lm5ppbody .entry_content .menu > .item {
+}
+
+.lm5pp_popupitem .Head {
+    white-space: nowrap;
+}
+
+.lm5pp_popupitem br {
+    line-height: 1em;
+}
+
+.lm5pp_popupitem .HWD, .lm5pp_popupitem .HYPHENATION {
+    font-weight: bold;
+    font-size: 130%;
+    color: red;
+}
+
+.lm5pp_popupitem .HYPHENATION {
+    display: none;
+}
+
+.lm5pp_popupitem .HOMNUM {
+    vertical-align: super;
+    font-size: 70%;
+    color: red;
+    font-weight: bold;
+}
+
+.lm5pp_popupitem .lm5pp_POS {
+    margin-left: 3px;
+    color: green;
+    font-weight: bold;
+    font-size: 90%;
+}
+
+.lm5pp_popupitem .Sense {
+    font-size: 77%;
+    margin-left: 5px;
+    font-weight: bold;
+    display: inline;
+}
+
+.lm5pp_popupitem .Box {
+    font-size: 66%;
+    margin-left: 5px;
+    font-weight: bold;
+    color: #364395;
+}
+
+.lm5pp_popupitem .Box .Num {
+    vertical-align: super;
+    font-size: 70%;
+}
+
+.lm5pp_popupitem.upperBorder {
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.lm5pp_popup .Head.LDOCEVERSION_new {
+    color: red;
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.lm5pp_popup.switch_version .Head.LDOCEVERSION_new {
+    opacity: 1;
+    pointer-events: unset;
+}
+
+.lm5pp_popup [class*="LDOCEVERSIONLOGO_"] {
+    display: none;
+    width: 6px;
+    height: 6px;
+    /* line-height: 10px; */
+    vertical-align: text-top;
+    background-color: currentColor;
+    font-size: 0;
+    border-radius: 50%;
+}
+
+.lm5pp_popup.switch_version [class*="LDOCEVERSIONLOGO_"] {
+    display: inline-block;
+}
+
+/* ************  float logo *************** */
+#logo_float {
+}
+
+#logo_float svg {
+    height: 36px;
+    padding-left: 10px;
+    padding-top: 5px;
+    -webkit-transition: height .5s, padding-left .5s;
+}
+.goldendict #logo_float svg {
+    height: 34px;
+    padding-left: 10px;
+    padding-top: 5px;
+}
+
+.active #logo_float svg {
+    height: 22px;
+    padding-left: 8px;
+}
+
+.goldendict .active #logo_float svg {
+    height: 20px;
+    padding-left: 6px;
+}
+
+#logo_float #ldoce_logo {
+    fill: white;
+}
+
+#logo_float #ldoce_title {
+    fill: transparent;
+}
+
+#logo_float {
+    display: block;
+    opacity: 0;
+    border: none;
+    outline: none;
+    background-color: rgba(53, 163, 255, 0.2);
+    color: white;
+    cursor: pointer;
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    position: absolute;
+    bottom: 6px;
+    right: 18px;
+    pointer-events: initial;
+    -webkit-transition: width .5s, height .5s;
+    transition: width .5s, height .5s;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.show#logo_float {
+    visibility: visible;
+    opacity:1;
+/*     opacity: 0.2; */
+}
+
+#logo_float .float_effect {
+    /*content:'';*/
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(53, 163, 255, 1);
+    border-radius: 50%;
+    -webkit-transform: scale(0);
+	transform: scale(0);
+    z-index: -1;
+}
+
+.desktop #logo_float .float_effect{
+    -webkit-transition: all .35s cubic-bezier(.6,.1,.3,.8);
+}
+
+.active #logo_float .float_effect,
+.show #logo_float .float_effect,
+#logo_float:hover .float_effect{
+    -webkit-transform: scale(1);
+    transform: scale(1);
+}
+
+.goldlogo #logo_float{
+    background-color: rgba(242, 213, 4,0.2);
+}
+.goldlogo #logo_float .float_effect {
+    background-color: rgba(242, 213, 4,1);
+    
+}
+.active #logo_float {
+    opacity: 1;
+    width: 30px;
+    height: 30px;
+    right: 13px;
+}
+
+#logo_float:hover {
+/*     opacity: 1; */
+/*     background-color:transparent; */
+}
+
+/* ************  input check *************** */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 32px;
+    height: 16px;
+}
+
+.switch input {
+    display: none;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    bottom: 1px;
+    background-color: white;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+.goldlogo input:checked + .slider {
+    background-color: rgb(242, 213, 4);
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px #2196F3;
+}
+.goldlogo input:focus + .slider {
+    box-shadow: 0 0 1px rgb(242, 213, 4);
+}
+
+input:checked + .slider:before {
+    transform: translateX(13px);
+    -webkit-transform: translateX(13px);
+}
+
+/* Rounded sliders */
+.slider.round {
+    border-radius: 16px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
+/* menu icons */
+.lm5pp_icon {
+    color: #5d5d5d;
+    vertical-align: middle;
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+}
+
+.lm5pp_icon svg {
+    width: 100%;
+    height: 100%;
+    fill: #5d5d5d;
+}
+
+.lm5pp_icon:hover svg {
+    fill: #2296f4;
+}
+
+.lm5pp_icon:hover {
+    color: #2296f4;
+    fill: currentColor;
+}
+
+#icon_quit {
+}
+
+#icon_senseFold {
+    margin-left: 20px;
+}
+
+#icon_boxFold {
+    margin-left: 25px;
+}
+
+/* --------------------------- CSS for images ------------------------------- */
+.ldoce5pp-image-small {
+    cursor: zoom-in;
+    cursor: -webkit-zoom-in;
+    transition: 0.3s;
+    margin-left: 15px;
+}
+
+.ldoce5pp-image-small:hover {
+    opacity: 0.7;
+}
+
+/* The Close Button */
+.ldoce5pp-image-close {
+    font-size: 1.5em;
+    font-weight: bold;
+    padding-right: 0.3em;
+}
+
+.ldoce5pp-image-caption:hover, .ldoce5pp-image-caption:focus {
+    color: #bbb;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* The Modal (background) */
+.ldoce5pp-image-show {
+    display: none;
+    position: fixed;
+    /* cursor: zoom-out; */
+    /* cursor: -webkit-zoom-out; */
+    box-sizing: border-box;
+    color: rgba(0, 0, 0, 0.3);
+    overflow: auto;
+    background-color: currentColor;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-clip: padding-box;
+    border: 4px solid currentColor;
+}
+
+.ldoce5pp-image-box {
+    position: relative;
+    margin: auto;
+    max-width: fit-content;
+    max-height: fit-content;
+}
+
+/* --------------------------------------- tool tips window --------------------------- */
+#lm5pp_tips_box {
+    display: none;
+    background-color: transparent;
+    position: fixed;
+    border-radius: 3px;
+    z-index: 1;
+}
+
+#lm5pp_tips {
+    font-size: 0.8em;
+    font-weight: bold;
+    display: inline-block;
+    background-color: white;
+    border: 1px solid rgba(128, 128, 128, 0.54);
+    border-radius: inherit;
+    height: 100%;
+    width: 100%;
+    padding-left: 5px;
+    padding-right: 5px;
+    text-align: center;
+    position: relative;
+    -webkit-box-shadow: 1px 1px 3px #333333;
+}
+
+#lm5pp_tips::after, #lm5pp_tips::before {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 20%;
+}
+
+#lm5pp_tips::before {
+    margin-left: -6px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent transparent gray transparent;
+}
+
+#lm5pp_tips::after {
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: transparent transparent white transparent;
+}
+
+/* --------------------------------------- east egg ----------------------------------- */
+.lm5pp_egg {
+    height: 0;
+    font-size: 80%;
+    overflow: visible;
+    margin-top: -10px;
+}
+
+.lm5pp_egg > span {
+    opacity: 0;
+    margin-right: 10px;
+    cursor: help;
+    transition: opacity 2s;
+    -webkit-transition: opacity 2s;
+}
+
+.lm5pp_egg > span:hover {
+    opacity: 1;
+}
+
+.portrait {
+    display: none;
+    font-style: italic;
+}
+
+@media screen and (max-width: 500px) {
+    .related_topics {
+        display: none;
+    }
+
+    .landscape {
+        display: none;
+    }
+
+    .portrait {
+        display: inline;
+    }
+}
+
+/* ========================== media ========================== */
+@media screen and (max-width: 500px) {
+    /* patch for vanilla */ .entry_content, .page_content, .error_content {
+        margin: 0px 1px 2px 1px;
+    }
+
+    .wordfams {
+        margin-bottom: 6px;
+    }
+
+    .dictentry:not(.bussdict) .dictionary_intro {
+        padding-left: 0px;
+        margin: 0 0 5px 0 !important;
+    }
+
+    .ldoceEntry .Sense {
+        margin-left: 3px;
+    }
+
+    .ldoceEntry .EXAMPLE {
+        margin-left: 36px;
+    }
+
+    .ldoceEntry .GramExa, .ldoceEntry .ColloExa {
+        margin-left: 12px;
+    }
+
+    .ldoceEntry .GramExa .EXAMPLE, .ldoceEntry .ColloExa .EXAMPLE {
+        margin-left: 24px;
+    }
+
+    .ColloBox .BoxPanel {
+        margin-left: 2px;
+    }
+
+    .ldoceEntry .SECHEADING {
+        font-size: 80%;
+    }
+
+    /* ldoce5++ style */
+    .lm5ppMenu_title {
+        display: none;
+    }
+
+    .lm5ppMenu_title.mini {
+        display: inline;
+    }
+
+    .lm5ppMenu .asset_intro {
+        font-size: 0.7em;
+        font-size: 2vw;
+    }
+}
+
+/* ========================= speak =========================== */
+.ldoceEntry .speaker.fa {
+    display: inline-block;
+    font: normal normal normal 12px/1 lm5pp_icomoon !important;
+    font-size: inherit;
+    text-rendering: auto;
+    -webkit-font-smoothing: antialiased;
+}
+
+.loading.fa-volume-up:before {
+    animation-name: loadingAnim;
+    animation-duration: 1s;
+    animation-iteration-count: infinite;
+}
+
+.fa-volume-up:before {
+    content: "\ea27";
+}
+
+@keyframes loadingAnim {
+    0% {
+        opacity: 0;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+/* ******************* END END END END of image controls END END END END ********************* */
+@font-face {
+    font-family: 'lm5pp_icomoon';
+    src: url(data:font/truetype;charset=utf-8;base64,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) format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'cjkextent';
+    src: url(data:font/truetype;charset=utf-8;base64,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) format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+.cn_txt .cn_txt_ext {
+    font-family: cjkextent;
+    font-size: 111.4%;
+}
+
+/* ****************************************** 2018 update  ******************************** */
+.EXPL .cyan, .EXPL > .neutral:first-child {
+    display: none;
+}
+
+.EXPL:before {
+    content: '•';
+    position: absolute;
+    margin-left: -0.6em;
+}
+
+.Sense .asset {
+    margin-top: 0;
+    margin-bottom: 0.4em;
+}
+
+.Sense .corpus {
+    margin-left: 1em;
+}
+
+@media screen and (max-width: 500px) {
+    .Sense .corpus {
+        margin-left: 0.1em;
+    }
+
+    .exaGroup .exa {
+        margin-left: 8px;
+    }
+}
+
+.Sense .corpus .title {
+    display: none;
+}
+
+.Sense .asset .yellow_box {
+    margin-top: 10px;
+}
+
+@media screen and (max-width: 700px) {
+    .lm5ppMenu_title {
+        display: none;
+    }
+
+    .lm5ppMenu_title.mini {
+        display: table-cell;
+        width: 6em;
+    }
+}
+
+.asset {
+    margin-top: 0px;
+}
+
+.yellow_box {
+    margin-top: 9px;
+}
+
+.exaGroup .title {
+    margin-top: 6px;
+}
+
+.lm5ppMenu .asset_intro {
+    opacity: 0;
+    -webkit-transition: opacity 2s 1s;
+    transition: opacity 0.5s 0.3s;
+    cursor: pointer;
+    padding: 0;
+    text-align: center;
+}
+
+.lm5ppMenu .asset_intro.bussdictegg {
+    color: blue;
+    border-color: white;
+    background-color: white;
+}
+
+.lm5ppMenu .asset_intro.bussdictegg:before {
+    content: "Business";
+}
+
+.lm5ppMenu .asset_intro.corpusegg:before {
+    content: "Corpus";
+}
+
+.lm5ppMenu_title .en_title:before {
+    content: "Longman Dictionary of Contemporary English 5++";
+}
+
+.lm5ppMenu.online .lm5ppMenu_title .en_title:before {
+    content: "Longman Dictionary of Contemporary English Online";
+}
+
+.lm5ppMenu_title .cn_title:before {
+    content: "朗文当代英语 5++";
+}
+
+.lm5ppMenu_title.mini .en_title:before {
+    content: "LDOCE 5++";
+}
+
+.lm5ppMenu.online .lm5ppMenu_title.mini .en_title:before {
+    content: "LDOCE Online";
+}
+
+.lm5ppMenu_title.mini .cn_title:before {
+    content: "朗文 5++";
+}
+
+.lm5ppMenu .asset_intro:hover {
+    opacity: 1;
+}
+
+.dictentry + .dictentry {
+    border-top: solid 1px rgba(255, 0, 0, 0.2);
+    padding-top: 5px;
+}
+
+.lm5ppbody.notfirst {
+    border-top: solid 1px rgba(255, 0, 0, 0.2);
+}
+
+.langSwitch .LDOCE_switch_lang.switch_children, .langSwitch .LDOCE_switch_lang.switch_siblings {
+    cursor: pointer;
+}
+
+.BoxPanel {
+    display: none;
+}
+
+.ldoceEntry .LDOCEVERSION_new, .ldoceEntry .LDOCEVERSIONLOGO_5, .ldoceEntry .LDOCEVERSIONLOGO_new {
+    display: none;
+}
+
+.dictentry.LDOCEVERSION_new {
+    display: none;
+}
+
+.LDOCE5pp_sensefold.foldsign_fold ~ .corpus {
+    display: none !important;
+}
+
+.corpus {
+    overflow: hidden;
+}
+
+.ldoceEntry .EXPL {
+    margin-left: 0.6em;
+}
+
+.lm5ppMenu .asset_intro {
+    display: table-cell;
+}
+
+@media screen and (max-width: 500px) {
+    .lm5ppMenu .asset_intro {
+        max-width: 30px;
+    }
+}
+
+.etym .Sense {
+    display: inline;
+}
+
+.suppressed {
+    display: none;
+}
+
+.sensecorpus {
+    border: 1px solid #f1d600;
+    background-color: #f1d600;
+    color: #fff;
+    font-weight: normal;
+    padding: 1px 7px;
+    font-size: 0.8em;
+    margin-left: 1em;
+    opacity: 0;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    -webkit-transition: opacity 2s 1s;
+    transition: opacity 2s 0.3s;
+    cursor: pointer;
+}
+
+.sensecorpus:hover {
+    opacity: 1;
+}
+
+.sensecorpus:before {
+    content: 'Corpus';
+}
+
+/* ini */
+.lm5ppbody.Etym_disable .etym{
+    display: none;
+}
+
+.lm5ppbody.Wordfamily_disable .wordfams{
+    display: none;
+}
+
+.lm5ppbody.Example_blue .ldoceEntry .EXAMPLE {
+    color: rgb(82, 94, 163);
+}
+
+.wallpaperPanel{
+    cursor: pointer;
+    position: absolute;
+    width: 10%;
+    right: 0;
+    -webkit-transition: width .4s;
+    padding: 0;
+    margin: 0;
+    line-height: 0;
+    border: .1em solid #d7d7d7;
+    box-shadow: 0 0 1.6em rgba(0,0,0,.09);
+}
+@media screen and (max-width: 500px) {
+    .wallpaperPanel{
+        width: 25%;
+    }
+}
+.desktop .wallpaperPanel:hover {
+    width: 80%;
+}
+.wallpaperPanel img{
+    width: 100%;
+}
+

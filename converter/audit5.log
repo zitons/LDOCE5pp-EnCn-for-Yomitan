@@ -1,0 +1,20 @@
+== package: C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.10.zip
+   entries=64659  headword-polluted=0 (0.00%)
+   leaked strings total=0 distinct=0
+   top leaked text:
+   samples:
+
+== source: 90580 Head blocks; direct children render_head ignores:
+     6837  REGISTERLAB    CHIP_MAP->ld-register
+     6574  HYPHENATION    ** NO MAPPING **
+     4835  LEXVAR         CHIP_MAP->ld-lexvar
+     3864  GEO            CHIP_MAP->ld-geo
+     3227  Variant        CHIP_MAP->ld-lexvar
+     1686  FIELDXX        CHIP_MAP->ld-fieldxx
+     1428  AC             CHIP_MAP->ld-gloss
+     1194  HOMOPHONE      CHIP_MAP->ld-homophone
+      646  FIELD          CHIP_MAP->ld-field
+      525  AmEVariant     CHIP_MAP->ld-lexvar
+      369  BrEVariant     CHIP_MAP->ld-lexvar
+       48  PHRVBHWD       CHIP_MAP->ld-refhwd
+       36  LINKWORD       CHIP_MAP->ld-collo

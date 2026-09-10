@@ -1,0 +1,2384 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# LDOCE5++ (LM5pp HTML) -> Yomitan structured-content dictionary converter.
+# Pipeline shape mirrors shoujocyber/OALD10-Yomitan-Converter:
+#   MDX -> extracted text -> per-record parser -> structured content IR
+#       -> packager (index.json/tag_bank/term_bank/styles.css/ZIP)
+#       -> structural validator.
+# Part 1 of 2 (core + renderer). Assembled by build script.
+
+import gc
+import io
+import json
+import os
+import re
+import shutil
+import tempfile
+import time
+import zipfile
+import glob
+from collections import Counter
+from datetime import date
+from urllib.parse import quote, unquote
+
+try:
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover
+    def tqdm(x, **kwargs):
+        return x
+
+VERSION = "1.1.0"
+# ASCII only: this string is written into index.json, and a mono package declares
+# targetLanguage "en" -- CJK metadata there breaks the "no CJK" contract.
+AUTHOR = "LDOCE5++ Yomitan converter"
+# The dictionary data comes from the freemdict forum; the OALD10 repo that
+# inspired the pipeline is NOT this dictionary's homepage.
+PROJECT_URL = "https://forum.freemdict.com/"
+SOURCE_FORUM_URL = "https://forum.freemdict.com/"
+TERM_BANK_BATCH = 10000
+REDIRECT_SCORE = -10
+ENTRY_SCORE = 10
+COMPRESS_LEVEL = 6
+# bs4 tree builder. "lxml" (C/libxml2) is byte-for-byte equivalent on this corpus
+# and much faster than the pure-Python "html.parser" -- verified by
+# converter/audit7_parser_equiv.py (1747 stratified rows, 0 differences).
+HTML_PARSER = "lxml"
+
+INVISIBLE_RE = re.compile("[\u00ad\u200b\u200c\u200d\u2060\ufeff\u2061\u2062\u2063\u2064]")
+WS_RE = re.compile(r"\s+")
+CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+def strip_invisible(value):
+    return INVISIBLE_RE.sub("", str(value or ""))
+
+
+def collapse_ws(value):
+    return WS_RE.sub(" ", value)
+
+
+def sanitize_strings(value):
+    if isinstance(value, str):
+        return strip_invisible(value)
+    if isinstance(value, list):
+        return [sanitize_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize_strings(item) for key, item in value.items()}
+    return value
+
+
+def sanitize_inplace(value):
+    """Same semantics as sanitize_strings() but reuses the containers.
+
+    Bank rows are written once and then discarded, so the deep copy that
+    sanitize_strings() performs (millions of dict/list per bank) is pure
+    overhead. Most strings contain no invisible characters at all, so this
+    only allocates for the ones that do.
+    """
+    if isinstance(value, str):
+        return strip_invisible(value)
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            value[i] = sanitize_inplace(item)
+        return value
+    if isinstance(value, dict):
+        for key in value:
+            value[key] = sanitize_inplace(value[key])
+        return value
+    return value
+
+
+def sc(tag, content=None, cls=None, data=None, lang=None, title=None, style=None, **extra):
+    node = {"tag": tag}
+    merged = dict(data) if data else {}
+    if cls:
+        existing = merged.get("class")
+        merged["class"] = f"{existing} {cls}".strip() if existing else cls
+    if merged:
+        node["data"] = merged
+    if lang:
+        node["lang"] = lang
+    if title:
+        node["title"] = title
+    if style:
+        node["style"] = style
+    node.update(extra)
+    if content is not None:
+        node["content"] = content
+    return node
+
+
+def sc_text(text):
+    return strip_invisible(collapse_ws(str(text)))
+
+
+def sc_has_text(value):
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(sc_has_text(item) for item in value)
+    if isinstance(value, dict):
+        tag = value.get("tag")
+        if tag in ("br", "img"):
+            return True
+        if "content" in value:
+            return sc_has_text(value["content"])
+        return True
+    return False
+
+
+def merge_adjacent_text(nodes):
+    """Coalesce neighbouring strings. A whitespace-only accumulator is dropped
+    rather than prefixed, and no separator is ever invented -- inter-word spaces
+    come from the source text nodes."""
+    out = []
+    for node in nodes:
+        if isinstance(node, str) and out and isinstance(out[-1], str):
+            prev = out[-1]
+            out[-1] = prev + node if prev.strip() else node
+        else:
+            out.append(node)
+    return out
+
+
+def strip_leading_bullet(nodes):
+    if not nodes:
+        return
+    first = nodes[0]
+    if isinstance(first, str):
+        stripped = first.lstrip("\u2022\u00b7 \u00a0")
+        if stripped:
+            nodes[0] = stripped
+        else:
+            nodes.pop(0)
+
+
+def starts_with_sense_number(nodes):
+    """True when the first visible child of a sense is its number chip.
+
+    Decides whether the hanging-indent gutter is worth reserving: 49% of the
+    senses in this source carry no number, and an empty gutter just eats popup
+    width (see generate_css / ld-sense-n)."""
+    for item in nodes:
+        if isinstance(item, str):
+            if item.strip():
+                return False
+            continue
+        if isinstance(item, dict):
+            return (item.get("data") or {}).get("class") == "ld-snum"
+        return False
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Class policy tables
+# ---------------------------------------------------------------------------
+
+DROP_TAGS = {"script", "style", "link", "input", "label", "meta", "head", "body", "html",
+             "title", "textarea", "select", "option", "button", "form"}
+
+DROP_CLASSES = {
+    "lm5ppMenu", "lm5ppMenu_title", "lm5ppMenu_floatlogo", "lm5ppMenu_logo",
+    "lm5pp_popup", "lm5pp_popupitem", "menu_quit", "logo_float",
+    "icon_quit", "icon_senseFold", "icon_boxFold", "lm5pp_icon",
+    "dictionary_intro", "en_title", "cn_title", "goldlogo", "halfgold",
+    "corpusegg", "bussdictegg", "foldsign", "foldblank", "foldsignbar1",
+    "foldsignbar2", "switch", "switch_title", "slider", "round", "suppressed",
+    "hideOnAmp", "speaker", "brefile", "amefile", "exafile", "fa",
+    "fa-volume-up", "LDOCEVERSIONLOGO_new", "LDOCEVERSIONLOGO_5",
+    "LDOCE5pp-image-small", "imagerelated", "ldoce-show-image", "ldoce4img",
+    "ldoce4page", "piccal", "PICCAL", "asset_intro",
+}
+
+UNWRAP_CLASSES = {
+    "LDOCE_switch_lang", "switch_siblings", "switch_children", "neutral",
+    "NonDV", "LDOCE5pp_sensefold", "LDOCE5pp_sensefold_other",
+    "foldsign_fold", "LDOCEVERSION_new", "LDOCEVERSION_5", "upperBorder",
+    "mini", "span", "div", "a", "lm5ppbody", "entry_content", "dictionary",
+    "dictentry", "dictlink", "newline", "english", "merge_sense",
+    "cross_sense", "landscape", "portrait", "refsensenum", "frequent",
+    "comma", "SUFFIX",
+}
+
+INLINE_MAP = {
+    "cn_txt":     ("ld-zh", {"zh": True}),
+    "cn_txt_ext": ("ld-zh", {"zh": True}),
+    "en_txt":     ("ld-en", {}),
+    "GLOSS":      ("ld-gloss", {}),
+    "COLLGLOSS":  ("ld-gloss", {}),
+    "synopp":     ("ld-synmark", {}),
+    "CROSSREFTYPE": ("ld-xrtype", {}),
+    "sensenum":   ("ld-snum", {}),
+    # HYP is handled explicitly in render_inline_node / hwd_collect: it carries
+    # either a syllable dot (ld-hyp) or a stress mark (ld-stress).
+    "HOMNUM":     ("ld-sup", {}),
+    "REFHOMNUM":  ("ld-sup", {}),
+    "REFSENSENUM": ("ld-sup", {}),
+    "italic":     ("ld-it", {}),
+    "DEFBOLD":    ("ld-b", {}),
+    "HINTBOLD":   ("ld-b", {}),
+    "GOODBOLD":   ("ld-b", {}),
+    "STRONG":     ("ld-b", {}),
+    "HINTITALIC": ("ld-it", {}),
+    "CENTURY":    ("ld-century", {}),
+    "TRAN":       ("ld-tran", {}),
+    "LANG":       ("ld-lang", {}),
+    "ORIGIN":     ("ld-origin", {}),
+    "ABBR":       ("ld-abbr", {}),
+    "OBJECT":     ("ld-obj", {}),
+    "HINT":       ("ld-hint-inline", {}),
+    "hint":       ("ld-hint-inline", {}),
+    "LEVEL":      ("ld-level", {}),
+    "FREQ":       ("ld-freq", {}),
+    "GOODCOLLO":  ("ld-good-word", {}),
+    "BADCOLLO":   ("ld-bad-word", {}),
+    "COLLORANGE": ("ld-collo-range", {}),
+    "THESPROPFORM": ("ld-propform", {}),
+    "REFSENSE":   ("ld-sup", {}),
+    "TITLE":      ("ld-grouptitle", {}),
+}
+
+CHIP_MAP = {
+    "lm5pp_POS": "ld-pos",
+    "pos": "ld-pos",
+    "GRAM": "ld-gram",
+    "GEO": "ld-geo",
+    "REGISTERLAB": "ld-register",
+    "FIELD": "ld-field",
+    "FIELDXX": "ld-fieldxx",
+    "ACTIV": "ld-act",
+    "_ACTIV": "ld-act",
+    "_ACTIV_": "ld-act",
+    "cn_topic": "ld-actcn",
+    "Signpost": "ld-signpost",
+    "SIGNPOST": "ld-signpost",
+    "SYN": "ld-syn",
+    "OPP": "ld-syn",
+    "HOMOPHONE": "ld-homophone",
+    "DERIV": "ld-deriv",
+    "LEXVAR": "ld-lexvar",
+    "AmEVariant": "ld-lexvar",
+    "BrEVariant": "ld-lexvar",
+    "ORTHVAR": "ld-lexvar",
+    "AMEVARPRON": "ld-pron-amevar",
+    "PRESPARTX": "ld-infl-form",
+    "PTandPPX": "ld-infl-form",
+    "T3PERSSINGX": "ld-infl-form",
+    "PLURALFORM": "ld-infl-form",
+    "PASTTENSE": "ld-infl-form",
+    "PASTPART": "ld-infl-form",
+    "PRESPART": "ld-infl-form",
+    "T3PERSSING": "ld-infl-form",
+    "PTandPP": "ld-infl-form",
+    "FULLFORM": "ld-infl-form",
+    "COMP": "ld-infl-form",
+    "SUPERL": "ld-infl-form",
+    "EXP": "ld-exp",
+    "COLLO": "ld-collo",
+    "collo": "ld-collo",
+    "COLLOINEXA": "ld-colloin",
+    "LEXUNIT": "ld-collo",
+    "LINKWORD": "ld-collo",
+    "PROPFORM": "ld-propform",
+    "EXPR": "ld-expr",
+    "NodeW": "ld-nodew",
+    "RELATEDWD": "ld-relatedwd",
+    "CompareWord": "ld-relatedwd",
+    "HWD": "ld-hwd",
+    "REFHWD": "ld-refhwd",
+    "PHRVBHWD": "ld-refhwd",
+    "PRON": "ld-pron",
+    "PronCodes": "ld-pronblk",
+    "AMEQUIV": "ld-equiv",
+    "BREQUIV": "ld-equiv",
+    "title": "ld-grouptitle",
+    "Num": "ld-num",
+    "AC": "ld-gloss",
+    "DATE": "ld-gloss",
+    "BOOKFILM": "ld-gloss",
+    "XREF": "ld-xref",
+    "Crossref": "ld-crossref",
+    "Xref": "ld-crossref",
+    "Thesref": "ld-thesref",
+    "PROPFORMPREP": "ld-propform",
+    "REFLEX": "ld-it",
+    "REFHOM": "ld-sup",
+    "CROSS": "ld-crossref",
+    "Variant": "ld-lexvar",
+    "i": "ld-it",
+}
+CHIP_PRIORITY = list(CHIP_MAP.keys())
+
+# A DROP class normally removes the element *and its entire subtree*. These tokens
+# are allowed to win instead, because the element carries text the original
+# stylesheet displays (`.Crossref.ldoce4img { color:#4058a4 }`). Without this the
+# "See picture" pointer lines were silently dropped from 1548 records (REVIEW D8).
+DROP_EXEMPT = {"Crossref", "crossRef"}
+
+
+def is_dropped(cls):
+    """True when the element should be removed wholesale.
+
+    Deliberately *not* a bare `cls & DROP_CLASSES`: an element can carry a
+    meaningful class alongside a discarded one (e.g. `Crossref imagerelated`),
+    and dropping on the first hit loses real content.
+    """
+    return bool(cls & DROP_CLASSES) and not (cls & DROP_EXEMPT)
+
+
+# LDOCE frequency band -> rank ceiling ("within the top N"), which is what
+# Yomitan's frequency sorting expects: lower = more frequent.
+FREQ_VALUE = {"S1": 1000, "W1": 1000, "S2": 2000, "W2": 2000, "S3": 3000, "W3": 3000}
+
+BLOCK_MAP = [
+    ("Sense", "ld-sense"),
+    ("Subsense", "ld-subsense"),
+    ("Subentry", "ld-sense"),
+    ("SubEntry", "ld-sense"),
+    ("PhrVbEntry", "ld-phrventry"),
+    ("EXAMPLE", "ld-ex"),
+    ("GramExa", "ld-gramexa"),
+    ("ColloExa", "ld-colloexa"),
+    ("Collocate", "ld-collocate"),
+    ("Exponent", "ld-exponent"),
+    ("RunOn", "ld-runon"),
+    ("EXPL", "ld-expl"),
+    ("Section", "ld-section"),
+    ("frequency", "ld-frequency"),
+    ("SpokenSect", "ld-spokensect"),
+    ("Hint", "ld-hint"),
+    ("dont_say", "ld-dontsay"),
+    ("warning", "ld-warn"),
+    ("GOODEXA", "ld-ex-good"),
+    ("BADEXA", "ld-ex-bad"),
+    ("topics_container", "ld-topics"),
+    ("related_topics", "ld-topics-body"),
+    ("SECHEADING", "ld-psub"),
+    ("HEADING", "ld-phead"),
+    ("boxheader", "ld-phead"),
+    ("spokensectheader", "ld-phead"),
+]
+BLOCK_TOKENS = {token for token, _ in BLOCK_MAP}
+BLOCK_SCNAME = dict(BLOCK_MAP)
+
+PANEL_CLASSES = {"F2NBox", "GramBox", "ThesBox", "ColloBox", "UsageBox", "ThesColloBox"}
+PANEL_SKIP_CLASSES = {"FrequenceBox"}
+
+PANEL_FALLBACK_TITLES = {
+    "F2NBox": ("Register", "语体"),
+    "GramBox": ("Grammar", "语法"),
+    "ThesBox": ("Thesaurus", "词义辨析"),
+    "ColloBox": ("Collocations", "搭配"),
+    "UsageBox": ("Usage", "用法说明"),
+    "ThesColloBox": ("Collocations", "搭配"),
+}
+
+PANEL_TITLES_ZH = {
+    "thesaurus": ("Thesaurus", "词义辨析"),
+    "collocations": ("Collocations", "搭配"),
+    "grammar": ("Grammar", "语法"),
+    "register": ("Register", "语体"),
+    "usage": ("Usage", "用法说明"),
+    "extra examples": ("Extra examples", "额外例句"),
+    "word family": ("Word family", "词族"),
+    "examples from the corpus": ("Corpus examples", "语料库例句"),
+    "business dictionary": ("Business Dictionary", "商务英语"),
+    "encyclopedia": ("Encyclopedia", "百科"),
+    "hint": ("Hint", "提示"),
+    "origin": ("Word origin", "词源"),
+    "word origin": ("Word origin", "词源"),
+    "frequency": ("Frequency", "使用频率"),
+    "graphies": ("Graphics", "图表"),
+    "picture": ("Picture", "图片"),
+    "pictures": ("Pictures", "图片"),
+    "more like this": ("More like this", "相关词"),
+    "topics": ("Topics", "话题"),
+    "which word": ("Which word", "词语对比"),
+    "study note": ("Study note", "学习提示"),
+    "grammar patterns": ("Grammar patterns", "语法搭配"),
+    "spoken": ("Spoken", "口语"),
+    "note": ("Note", "说明"),
+}
+
+POS_RULE_MAP = {
+    "noun": "n", "n": "n", "verb": "v", "v": "v",
+    "adjective": "adj", "adj": "adj", "adverb": "adv", "adv": "adv",
+    "modal verb": "v", "auxiliary verb": "v", "phrasal verb": "v",
+    "linking verb": "v",
+}
+POS_TAG_MAP = {
+    "noun": "noun", "verb": "verb", "adjective": "adj", "adverb": "adv",
+    "pronoun": "pron", "preposition": "prep", "conjunction": "conj",
+    "exclamation": "excl", "determiner": "det", "number": "num",
+    "modal verb": "modal", "auxiliary verb": "aux", "linking verb": "linking-v",
+    "phrasal verb": "phrasal-v", "prefix": "prefix", "suffix": "suffix",
+    "combining form": "combining-form", "abbreviation": "abbr",
+    "symbol": "symb", "idiom": "idiom", "definite article": "def-article",
+    "indefinite article": "indef-article", "ordinal number": "ordinal-num",
+    "infinitive marker": "inf-marker", "infin marker": "inf-marker",
+    "short form": "short-form",
+}
+
+# ---------------------------------------------------------------------------
+# MDX extraction / record iteration
+# ---------------------------------------------------------------------------
+
+
+def prepare_input(input_file):
+    source = os.path.abspath(os.path.expanduser(str(input_file)))
+    if not os.path.isfile(source):
+        raise FileNotFoundError(f"Input dictionary file not found: {source}")
+    if not source.lower().endswith(".mdx"):
+        return source
+    sidecar = source + ".txt"
+    if (
+        os.path.isfile(sidecar)
+        and os.path.getsize(sidecar) > 0
+        and os.path.getmtime(sidecar) >= os.path.getmtime(source)
+    ):
+        print(f"[*] Reusing extracted MDX text: {sidecar}")
+        return sidecar
+    try:
+        from mdict_utils import reader as mdict_reader
+    except ImportError as exc:
+        raise RuntimeError("Direct MDX input requires mdict-utils") from exc
+    print(f"[*] Extracting MDX source: {source}")
+    os.makedirs(os.path.dirname(sidecar) or ".", exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".ldoce-extract-", dir=os.path.dirname(source)) as tmp:
+        mdict_reader.unpack(tmp, source)
+        produced = os.path.join(tmp, os.path.basename(source) + ".txt")
+        if not os.path.isfile(produced):
+            candidates = [p for p in glob.glob(os.path.join(tmp, "*.txt")) if os.path.getsize(p) > 0]
+            if not candidates:
+                raise RuntimeError("mdict-utils produced no text file")
+            produced = max(candidates, key=os.path.getsize)
+        shutil.move(produced, sidecar)
+    print(f"[OK] Extracted MDX text: {sidecar}")
+    return sidecar
+
+
+def iter_records(path):
+    with io.open(path, "r", encoding="utf-8", newline="") as handle:
+        buf_key = None
+        buf_lines = []
+        for line in handle:
+            line = line.rstrip("\r\n")
+            if line == "</>":
+                if buf_key is not None:
+                    yield buf_key, "\n".join(buf_lines)
+                buf_key, buf_lines = None, []
+            elif buf_key is None and not buf_lines:
+                buf_key = line
+            else:
+                buf_lines.append(line)
+        if buf_key is not None:
+            yield buf_key, "\n".join(buf_lines)
+
+
+def count_lines(path):
+    with io.open(path, "rb") as handle:
+        return sum(1 for _ in handle)
+
+
+SKIP_KEY_RE = re.compile(r"^(ACTIV:|ldoce\d+jpg)", re.IGNORECASE)
+
+
+def clean_target(t):
+    """@@@LINK targets in this MDX sometimes embed markup:
+    'add<span class="OBJECT"> something <-></span> on' -> plain key."""
+    if not t:
+        return ""
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = strip_invisible(collapse_ws(t)).strip()
+    return t.strip(" \t;")
+
+
+def norm_target(t):
+    return re.sub(r"[\s\u2194\u2009\u00a0]+", "", t).casefold()
+
+
+def classify_record(key, content):
+    k = strip_invisible(key).strip()
+    if not k:
+        return "skip", None
+    if SKIP_KEY_RE.match(k):
+        return "skip", None
+    head = content.lstrip()
+    if head.startswith("@@@LINK="):
+        target = head[len("@@@LINK="):].split("\n")[0].split("|")[0].strip()
+        return "redirect", clean_target(target) or None
+    probe = content[:8000]
+    if "entry_content" in probe or "ldoceEntry" in probe:
+        return "entry", None
+    return "skip", None
+
+
+# ---------------------------------------------------------------------------
+# Term index
+# ---------------------------------------------------------------------------
+
+
+class TermIndex:
+    def __init__(self):
+        self.exact = set()
+        self.by_fold = {}
+        self.by_norm = {}
+        self.linkable = set()   # alias words that exist as redirect rows
+        self.link_norm = {}
+        self.rendered = set()
+
+    def add(self, key):
+        self.exact.add(key)
+        self.by_fold.setdefault(key.casefold(), key)
+        self.by_norm.setdefault(norm_target(key), key)
+
+    def add_alias_word(self, key):
+        self.linkable.add(key)
+        self.link_norm.setdefault(norm_target(key), key)
+        self.link_norm.setdefault(norm_target(key.replace("-", " ")), key)
+
+    def finalize_rendered(self, rendered_keys):
+        self.rendered = set(rendered_keys)
+
+    def resolve(self, target):
+        if not target:
+            return None
+        t = strip_invisible(target).strip()
+        if not t or t.upper().startswith("ACTIV:"):
+            return None
+        if t in self.exact:
+            return t
+        folded = self.by_fold.get(t.casefold())
+        if folded:
+            return folded
+        hy = t.replace(" ", "-")
+        if hy in self.exact:
+            return hy
+        sp = t.replace("-", " ")
+        if sp in self.exact:
+            return sp
+        hy_fold = self.by_fold.get(hy.casefold())
+        if hy_fold:
+            return hy_fold
+        sp_fold = self.by_fold.get(sp.casefold())
+        if sp_fold:
+            return sp_fold
+        # normalized: ignores whitespace / hyphen / <-> object-marker differences
+        for cand in (norm_target(t), norm_target(t.replace("-", " ")),
+                     norm_target(t.replace("-", ""))):
+            hit = self.by_norm.get(cand)
+            if hit:
+                return hit
+        if t in self.linkable:
+            return t
+        for cand in (norm_target(t), norm_target(t.replace("-", " ")),
+                     norm_target(t.replace("-", ""))):
+            hit = self.link_norm.get(cand)
+            if hit:
+                return hit
+        return None
+
+    def __contains__(self, item):
+        return item in self.exact or item in self.linkable
+
+
+def entry_target_from_href(href, title):
+    href = (href or "").strip()
+    match = re.match(r"^entry://([^#?]*)", href)
+    if match:
+        raw = unquote(match.group(1)).strip()
+        return raw or strip_invisible(title or "").strip()
+    if href and not re.match(r"^(sound|https?|javascript|#|media|pic|rel:|/)", href, re.IGNORECASE):
+        return unquote(href).strip()
+    return strip_invisible(title or "").strip() or None
+
+
+# ---------------------------------------------------------------------------
+# DOM -> structured content
+# ---------------------------------------------------------------------------
+
+from bs4 import BeautifulSoup, NavigableString, Tag  # noqa: E402
+
+
+def classes_of(el):
+    if not isinstance(el, Tag):
+        return frozenset()
+    return frozenset(el.get("class") or [])
+
+
+class LdoceRenderer:
+    def __init__(self, term_index, mode="bilingual", open_panels=False):
+        self.terms = term_index
+        self.mode = mode
+        self.open_panels = open_panels
+        self.stats = Counter()
+        self.unknown_classes = Counter()
+        self.current_key = None
+
+    # -- child walking ------------------------------------------------------
+
+    def _children_blocks(self, el):
+        nodes = []
+        for child in el.children:
+            if isinstance(child, NavigableString):
+                if child.__class__.__name__ in ("Doctype", "Comment", "Declaration",
+                                                "ProcessingInstruction", "CData"):
+                    continue
+                text = sc_text(str(child))
+                if text:
+                    nodes.append(text)
+                continue
+            if not isinstance(child, Tag):
+                continue
+            nodes.extend(self.render_element(child))
+        return merge_adjacent_text(nodes)
+
+    def render_element(self, el):
+        cls = classes_of(el)
+        if is_dropped(cls) or el.name in DROP_TAGS:
+            return []
+        if "portrait" in cls:
+            parent = el.parent
+            has_landscape = parent is not None and any(
+                isinstance(s, Tag) and "landscape" in classes_of(s) for s in parent.children
+            )
+            if has_landscape:
+                return []  # keep the full-size landscape duplicate only
+        if el.name in ("div", "aside", "section", "article", "main"):
+            return self.render_div(el, cls)
+        if el.name == "h1":
+            return []
+        if el.name in ("ul", "ol"):
+            return self._render_list(el)
+        if el.name == "table":
+            return self._render_table(el)
+        if el.name == "p":
+            inner = self._children_blocks(el)
+            return [sc("div", inner, cls="ld-para")] if inner else []
+        if "Head" in cls:
+            return [self.render_head(el)]
+        if "Inflections" in cls:
+            return [self.render_inflections(el)]
+        forced = cls & BLOCK_TOKENS
+        if forced:
+            return [self.render_block_by_token(el, self._first_forced(forced))]
+        if "wordfams" in cls or cls & PANEL_CLASSES or "etym" in cls or "assetlink" in cls \
+                or "asset" in cls:
+            return self.render_div(el, cls)
+        if self._has_block_child(el):
+            if "Head" in cls:
+                return [self.render_head(el)]
+            if "Inflections" in cls:
+                return [self.render_inflections(el)]
+            return self._children_blocks(el)
+        return self.render_inline_node(el)
+
+    def _render_list(self, el):
+        items = []
+        for li in el.find_all("li", recursive=False):
+            inner = self._children_blocks(li)
+            if inner:
+                items.append(sc("li", inner))
+        if not items:
+            return []
+        return [sc(el.name, items, cls="ld-list")]
+
+    def _render_table(self, el):
+        rows = []
+        for tr in el.find_all("tr"):
+            cells = []
+            for cell in tr.find_all(["td", "th"], recursive=False):
+                inner = self._children_blocks(cell)
+                cells.append(sc(cell.name, inner, cls="ld-td" if cell.name == "td" else "ld-th"))
+            if cells:
+                rows.append(sc("tr", cells))
+        if not rows:
+            return []
+        return [sc("table", [sc("tbody", rows)], cls="ld-table")]
+
+    def _first_forced(self, forced):
+        for token, _ in BLOCK_MAP:
+            if token in forced:
+                return token
+        return sorted(forced)[0]
+
+    def _has_block_child(self, el):
+        for child in el.children:
+            if isinstance(child, Tag):
+                if child.name in ("div", "ul", "ol", "table", "details", "h1", "p",
+                                  "section", "aside"):
+                    return True
+                ccls = classes_of(child)
+                if ccls & (BLOCK_TOKENS | PANEL_CLASSES | {
+                        "Sense", "Subentry", "ldoceEntry", "Entry", "asset",
+                        "assetlink", "wordfams", "Head", "Inflections", "etym"}):
+                    return True
+        return False
+
+    # -- div dispatch -------------------------------------------------------
+
+    def render_div(self, el, cls):
+        if "asset" in cls:
+            return self.render_asset(el, cls)
+        if "assetlink" in cls:
+            return self.render_assetlink(el, cls)
+        panel_cls = cls & PANEL_CLASSES
+        if panel_cls:
+            if cls & PANEL_SKIP_CLASSES:
+                return []
+            box = self.render_box(el, sorted(panel_cls)[0])
+            return [box] if box else []
+        if "wordfams" in cls:
+            wf = self.render_wordfams(el)
+            return [wf] if wf else []
+        if "etym" in cls:
+            et = self.render_etym(el)
+            return [et] if et else []
+        if cls & {"ldoceEntry", "Entry"}:
+            inner = self._children_blocks(el)
+            return [sc("div", inner, cls="ld-entry")] if inner else []
+        if "dictionary" in cls or "dictentry" in cls:
+            return self._children_blocks(el)
+        if "Head" in cls and "frequent" in cls:
+            return [self.render_head(el)]
+        if "Inflections" in cls:
+            return [self.render_inflections(el)]
+        if "BoxPanel" in cls:
+            inner = self._children_blocks(el)
+            return [sc("div", inner, cls="ld-panel-boxbody")] if inner else []
+        if "Head" in cls:
+            return [self.render_head(el)]
+        forced = cls & BLOCK_TOKENS
+        if forced:
+            return [self.render_block_by_token(el, self._first_forced(forced))]
+        inner = self._children_blocks(el)
+        if not inner:
+            return []
+        return [sc("div", inner)]
+
+    def render_block_by_token(self, el, token):
+        if token == "EXAMPLE":
+            return self.render_example(el, classes_of(el))
+        scname = BLOCK_SCNAME.get(token) or "ld-block"
+        if token in ("SECHEADING", "HEADING", "boxheader", "spokensectheader"):
+            text = sc_text(el.get_text(" ", strip=True))
+            return sc("div", [text], cls=scname) if text else sc("div", [], cls="ld-empty")
+        inner = self._children_blocks(el)
+        if not inner:
+            return sc("div", [], cls="ld-empty")
+        cls = classes_of(el)
+        node_cls = scname
+        if "cross_sense" in cls:
+            node_cls = "ld-sense-cross"
+        elif "merge_sense" in cls:
+            node_cls = "ld-sense-merge"
+        if node_cls.startswith("ld-sense") and starts_with_sense_number(inner):
+            # Deliberately multi-token: the CSS matches the modifier with `~=`
+            # so the base rule keeps working. See generate_css.
+            node_cls += " ld-sense-n"
+        return sc("div", inner, cls=node_cls)
+
+    # -- semantic blocks ----------------------------------------------------
+
+    def render_head(self, el):
+        # Head children are emitted in SOURCE DOM order. The original stylesheet has
+        # no `order:`/absolute positioning anywhere in the head rules, and the real
+        # rendering (LM5style.css from the .mdd, measured in Chrome) confirms the
+        # visual order equals the DOM order:
+        #   HWD > HOMNUM > PronCodes > LEVEL > FREQ > AC > POS > GRAM > GEO >
+        #   REGISTERLAB > Variant > HOMOPHONE > Inflections
+        # Building the line from a fixed template (hwd, gram, pron, pos, chips)
+        # silently moved GRAM in front of the pronunciation, e.g.
+        # "18-wheeler [countable] /.../ noun" instead of "18-wheeler /.../ noun [countable]".
+        out = []          # children of div.ld-head, in DOM order
+        hwd_nodes = []    # the headword cluster (HWD + HYP + HOMNUM) -> one ld-hwd-wrap
+
+        def hwd_collect(node, target):
+            for ch in getattr(node, "children", []):
+                if isinstance(ch, NavigableString):
+                    text = sc_text(str(ch))
+                    if text:
+                        target.append(text)
+                elif isinstance(ch, Tag):
+                    ccls = classes_of(ch)
+                    if is_dropped(ccls):
+                        continue
+                    if "HYP" in ccls:
+                        # HYP is not always a syllable dot: 106672 are "·" but 21451 are
+                        # primary stress "ˈ" and 17903 secondary stress "ˌ". Hardcoding "·"
+                        # corrupted 27% of them (e.g. "second class" -> "·second ·class").
+                        sep = sc_text(ch.get_text("", strip=True)) or "\u00b7"
+                        # They also need different styling: a syllable dot is a grey
+                        # separator, a stress mark is part of the headword and must
+                        # inherit its colour with no padding (see generate_css).
+                        target.append(sc("span", sep,
+                                         cls="ld-hyp" if sep == "\u00b7" else "ld-stress"))
+                    elif "HOMNUM" in ccls:
+                        text = sc_text(ch.get_text("", strip=True))
+                        if text:
+                            target.append(sc("span", text, cls="ld-sup"))
+                    else:
+                        hwd_collect(ch, target)
+
+        def flush_hwd():
+            # Close the headword cluster so the next element lands after it, keeping
+            # HWD+HOMNUM adjacent (source DOM is HWD -> HOMNUM in 12612/12612 heads).
+            if not hwd_nodes:
+                return
+            if not any(isinstance(p, dict) or (isinstance(p, str) and p.strip())
+                       for p in hwd_nodes):
+                hwd_nodes.clear()
+                return
+            merged = []
+            for part in hwd_nodes:
+                if isinstance(part, dict):
+                    merged.append(part)
+                elif part.strip():
+                    if merged and isinstance(merged[-1], str) and not merged[-1].endswith(" "):
+                        merged[-1] = merged[-1] + " "
+                    merged.append(part)
+                elif merged and isinstance(merged[-1], str) and merged[-1].strip():
+                    # whitespace-only run between two text runs -> single separator;
+                    # leading whitespace and runs after an element are dropped, otherwise
+                    # the headword line gets stray gaps (e.g. "improve   /\u026am\u02c8pru\u02d0v/").
+                    if not merged[-1].endswith(" "):
+                        merged[-1] = merged[-1] + " "
+            if merged:
+                out.append(sc("span", merged, cls="ld-hwd-wrap"))
+            hwd_nodes.clear()
+
+        for child in el.children:
+            if isinstance(child, NavigableString):
+                text = sc_text(str(child))
+                if text:
+                    hwd_nodes.append(text)
+                continue
+            if not isinstance(child, Tag):
+                continue
+            cls = classes_of(child)
+            if is_dropped(cls):
+                continue
+            if "HWD" in cls:
+                parts = []
+                hwd_collect(child, parts)
+                hwd_nodes.append(sc("span", parts or [sc_text(child.get_text("", strip=True))],
+                                    cls="ld-hwd"))
+            elif "HOMNUM" in cls:
+                text = sc_text(child.get_text("", strip=True))
+                if text:
+                    # source DOM order is always HWD -> HOMNUM (12612/12612 heads),
+                    # and .HOMNUM is `vertical-align:super`, so it renders in place:
+                    # insert(0, ...) used to give "1abandon" instead of "abandon1".
+                    hwd_nodes.append(sc("span", text, cls="ld-sup"))
+            elif "Inflections" in cls:
+                flush_hwd()
+                inner = self.render_inflections(child).get("content") or []
+                if inner:
+                    out.append(sc("span", " \u00b7 ", cls="ld-sep"))
+                    out.extend(inner)
+            elif "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
+                pron_text = sc_text(child.get_text("", strip=True))
+                if pron_text:
+                    flush_hwd()
+                    pron_cls = "ld-pron-amevar" if "AMEVARPRON" in cls else "ld-pron"
+                    out.append(sc("span", pron_text, cls=pron_cls))
+            elif "lm5pp_POS" in cls:
+                # One span per source span: entries such as "the" carry two POS spans
+                # ("definite article" + ", determiner"); a single pos_text slot used to
+                # keep only the last one.
+                label = self._pick_landscape(child)
+                if label:
+                    flush_hwd()
+                    out.append(sc("span", sc_text(label).lstrip(" ,;"), cls="ld-pos"))
+            elif "GRAM" in cls:
+                label = self._pick_landscape(child)
+                if label:
+                    flush_hwd()
+                    out.append(sc("span", sc_text(label), cls="ld-gram"))
+            elif "LEVEL" in cls:
+                stars = sc_text(child.get_text("", strip=True))
+                title = strip_invisible(child.get("title") or "") or "Core vocabulary"
+                if stars:
+                    flush_hwd()
+                    out.append(sc("span", stars, cls="ld-level", title=title))
+            elif "FREQ" in cls:
+                text = sc_text(child.get_text("", strip=True))
+                title = strip_invisible(child.get("title") or "") or None
+                if text:
+                    flush_hwd()
+                    out.append(sc("span", text, cls="ld-freq", title=title))
+            elif "tooltip" in cls or "HYPHENATION" in cls:
+                # tooltip: carries no visual payload of its own (the ●●● live in LEVEL,
+                # which is matched above); HYPHENATION: syllable-split *display duplicate*
+                # of the headword, `display:none` in the original stylesheet and toggled
+                # by LM5Switch.js -- emitting it would read "abandona·ban·don".
+                pass
+            else:
+                # Any other Head child is a label chip (register / geography / field /
+                # variant / homophone / academic-word / ...). Most of them already have
+                # an entry in CHIP_MAP / INLINE_MAP -- route them through it and render
+                # as a real chip so nested entry:// links and title tooltips survive.
+                # (Before: the text was glued straight into the headword, e.g. "seeing"
+                # rendered as "see\u00b7ingspoken".)
+                chip_cls = None
+                for token in CHIP_PRIORITY:
+                    if token in cls:
+                        chip_cls = CHIP_MAP[token]
+                        break
+                if chip_cls is None:
+                    for token, (map_cls, _flags) in INLINE_MAP.items():
+                        if token in cls:
+                            chip_cls = map_cls
+                            break
+                if chip_cls:
+                    if any(isinstance(x, Tag) for x in child.children):
+                        inner = merge_adjacent_text(self._children_blocks(child))
+                    else:
+                        # text-only label (REGISTERLAB / FIELD / AC ...): skip the
+                        # full recursive render, which is what made this fix cost
+                        # ~40% extra build time in the first version.
+                        inner = [sc_text(child.get_text(" ", strip=True))]
+                    if sc_has_text(inner):
+                        flush_hwd()
+                        out.append(sc("span", inner, cls=chip_cls,
+                                      title=strip_invisible(child.get("title") or "") or None))
+                    continue
+                for c in cls:
+                    self.unknown_classes[c] += 1
+                text = sc_text(child.get_text(" ", strip=True))
+                if text:
+                    flush_hwd()
+                    out.append(text)
+        flush_hwd()
+        return sc("div", out, cls="ld-head")
+
+    def _pick_landscape(self, el):
+        land = el.find("span", class_="landscape")
+        if land is not None:
+            return land.get_text(" ", strip=True)
+        return el.get_text(" ", strip=True)
+
+    def render_inflections(self, el):
+        items = []
+        for child in el.find_all("span", recursive=True):
+            cls = classes_of(child)
+            if cls & {"PLURALFORM", "PASTTENSE", "PASTPART", "PRESPART", "T3PERSSING",
+                      "PTandPP", "PTandPPX", "PRESPARTX", "T3PERSSINGX", "FULLFORM",
+                      "COMP", "SUPERL"}:
+                text = sc_text(child.get_text(" ", strip=True)).strip("() ")
+                text = re.sub(r"\s+", " ", text)
+                for part in re.split(r"[,;]", text):
+                    part = part.strip(" ,;.")
+                    if part and part not in items:
+                        items.append(part)
+        if not items:
+            text = sc_text(el.get_text(" ", strip=True)).strip()
+            items = [text] if text else []
+        children = []
+        for idx, item in enumerate(items):
+            if idx:
+                children.append(" \u00b7 ")
+            children.append(sc("span", item, cls="ld-infl-form"))
+        return sc("span", children, cls="ld-infl")
+
+    def render_example(self, el, cls):
+        english = el.find("span", class_="english", recursive=False)
+        scope = english if english is not None else el
+        cn_blocks = [c for c in scope.find_all("div", class_="cn_txt")]
+
+        def is_in_cn(node):
+            cur = node
+            while cur is not None and cur is not scope:
+                if any(cur is b for b in cn_blocks):
+                    return True
+                cur = cur.parent
+            return False
+
+        en_nodes = []
+        for child in scope.children:
+            if isinstance(child, NavigableString):
+                if is_in_cn(child):
+                    continue
+                text = sc_text(str(child))
+                if text:
+                    en_nodes.append(text)
+                continue
+            if not isinstance(child, Tag) or is_in_cn(child):
+                continue
+            ccls = classes_of(child)
+            if is_dropped(ccls):
+                continue
+            if "EXAMPLE" in ccls:
+                en_nodes.extend(self.render_div(child, ccls))
+                continue
+            if self._has_block_child(child):
+                en_nodes.extend(self.render_element(child))
+            else:
+                en_nodes.extend(self.render_inline_node(child))
+        cn_nodes = []
+        if self.mode != "mono":
+            for cn in cn_blocks:
+                inner = merge_adjacent_text(self._children_blocks(cn))
+                if sc_has_text(inner):
+                    cn_nodes.append(sc("div", inner, cls="ld-excn", lang="zh"))
+        if "GramExa" in cls:
+            flavor = "ld-gramexa"
+        elif "ColloExa" in cls:
+            flavor = "ld-colloexa"
+        elif "GOODEXA" in cls or "GOODCOLLO" in cls:
+            flavor = "ld-ex-good"
+        elif "BADEXA" in cls or "BADCOLLO" in cls or "dont_say" in cls:
+            flavor = "ld-ex-bad"
+        else:
+            flavor = "ld-ex"
+        out = list(en_nodes) + cn_nodes
+        if not out:
+            return sc("div", [], cls="ld-empty")
+        return sc("div", out, cls=flavor)
+
+    def render_box(self, el, panel_token):
+        for junk in el.find_all(["script", "style", "input", "label", "img"]):
+            junk.decompose()
+        heading = el.find("span", class_="heading") or el.find("span", class_="lm5ppBoxHead")
+        title_en, title_zh = self._panel_title(heading, panel_token)
+        panel = el.find("div", class_="BoxPanel")
+        body = []
+        if panel is not None:
+            body = self._children_blocks(panel)
+        else:
+            for child in el.children:
+                if child is heading:
+                    continue
+                if isinstance(child, Tag):
+                    ccls = classes_of(child)
+                    if "heading" in ccls or "lm5ppBoxHead" in ccls:
+                        continue
+                    body.extend(self.render_element(child))
+        body = merge_adjacent_text(body)
+        if not sc_has_text(body):
+            return None
+        summary_children = [sc("span", title_en, cls="ld-panel-title")]
+        if title_zh and self.mode == "bilingual":
+            summary_children.append(sc("span", title_zh, cls="ld-panel-title-zh", lang="zh"))
+        details = sc(
+            "details",
+            [sc("summary", summary_children, cls="ld-panel-sum"),
+             sc("div", body, cls="ld-panel-body")],
+            cls="ld-panel",
+        )
+        if self.open_panels:
+            details["open"] = True
+        return details
+
+    def _panel_title(self, heading, panel_token):
+        raw = ""
+        if heading is not None:
+            clone = BeautifulSoup(str(heading), "html.parser").find("span")
+            for junk in clone.find_all("span", class_="foldsign"):
+                junk.extract()
+            cn_part = clone.find("span", class_="cn_txt")
+            cn_text = None
+            if cn_part is not None:
+                cn_text = collapse_ws(cn_part.get_text(" ", strip=True))
+                cn_part.extract()
+            raw = collapse_ws(clone.get_text(" ", strip=True))
+            if cn_text:
+                key = raw.casefold().strip(" :：.。")
+                got = PANEL_TITLES_ZH.get(key)
+                en = got[0] if got else (raw or "Note")
+                return en, cn_text
+        key = raw.casefold().strip(" :：.。")
+        got = PANEL_TITLES_ZH.get(key)
+        if got:
+            return got if self.mode == "bilingual" else (got[0], None)
+        if raw:
+            return raw, None
+        got = PANEL_FALLBACK_TITLES.get(panel_token)
+        if got:
+            return got if self.mode == "bilingual" else (got[0], None)
+        return "Note", None
+
+    def render_asset(self, el, cls):
+        header_type = cls - {"asset", "div"}
+        nxt = el.next_sibling
+        bodies = []
+        while nxt is not None:
+            if isinstance(nxt, Tag):
+                if "assetlink" in classes_of(nxt):
+                    bodies.append(nxt)
+                    nxt = nxt.next_sibling
+                    continue
+                if nxt.get_text(strip=True):
+                    break
+            nxt = nxt.next_sibling
+        if bodies:
+            result = self.render_assetlink(bodies, classes_of(bodies[0]), header_type, header=el)
+            for b in bodies:
+                b.extract()  # consumed: stop the parent walker re-rendering them
+            return result
+        return []
+
+    def render_assetlink(self, els, cls, header_type=None, header=None):
+        if not isinstance(els, list):
+            els = [els]
+        for el in els:
+            for junk in el.find_all(["script", "style", "img", "input", "label"]):
+                junk.decompose()
+        intro = None
+        if header is not None:
+            span = header.find("span", class_="asset_intro")
+            if span is not None:
+                intro = collapse_ws(span.get_text(" ", strip=True))
+        types = set(header_type or ()) | (cls - {"assetlink", "div"})
+        joined = " ".join(sorted(t.casefold() for t in types))
+        title_en = title_zh = None
+        if intro:
+            got = PANEL_TITLES_ZH.get(intro.casefold().rstrip(":：").strip())
+            if got:
+                title_en, title_zh = got
+            else:
+                title_en = intro
+        if title_en is None:
+            if "bussdict" in joined:
+                title_en, title_zh = "Business Dictionary", "商务英语"
+            elif "corpus" in joined:
+                title_en, title_zh = "Corpus examples", "语料库例句"
+            elif "encyc" in joined:
+                title_en, title_zh = "Encyclopedia", "百科"
+            elif "online" in joined:
+                title_en, title_zh = "LDOCE Online", "在线增补"
+            else:
+                title_en, title_zh = "Extra content", "补充内容"
+        if self.mode == "mono":
+            title_zh = None
+        groups = []
+        orphan = False
+        for el in els:
+            sub = el.find_all("span", class_="exaGroup", recursive=False)
+            if not sub:
+                orphan = True
+                continue
+            for group in sub:
+                node = self.render_exa_group(group)
+                if node:
+                    groups.append(node)
+        if orphan:
+            for el in els:
+                inner = merge_adjacent_text(self._children_blocks(el))
+                if sc_has_text(inner):
+                    groups.append(sc("div", inner, cls="ld-exagroup"))
+        if not groups:
+            return []
+        summary = [sc("span", title_en, cls="ld-panel-title")]
+        if title_zh:
+            summary.append(sc("span", title_zh, cls="ld-panel-title-zh", lang="zh"))
+        details = sc(
+            "details",
+            [sc("summary", summary, cls="ld-panel-sum"),
+             sc("div", groups, cls="ld-panel-body")],
+            cls="ld-panel-corpus",
+        )
+        if self.open_panels:
+            details["open"] = True
+        return [details]
+
+    def render_exa_group(self, group):
+        nodes = []
+        title = group.find("span", class_="title", recursive=False)
+        if title is not None:
+            text = sc_text(title.get_text(" ", strip=True))
+            if text:
+                nodes.append(sc("div", [text], cls="ld-exagroup-title"))
+        items = []
+        for exa in group.find_all("span", class_="exa", recursive=False):
+            body = merge_adjacent_text(self._children_blocks(exa))
+            if not sc_has_text(body):
+                continue
+            strip_leading_bullet(body)
+            kind = (exa.get("type") or "").strip().lower()
+            if kind not in ("corpus", "dics", "encyc", "online", "phrases"):
+                kind = ""
+            cls = "ld-corpexa-" + kind if kind else "ld-corpexa"
+            items.append(sc("li", body, cls=cls))
+        if items:
+            nodes.append(sc("ul", items, cls="ld-corpulist"))
+        if not nodes:
+            return None
+        return sc("div", nodes, cls="ld-exagroup")
+
+    def render_wordfams(self, el):
+        fam = el.find("span", class_="LDOCE_word_family")
+        if fam is None:
+            return None
+        children = []
+        current_group = None
+        for child in fam.children:
+            if not isinstance(child, Tag):
+                continue
+            cls = classes_of(child)
+            if "pos" in cls:
+                label = sc_text(child.get_text(" ", strip=True))
+                current_group = sc("div", [sc("span", label, cls="ld-wf-pos")], cls="ld-wf-group")
+                children.append(current_group)
+                continue
+            node = None
+            if "rootword" in cls:
+                text = sc_text(child.get("title") or child.get_text(" ", strip=True))
+                if text:
+                    node = sc("span", text, cls="ld-wf-root")
+            elif "crossRef" in cls:
+                rendered = self.render_inline_node(child)
+                if rendered:
+                    node = rendered[0] if len(rendered) == 1 else sc("span", rendered,
+                                                                     cls="ld-wf-word")
+            elif "w" in cls:
+                text = sc_text(child.get("title") or child.get_text(" ", strip=True))
+                if text:
+                    node = sc("span", text, cls="ld-wf-word")
+            if node is None:
+                continue
+            if current_group is None:
+                current_group = sc("div", [], cls="ld-wf-group")
+                children.append(current_group)
+            group_content = current_group.setdefault("content", [])
+            if group_content:
+                group_content.append(" ")
+            group_content.append(node)
+        body = [g for g in children if g.get("content")]
+        if not body:
+            return None
+        summary = [sc("span", "Word family", cls="ld-panel-title")]
+        if self.mode == "bilingual":
+            summary.append(sc("span", "词族", cls="ld-panel-title-zh", lang="zh"))
+        details = sc(
+            "details",
+            [sc("summary", summary, cls="ld-panel-sum"),
+             sc("div", body, cls="ld-panel-body")],
+            cls="ld-panel-wf",
+        )
+        if self.open_panels:
+            details["open"] = True
+        return details
+
+    def render_etym(self, el):
+        nodes = []
+        for child in el.children:
+            if isinstance(child, NavigableString):
+                text = sc_text(str(child))
+                if text:
+                    nodes.append(text)
+                continue
+            if not isinstance(child, Tag):
+                continue
+            cls = classes_of(child)
+            if is_dropped(cls) or "asset_intro" in cls or "Head" in cls:
+                continue
+            if "Sense" in cls:
+                for inner_el in child.children:
+                    if isinstance(inner_el, Tag):
+                        nodes.extend(self.render_element(inner_el))
+                    elif isinstance(inner_el, NavigableString):
+                        text = sc_text(str(inner_el))
+                        if text:
+                            nodes.append(text)
+                continue
+            nodes.extend(self.render_element(child))
+        nodes = merge_adjacent_text(nodes)
+        if not sc_has_text(nodes):
+            return None
+        summary = [sc("span", "Word origin", cls="ld-panel-title")]
+        if self.mode == "bilingual":
+            summary.append(sc("span", "词源", cls="ld-panel-title-zh", lang="zh"))
+        details = sc(
+            "details",
+            [sc("summary", summary, cls="ld-panel-sum"),
+             sc("div", nodes, cls="ld-panel-body")],
+            cls="ld-panel-etym",
+        )
+        if self.open_panels:
+            details["open"] = True
+        return details
+
+    # -- inline -------------------------------------------------------------
+
+    def render_inline_node(self, el):
+        cls = classes_of(el)
+        if is_dropped(cls) or el.name in DROP_TAGS:
+            return []
+        if "Head" in cls:
+            return [self.render_head(el)]
+        if "Inflections" in cls:
+            return [self.render_inflections(el)]
+        if "portrait" in cls:
+            parent = el.parent
+            has_landscape = parent is not None and any(
+                isinstance(s, Tag) and "landscape" in classes_of(s) for s in parent.children
+            )
+            if has_landscape:
+                return []
+        if el.name == "br":
+            return [sc("br")]
+        if el.name == "img":
+            return []
+        if el.name in ("b", "strong"):
+            inner = self._children_blocks(el)
+            return [sc("span", inner, style={"fontWeight": "bold"})] if inner else []
+        if el.name in ("i", "em"):
+            inner = self._children_blocks(el)
+            return [sc("span", inner, style={"fontStyle": "italic"})] if inner else []
+        if el.name == "u":
+            inner = self._children_blocks(el)
+            return [sc("span", inner, style={"textDecorationLine": "underline"})] \
+                if inner else []
+        if el.name == "sup":
+            inner = self._children_blocks(el)
+            return [sc("span", inner, style={"verticalAlign": "super",
+                                             "fontSize": "smaller"})] if inner else []
+        if el.name == "sub":
+            inner = self._children_blocks(el)
+            return [sc("span", inner, style={"verticalAlign": "sub",
+                                             "fontSize": "smaller"})] if inner else []
+        if self._has_block_child(el):
+            if "Head" in cls:
+                return [self.render_head(el)]
+            if "Inflections" in cls:
+                return [self.render_inflections(el)]
+            return self._children_blocks(el)
+        if el.name == "a":
+            return self.render_link(el, cls)
+        if "DEF" in cls:
+            return self.render_def(el)
+        if "cn_txt" in cls or "cn_txt_ext" in cls:
+            if self.mode == "mono":
+                return []
+            inner = self._children_blocks(el)
+            return [sc("span", inner, cls="ld-zh", lang="zh")] if sc_has_text(inner) else []
+        if "HYP" in cls:
+            # Same split as render_head's hwd_collect: HYP may hold a syllable dot
+            # or a stress mark, and they need different styling. (Was mapped
+            # unconditionally to ld-hyp in INLINE_MAP.)
+            sep = sc_text(el.get_text("", strip=True)) or "\u00b7"
+            return [sc("span", sep, cls="ld-hyp" if sep == "\u00b7" else "ld-stress")]
+        chip = None
+        for token in CHIP_PRIORITY:
+            if token in cls:
+                chip = CHIP_MAP[token]
+                break
+        if chip:
+            inner = self._children_blocks(el)
+            if not sc_has_text(inner):
+                return []
+            lang = "zh" if chip == "ld-actcn" else None
+            title = strip_invisible(el.get("title") or "") or None
+            return [sc("span", inner, cls=chip, lang=lang, title=title)]
+        for token, (map_cls, flags) in INLINE_MAP.items():
+            if token in cls:
+                inner = self._children_blocks(el)
+                if not sc_has_text(inner):
+                    return []
+                lang = "zh" if flags.get("zh") else None
+                title = strip_invisible(el.get("title") or "") or None
+                return [sc("span", inner, cls=map_cls, lang=lang, title=title)]
+        if cls & UNWRAP_CLASSES:
+            return self._children_blocks(el)
+        if el.name in ("span", "font"):
+            for c in cls:
+                self.unknown_classes[c] += 1
+            inner = self._children_blocks(el)
+            if not sc_has_text(inner):
+                return []
+            style = {}
+            raw_style = (el.get("style") or "").lower()
+            if "italic" in raw_style:
+                style["fontStyle"] = "italic"
+            if "bold" in raw_style:
+                style["fontWeight"] = "bold"
+            return [sc("span", inner, style=style or None)]
+        for c in cls:
+            self.unknown_classes[c] += 1
+        return self._children_blocks(el)
+
+    def render_link(self, el, cls):
+        href = (el.get("href") or "").strip()
+        if re.search(r"topic-full/?$", href, re.IGNORECASE):
+            return []  # "Show entries from Topic: X" UI junk
+        if not href or href.startswith("#") or re.match(
+                r"^(sound|javascript|media|pic|rel:|/|https?:)", href, re.IGNORECASE):
+            return self._children_blocks(el) if el.get_text(strip=True) else []
+        target = clean_target(entry_target_from_href(href, el.get("title")))
+        inner = merge_adjacent_text(self._children_blocks(el))
+        if not sc_has_text(inner):
+            return []
+        if (target or "").upper().startswith("ACTIV:") or "ACTIV" in cls or "cn_topic" in cls:
+            text = sc_text(el.get_text("", strip=True))
+            chip = "ld-actcn" if "cn_topic" in cls else "ld-act"
+            return [sc("span", text, cls=chip)] if text else []
+        resolved = self.terms.resolve(target)
+        if resolved:
+            self.stats["links_live"] += 1
+            return [sc("a", inner, href=f"?query={quote(resolved, safe='')}&wildcards=off")]
+        self.stats["links_dead"] += 1
+        if "defRef" in cls or "crossRef" in cls or "Thesref" in cls:
+            return [sc("span", inner, cls="ld-xref-dead")]
+        return inner
+
+    def render_def(self, el):
+        cn_nodes = {id(c) for c in el.find_all(["span", "div"], class_="cn_txt")}
+        has_cn = bool(cn_nodes)
+
+        def text_outside(node):
+            if not isinstance(node, NavigableString):
+                return False
+            if not sc_text(str(node)).strip():
+                return False
+            cur = node.parent
+            while cur is not None and cur is not el:
+                if id(cur) in cn_nodes:
+                    return False
+                cur = cur.parent
+            return True
+
+        cn_only = False
+        cn_el = None
+        if has_cn and not any(text_outside(d) for d in el.descendants):
+            cn_only = True
+            cn_el = el.find(["span", "div"], class_="cn_txt")
+        if cn_only and self.mode == "mono":
+            return []
+        if cn_only:
+            inner = merge_adjacent_text(self._children_blocks(cn_el))
+        else:
+            inner = merge_adjacent_text(self._children_blocks(el))
+        if not sc_has_text(inner):
+            return []
+        return [sc("div", inner, cls="ld-defcn" if cn_only else "ld-def",
+                   lang="zh" if cn_only else None)]
+
+    # -- record ------------------------------------------------------------
+
+    def render_record(self, key, content):
+        self.current_key = key
+        soup = BeautifulSoup(content, HTML_PARSER)
+        root = (soup.find("div", class_="entry_content")
+                or soup.find("span", class_="lm5ppbody")
+                or soup)
+        nodes = self._children_blocks(root)
+        return merge_adjacent_text(nodes)
+
+# ---------------------------------------------------------------------------
+# CSS (all hooks via data-sc-class; every emitted class gets a rule)
+# ---------------------------------------------------------------------------
+
+
+def generate_css():
+    return """/* LDOCE5++ Yomitan styles - generated by ldoce2yomitan v""" + VERSION + """ */
+.gloss-sc { white-space: pre-wrap; }
+.gloss-sc--structured-content { white-space: normal; }
+
+/* ==========================================================================
+   THEME CONTRACT
+   Yomitan switches themes on <html> itself (css/display.css):
+       :root                   --background-color:#ffffff  --text-color:#000000
+       :root[data-theme=dark]  --background-color:#1e1e1e  --text-color:#d4d4d4
+   Two traps, both verified in a real browser (see TYPOGRAPHY.md):
+
+   1. The theme is NOT driven by the operating system. Keying the dark palette
+      off `prefers-color-scheme` made two of the four combinations unreadable:
+          Yomitan dark  + OS light -> #202124 text on #1e1e1e  (1.02:1)
+          Yomitan light + OS dark  -> #dadce0 text on #ffffff  (1.39:1)
+
+   2. You cannot select on the theme from here. Yomitan wraps this whole file
+      with addScopeToCss() (display.js: `[data-dictionary="..."] { ... }`), so a
+      nested `:root[data-theme=dark] ...` becomes `& :root[data-theme=dark] ...`
+      -- a DESCENDANT selector that can never match, silently killing every
+      dark override. (Measured: the headword stayed #1c1e21 on #1e1e1e.)
+
+   So the palette does not branch on the theme at all. It is DERIVED from the
+   inherited Yomitan text colour, which already switches with the theme:
+     - neutrals  = the text colour at reduced alpha (composites over any bg)
+     - accents   = a mid-tone hue mixed 68% with the text colour, which darkens
+                   it on a light theme and lightens it on a dark one
+   Measured contrast (light/dark), nested exactly as Yomitan does it:
+     head 21/11 | zh 6.4/6.5 | pos 7.0/6.0 | snum 6.3/6.4 | register 6.5/6.3
+     field 6.9/6.2 | geo 7.5/5.7 | warn 7.3/5.6 | level 6.2/6.6 | link 6.5/6.3
+   If color-mix() is unsupported the declaration is dropped and the element
+   falls back to the inherited text colour -- degraded, never unreadable.
+   ========================================================================== */
+[data-sc-class="ld"] {
+  /* accents: mid-tone hue blended with the inherited text colour */
+  --ld-link:  color-mix(in srgb, #3b8ee0 68%, var(--text-color, currentColor) 32%);
+  --ld-pos:   color-mix(in srgb, #3f86d6 68%, var(--text-color, currentColor) 32%);
+  --ld-frame: color-mix(in srgb, #22a06b 68%, var(--text-color, currentColor) 32%);
+  --ld-zh:    color-mix(in srgb, #a274e8 68%, var(--text-color, currentColor) 32%);
+  --ld-reg:   color-mix(in srgb, #cc7233 68%, var(--text-color, currentColor) 32%);
+  --ld-field: color-mix(in srgb, #7f8c2f 68%, var(--text-color, currentColor) 32%);
+  --ld-geo:   color-mix(in srgb, #9163e6 68%, var(--text-color, currentColor) 32%);
+  --ld-warn:  color-mix(in srgb, #e0503f 68%, var(--text-color, currentColor) 32%);
+  --ld-level: color-mix(in srgb, #b8860b 68%, var(--text-color, currentColor) 32%);
+  /* neutrals: the text colour at reduced alpha */
+  --ld-text2: color-mix(in srgb, var(--text-color, currentColor) 88%, transparent);
+  --ld-dim:   color-mix(in srgb, var(--text-color, currentColor) 70%, transparent);
+  --ld-faint: color-mix(in srgb, var(--text-color, currentColor) 55%, transparent);
+  /* headword is plain theme text -- never a fixed colour */
+  --ld-head:  var(--text-color, currentColor);
+  /* metrics */
+  --ld-chip-gap:.3em; --ld-chip-size:.8em; --ld-gutter:1.9em; --ld-gutter-sub:1.6em;
+  display:block; line-height:1.5; font-size:1em; color:var(--text-color,#202124);
+}
+
+[data-sc-class="ld-entry"] { display:block; }
+[data-sc-class="ld-entry"] + [data-sc-class="ld-entry"] { border-top:1px solid rgba(128,128,128,.3); margin-top:8px; padding-top:8px; }
+[data-sc-class="ld-empty"] { display:none; }
+
+/* ---- headword ---------------------------------------------------------- */
+[data-sc-class="ld-head"] { display:block; margin:2px 0 6px; }
+[data-sc-class="ld-hwd-wrap"] { font-size:1.28em; font-weight:700; color:var(--ld-head); }
+[data-sc-class="ld-hwd"] { font:inherit; color:inherit; }
+[data-sc-class="ld-hyp"] { color:var(--ld-faint); padding:0 1px; }
+/* Stress marks (ˈ ˌ) share the HYP element with syllable dots. They used to be
+   emitted with class ld-hyp, so 19,676 of them rendered grey and got 1px of
+   padding on each side -- splitting the mark from the syllable it belongs to.
+   They are part of the headword, so they must inherit its colour, unpadded. */
+[data-sc-class="ld-stress"] { color:inherit; }
+[data-sc-class="ld-sup"] { font-size:.68em; vertical-align:super; color:var(--ld-reg); font-weight:700; }
+[data-sc-class="ld-pron"], [data-sc-class="ld-pronblk"], [data-sc-class="ld-pron-amevar"] { font-size:.92em; color:var(--ld-text2); margin-left:.45em; }
+[data-sc-class="ld-pronblk"] { display:inline; }
+[data-sc-class="ld-pron-amevar"] { color:var(--ld-dim); }
+[data-sc-class="ld-pos"] { font-size:.88em; font-style:italic; color:var(--ld-pos); margin-left:.45em; font-weight:600; }
+[data-sc-class="ld-level"] { color:var(--ld-level); margin-left:.5em; font-size:.85em; letter-spacing:1px; }
+[data-sc-class="ld-sep"] { color:var(--ld-faint); margin:0 .35em; }
+[data-sc-class="ld-infl"] { font-size:.85em; color:var(--ld-text2); }
+[data-sc-class="ld-infl-form"] { white-space:nowrap; }
+[data-sc-class="ld-infl-lab"] { font-style:italic; opacity:.75; }
+
+/* ---- chips -------------------------------------------------------------
+   One shared frame; each chip only supplies its own colour. color-mix ties the
+   tint and border to currentColor, so a chip adapts to both themes without a
+   second set of background/border rules. */
+[data-sc-class="ld-freq"], [data-sc-class="ld-gram"], [data-sc-class="ld-geo"],
+[data-sc-class="ld-register"], [data-sc-class="ld-act"], [data-sc-class="ld-synmark"] {
+  display:inline-block; font-size:var(--ld-chip-size); font-weight:600; line-height:1.35;
+  border-radius:4px; padding:0 5px; margin:0 var(--ld-chip-gap) 0 0; vertical-align:baseline;
+  border:1px solid color-mix(in srgb, currentColor 38%, transparent);
+  background:color-mix(in srgb, currentColor 10%, transparent);
+}
+[data-sc-class="ld-freq"] { font-size:.72em; color:var(--ld-pos); font-variant-numeric:tabular-nums; }
+[data-sc-class="ld-gram"] { color:var(--ld-pos); }
+[data-sc-class="ld-geo"] { color:var(--ld-geo); }
+[data-sc-class="ld-register"] { color:var(--ld-reg); }
+[data-sc-class="ld-act"] { color:var(--ld-frame); font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+[data-sc-class="ld-synmark"] { font-size:.72em; color:var(--ld-reg); font-weight:700; }
+[data-sc-class="ld-actcn"] { font-size:.8em; color:var(--ld-frame); margin-left:var(--ld-chip-gap); }
+[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-signpost"] { display:inline-block; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
+
+/* ---- senses ------------------------------------------------------------
+   ld-sense-n is emitted TOGETHER with ld-sense when the sense actually carries
+   a number, so the 1.9em gutter (into which ld-snum hangs) is reserved only
+   when there is something to put in it -- 49% of senses have no number, and the
+   empty gutter wasted ~5% of the popup width on every one of them.
+   `~=` is required because that class value is then multi-token. */
+[data-sc-class~="ld-sense"], [data-sc-class~="ld-sense-cross"], [data-sc-class~="ld-sense-merge"] { display:block; margin:0 0 7px; }
+[data-sc-class~="ld-sense-n"] { padding-left:var(--ld-gutter); }
+[data-sc-class="ld-subsense"] { display:block; margin:2px 0 3px; padding-left:1.6em; }
+[data-sc-class="ld-runon"] { display:block; margin:2px 0 4px; padding-left:var(--ld-gutter); color:var(--ld-text2); }
+[data-sc-class="ld-phrventry"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-frame) 45%, transparent); margin:6px 0; padding:2px 0 2px .7em; }
+[data-sc-class="ld-snum"] { display:inline-block; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
+/* 5,742 subsenses DO carry a number. Their own indent (1.6em) is smaller than
+   the sense gutter (1.9em), so an unscoped ld-snum would hang 0.3em past the
+   subsense box and land on the parent definition text. Scope the hang. */
+[data-sc-class="ld-subsense"] [data-sc-class="ld-snum"] { margin-left:calc(-1 * var(--ld-gutter-sub)); }
+
+/* ---- definitions and translations -------------------------------------- */
+[data-sc-class="ld-def"] { display:block; margin:1px 0; font-size:1.02em; font-weight:500; }
+[data-sc-class="ld-defcn"] { display:block; margin:1px 0 3px; font-weight:600; color:var(--ld-zh); }
+[data-sc-class="ld-zh"] { color:var(--ld-zh); }
+[data-sc-class="ld-en"] { color:inherit; font-weight:600; }
+[data-sc-class="ld-gloss"] { color:var(--ld-dim); font-size:.95em; }
+[data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame); }
+
+/* ---- examples ---------------------------------------------------------- */
+[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px; padding-left:1.6em; text-indent:-1.6em; color:var(--ld-text2); font-size:.97em; }
+[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; }
+[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh); font-size:.95em; margin-bottom:2px; }
+[data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
+[data-sc-class="ld-hint"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); background:color-mix(in srgb, var(--ld-level) 8%, transparent); padding:3px 8px; margin:4px 0; }
+[data-sc-class="ld-hint-inline"] { color:var(--ld-level); font-style:italic; }
+[data-sc-class="ld-dontsay"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-warn) 60%, transparent); background:color-mix(in srgb, var(--ld-warn) 7%, transparent); padding:3px 8px; margin:4px 0; }
+[data-sc-class="ld-warn"] { display:block; color:var(--ld-warn); }
+[data-sc-class="ld-good-word"] { font-weight:700; color:var(--ld-frame); }
+[data-sc-class="ld-bad-word"] { font-weight:700; color:var(--ld-warn); text-decoration:line-through; }
+[data-sc-class="ld-collo-range"] { color:var(--ld-dim); font-style:italic; }
+
+/* ---- cross references -------------------------------------------------- */
+[data-sc-class="ld-xref"], [data-sc-class="ld-xref-dead"] { font-weight:600; }
+[data-sc-class="ld-xref-dead"] { color:var(--ld-dim); text-decoration:underline dotted; }
+[data-sc-class="ld-crossref"] { display:block; margin:2px 0 4px; color:var(--ld-text2); font-size:.96em; }
+[data-sc-class="ld-syn"], [data-sc-class="ld-homophone"] { display:block; margin:2px 0; font-size:.96em; color:var(--ld-text2); }
+[data-sc-class="ld-xrtype"] { font-style:italic; color:var(--ld-dim); font-size:.9em; margin-right:.25em; }
+[data-sc-class="ld-refhwd"] { font-weight:700; color:var(--ld-head); }
+[data-sc-class="ld-deriv"] { font-weight:700; }
+[data-sc-class="ld-lexvar"] { font-style:italic; }
+[data-sc-class="ld-equiv"] { font-weight:600; color:var(--ld-text2); }
+[data-sc-class="ld-thesref"] { font-weight:700; color:var(--ld-frame); }
+[data-sc-class="ld-relatedwd"] { font-weight:600; }
+[data-sc-class="ld-abbr"] { font-weight:600; }
+[data-sc-class="ld-num"] { display:inline-block; min-width:1.2em; text-align:center; color:var(--ld-faint); }
+
+/* ---- collocations / thesaurus / grammar -------------------------------- */
+[data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { font-weight:700; color:var(--ld-head); }
+[data-sc-class="ld-colloin"] { font-weight:600; }
+[data-sc-class="ld-nodew"] { font-weight:600; color:var(--ld-pos); }
+[data-sc-class="ld-b"] { font-weight:700; }
+[data-sc-class="ld-it"] { font-style:italic; }
+[data-sc-class="ld-collocate"] { display:block; margin:3px 0; padding-left:.4em; }
+[data-sc-class="ld-exponent"] { display:block; margin:4px 0; padding-left:.4em; }
+[data-sc-class="ld-section"] { display:block; margin:4px 0 2px; }
+[data-sc-class="ld-psub"], [data-sc-class="ld-phead"] { display:block; font-weight:800; color:var(--ld-frame); margin:4px 0 2px; }
+[data-sc-class="ld-expl"] { display:block; margin:3px 0; }
+[data-sc-class="ld-expr"] { font-weight:700; }
+[data-sc-class="ld-spokensect"] { display:block; margin:6px 0; }
+[data-sc-class="ld-obj"] { font-style:italic; }
+[data-sc-class="ld-para"] { display:block; margin:2px 0; }
+/* Reserved: no construct in LDOCE5++ emits these, but other LM5pp dictionaries
+   (e.g. LDOCE6) may. Do not delete without checking a reskin target.
+   ld-block, ld-frequency, ld-xref, ld-table, ld-td, ld-th, ld-panel-boxbody,
+   ld-corpexa-encyc, ld-corpexa-online, ld-corpexa-phrases, ld-sense-merge,
+   ld-actcn, ld-hint-inline */
+[data-sc-class="ld-block"] { display:block; }
+[data-sc-class="ld-frequency"] { display:block; padding:4px; }
+[data-sc-class="ld-table"] { border-collapse:collapse; margin:4px 0; width:auto; }
+[data-sc-class="ld-td"], [data-sc-class="ld-th"] { border:1px solid color-mix(in srgb, var(--ld-dim) 45%, transparent); padding:2px 6px; font-size:.95em; text-align:left; }
+[data-sc-class="ld-th"] { background:color-mix(in srgb, var(--ld-frame) 10%, transparent); font-weight:700; }
+
+/* ---- panels ------------------------------------------------------------ */
+[data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"], [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"] { display:block; margin:5px 0 6px; }
+[data-sc-class="ld-panel-sum"] { cursor:pointer; font-weight:700; color:var(--ld-head); list-style:none; padding:1px 0 1px 1.1em; position:relative; user-select:none; }
+[data-sc-class="ld-panel-sum"]::-webkit-details-marker { display:none; }
+[data-sc-class="ld-panel-sum"]::before { content:""; position:absolute; left:0; top:50%; border-top:.32em solid transparent; border-bottom:.32em solid transparent; border-left:.48em solid var(--ld-frame); transform:translateY(-50%); transition:transform .12s; }
+[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"]::before { transform:translateY(-50%) rotate(90deg); }
+[data-sc-class="ld-panel-title"] { color:var(--ld-frame); }
+[data-sc-class="ld-panel-title-zh"] { margin-left:.5em; font-size:.85em; color:var(--ld-zh); font-weight:600; }
+[data-sc-class="ld-panel-body"] { border-left:3px solid color-mix(in srgb, var(--ld-frame) 40%, transparent); background:color-mix(in srgb, var(--ld-frame) 6%, transparent); border-radius:0 4px 4px 0; padding:4px 8px; margin-top:3px; }
+[data-sc-class="ld-panel-boxbody"] { display:block; }
+[data-sc-class="ld-panel-corpus"] > [data-sc-class="ld-panel-body"] { background:color-mix(in srgb, var(--ld-pos) 6%, transparent); border-left-color:color-mix(in srgb, var(--ld-pos) 40%, transparent); }
+[data-sc-class="ld-panel-etym"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-reg); }
+[data-sc-class="ld-panel-wf"] > [data-sc-class="ld-panel-body"] { display:flex; flex-direction:column; gap:2px; }
+[data-sc-class="ld-wf-group"] { display:block; }
+[data-sc-class="ld-wf-pos"] { font-style:italic; font-weight:700; color:var(--ld-pos); margin-right:var(--ld-chip-gap); font-size:.9em; }
+[data-sc-class="ld-wf-word"] { font-weight:600; }
+[data-sc-class="ld-wf-root"] { color:var(--ld-dim); border-bottom:1px dotted color-mix(in srgb, currentColor 60%, transparent); }
+
+/* ---- corpus list ------------------------------------------------------- */
+[data-sc-class="ld-exagroup"] { display:block; margin:3px 0; }
+[data-sc-class="ld-exagroup-title"] { font-weight:700; color:var(--ld-frame); margin-bottom:2px; }
+[data-sc-class="ld-corpulist"] { list-style:none; margin:0 0 4px; padding:0; }
+[data-sc-class="ld-corpexa"], [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"], [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"], [data-sc-class="ld-corpexa-phrases"] { display:list-item; padding-left:1.2em; text-indent:-1.2em; margin:1px 0; font-size:.96em; color:var(--ld-text2); }
+[data-sc-class="ld-corpexa"]::before, [data-sc-class="ld-corpexa-corpus"]::before, [data-sc-class="ld-corpexa-dics"]::before, [data-sc-class="ld-corpexa-encyc"]::before, [data-sc-class="ld-corpexa-online"]::before, [data-sc-class="ld-corpexa-phrases"]::before { content:"\\2022\\00a0 "; color:var(--ld-faint); }
+
+/* ---- lists ------------------------------------------------------------- */
+[data-sc-class="ld-list"] { margin:2px 0 4px 1.4em; padding:0; }
+
+/* ---- etymology --------------------------------------------------------- */
+[data-sc-class="ld-origin"] { font-style:italic; font-weight:600; }
+[data-sc-class="ld-century"] { color:var(--ld-dim); font-size:.9em; }
+[data-sc-class="ld-tran"] { font-style:italic; color:var(--ld-text2); }
+[data-sc-class="ld-lang"] { font-style:italic; font-weight:600; color:var(--ld-pos); }
+
+/* ---- links ------------------------------------------------------------- */
+[data-sc-class="ld"] a { color:var(--ld-link); font-weight:600; text-decoration:none; }
+[data-sc-class="ld"] a:hover { text-decoration:underline; }
+
+/* ---- topics / misc ----------------------------------------------------- */
+[data-sc-class="ld-topics"], [data-sc-class="ld-topics-body"] { display:block; margin:4px 0; }
+"""
+
+
+# ---------------------------------------------------------------------------
+# Tag bank
+# ---------------------------------------------------------------------------
+
+TAG_NOTES_ZH = {
+    "noun": "名词", "verb": "动词", "adj": "形容词", "adv": "副词", "pron": "代词",
+    "prep": "介词", "conj": "连词", "excl": "感叹词", "det": "限定词", "num": "数词",
+    "modal": "情态动词", "aux": "助动词", "linking-v": "连系动词", "phrasal-v": "短语动词",
+    "prefix": "前缀", "suffix": "后缀", "combining-form": "组合形式", "abbr": "缩写",
+    "symb": "符号", "idiom": "习语", "def-article": "定冠词", "indef-article": "不定冠词",
+    "ordinal-num": "序数词", "inf-marker": "不定式标记", "short-form": "缩略形式",
+    "redirect": "重定向条目", "non-lemma": "词形变化/别名",
+    "S1": "口语最高频词", "S2": "口语高频词", "S3": "口语常用词",
+    "W1": "书面最高频词", "W2": "书面高频词", "W3": "书面常用词",
+}
+TAG_NOTES_EN = {
+    "noun": "Noun", "verb": "Verb", "adj": "Adjective", "adv": "Adverb",
+    "pron": "Pronoun", "prep": "Preposition", "conj": "Conjunction",
+    "excl": "Exclamation", "det": "Determiner", "num": "Number",
+    "modal": "Modal Verb", "aux": "Auxiliary Verb", "linking-v": "Linking Verb",
+    "phrasal-v": "Phrasal Verb", "prefix": "Prefix", "suffix": "Suffix",
+    "combining-form": "Combining Form", "abbr": "Abbreviation", "symb": "Symbol",
+    "idiom": "Idiom", "def-article": "Definite Article",
+    "indef-article": "Indefinite Article", "ordinal-num": "Ordinal Number",
+    "inf-marker": "Infinitive Marker", "short-form": "Short Form",
+    "redirect": "Redirect entry", "non-lemma": "Non-lemma form",
+    "S1": "Spoken frequency S1", "S2": "Spoken frequency S2", "S3": "Spoken frequency S3",
+    "W1": "Written frequency W1", "W2": "Written frequency W2", "W3": "Written frequency W3",
+}
+
+
+def build_tag_bank(ui_zh):
+    notes = TAG_NOTES_ZH if ui_zh else TAG_NOTES_EN
+    tags = []
+    seen = set()
+    order = 1
+    for name in POS_TAG_MAP.values():
+        if name in seen:
+            continue
+        seen.add(name)
+        tags.append([name, "partOfSpeech", order, notes.get(name, name), 0])
+        order += 1
+    order = 30
+    for s in ("S1", "S2", "S3", "W1", "W2", "W3"):
+        tags.append([s, "frequency", order, notes.get(s, s), 0])
+        order += 1
+    tags.append(["redirect", "search", -5, notes["redirect"], 0])
+    tags.append(["non-lemma", "partOfSpeech", 100, notes["non-lemma"], 0])
+    return tags
+
+
+# ---------------------------------------------------------------------------
+# Entry-level tag extraction (cheap regex scan, no full DOM)
+# ---------------------------------------------------------------------------
+
+# Attribute order is NOT fixed in the source: the real markup is
+#   <span class="FREQ" title="Top 1000 spoken words">S1
+# so requiring `">` immediately after the class value matched 0 of the 32195 FREQ
+# spans -> S1-S3/W1-W3 never reached definitionTags and the six `frequency` tags
+# declared in the tag bank were dead declarations (REVIEW.md D7).
+POS_SCAN_RE = re.compile(r'<span[^>]*\bclass="[^"]*\blm5pp_POS\b[^"]*"[^>]*>(.*?)</span>', re.S)
+FREQ_SCAN_RE = re.compile(r'<span[^>]*\bclass="[^"]*\bFREQ\b[^"]*"[^>]*>\s*([SW][123])(?![0-9])')
+
+
+def extract_tags(content):
+    pos_tokens = POS_SCAN_RE.findall(content)
+    freq_tokens = FREQ_SCAN_RE.findall(content)
+    return pos_tokens, freq_tokens
+
+
+def pos_tags_rules(pos_tokens, freq_tokens):
+    tags = []
+    rules = []
+    for token in pos_tokens:
+        text = re.sub(r"<[^>]+>", " ", token)
+        text = strip_invisible(collapse_ws(text)).strip().lower()
+        text = text.strip(" .;")
+        for part in [text] + re.split(r"[,;]", text):
+            part = part.strip(" .()")
+            if not part:
+                continue
+            tag = POS_TAG_MAP.get(part)
+            if tag and tag not in tags:
+                tags.append(tag)
+            rule = POS_RULE_MAP.get(part, "")
+            if rule and rule not in rules:
+                rules.append(rule)
+        if len(tags) >= 4:
+            break
+    for f in dict.fromkeys(freq_tokens):
+        if f not in tags:
+            tags.append(f)
+    return " ".join(tags[:6]), " ".join(rules[:4])
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+SC_TAG_KEYS = {
+    "br": {"tag", "data"},
+    **{tag: {"tag", "content", "data", "lang"}
+       for tag in ("ruby", "rt", "rp", "table", "thead", "tbody", "tfoot", "tr")},
+    **{tag: {"tag", "content", "data", "colSpan", "rowSpan", "style", "lang"}
+       for tag in ("td", "th")},
+    **{tag: {"tag", "content", "data", "style", "title", "open", "lang"}
+       for tag in ("span", "div", "ol", "ul", "li", "details", "summary")},
+    "img": {"tag", "data", "path", "width", "height", "title", "alt",
+            "description", "pixelated", "imageRendering", "appearance",
+            "background", "collapsed", "collapsible", "verticalAlign",
+            "border", "borderRadius", "sizeUnits"},
+    "a": {"tag", "content", "href", "lang"},
+}
+
+
+def sc_shape_error(value, path="content"):
+    if isinstance(value, str):
+        return ""
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            err = sc_shape_error(item, f"{path}[{i}]")
+            if err:
+                return err
+        return ""
+    if not isinstance(value, dict):
+        return f"{path} must be string/array/object"
+    tag = value.get("tag")
+    if tag not in SC_TAG_KEYS:
+        return f"{path}.tag unsupported: {tag!r}"
+    extra = set(value) - SC_TAG_KEYS[tag]
+    if extra:
+        return f"{path}.{sorted(extra)[0]} not allowed on <{tag}>"
+    data = value.get("data")
+    if data is not None and (not isinstance(data, dict)
+                             or any(not isinstance(v, str) for v in data.values())):
+        return f"{path}.data must have string values"
+    if tag == "a":
+        href = value.get("href")
+        if not isinstance(href, str) or not re.match(r"^(?:\?|https?:)", href):
+            return f"{path}.href invalid"
+    if "content" in value:
+        return sc_shape_error(value["content"], f"{path}.content")
+    return ""
+
+
+def term_row_shape_error(row):
+    if not isinstance(row, list) or len(row) != 8:
+        return "row must have 8 fields"
+    for i in (0, 1, 2, 3, 7):
+        if not isinstance(row[i], str):
+            return f"field {i} must be string"
+    if not row[0].strip():
+        return "empty expression"
+    if isinstance(row[4], bool) or not isinstance(row[4], (int, float)):
+        return "score must be number"
+    if not isinstance(row[5], list) or not row[5]:
+        return "glossary must be non-empty array"
+    for j, item in enumerate(row[5]):
+        if isinstance(item, list):
+            if (len(item) != 2 or not isinstance(item[0], str)
+                    or not isinstance(item[1], list)
+                    or any(not isinstance(x, str) for x in item[1])):
+                return f"glossary[{j}] invalid [term, rules] redirect"
+            continue
+        if not isinstance(item, dict):
+            return f"glossary[{j}] must be object/array/string"
+        if item.get("type") == "structured-content":
+            if set(item) != {"type", "content"}:
+                return f"glossary[{j}] invalid SC wrapper keys"
+            err = sc_shape_error(item["content"], f"glossary[{j}].content")
+            if err:
+                return err
+        elif item.get("type") == "text":
+            if set(item) != {"type", "text"} or not isinstance(item["text"], str):
+                return f"glossary[{j}] invalid text item"
+        else:
+            return f"glossary[{j}] unsupported glossary item"
+    if isinstance(row[6], bool) or not isinstance(row[6], int):
+        return "sequence must be int"
+    return ""
+
+
+def collect_sc_classes(value, found):
+    if isinstance(value, list):
+        for item in value:
+            collect_sc_classes(item, found)
+    elif isinstance(value, dict):
+        cls = (value.get("data") or {}).get("class")
+        if cls:
+            found.update(cls.split())
+        for key, item in value.items():
+            if key != "data":
+                collect_sc_classes(item, found)
+
+
+def iter_sc_links(value):
+    if isinstance(value, list):
+        for item in value:
+            yield from iter_sc_links(item)
+    elif isinstance(value, dict):
+        if value.get("tag") == "a":
+            yield value
+        for key, item in value.items():
+            if key != "data":
+                yield from iter_sc_links(item)
+
+
+def validate_package(zip_path, term_index, revision, mode, full_rows=True,
+                     known_exprs=None):
+    """Structural validation of the finished package.
+
+    Each bank is decompressed and parsed exactly once. The "target must be a
+    real row" check needs the complete expression set up front, so when the
+    caller knows it (build() does) it is passed in as `known_exprs`; a
+    standalone call falls back to one extra read pass over the banks.
+    """
+    errors = []
+    stats = Counter()
+    used_classes = set()
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        for required in ("index.json", "styles.css", "tag_bank_1.json"):
+            if required not in names:
+                errors.append(f"missing {required}")
+        index = json.loads(zf.read("index.json").decode("utf-8"))
+        if index.get("format") != 3:
+            errors.append("index.format must be 3")
+        if index.get("sequenced") is not True:
+            errors.append("index.sequenced must be true")
+        if index.get("sourceLanguage") != "en":
+            errors.append("index.sourceLanguage must be en")
+        expect_target = "zh" if mode == "bilingual" else "en"
+        if index.get("targetLanguage") != expect_target:
+            errors.append(f"index.targetLanguage must be {expect_target}")
+        if str(index.get("revision")) != str(revision):
+            errors.append("index.revision mismatch")
+        banks = sorted(n for n in names if re.fullmatch(r"term_bank_\d+\.json", n))
+        if not banks:
+            errors.append("no term banks")
+            return errors, stats
+        stats["term_banks"] = len(banks)
+
+        if known_exprs is None:
+            all_terms = set()
+            for bank in banks:
+                raw = zf.read(bank)
+                if mode == "mono" and CJK_RE.search(raw.decode("utf-8")):
+                    errors.append(f"{bank}: mono build contains CJK text")
+                for row in json.loads(raw.decode("utf-8")):
+                    if isinstance(row, list) and row and isinstance(row[0], str):
+                        all_terms.add(row[0])
+        else:
+            all_terms = known_exprs
+
+        seqs = set()
+        for bank in banks:
+            raw = zf.read(bank)
+            text = raw.decode("utf-8")
+            if known_exprs is not None and mode == "mono" and CJK_RE.search(text):
+                errors.append(f"{bank}: mono build contains CJK text")
+            rows = json.loads(text)
+            stats["rows"] += len(rows)
+            for row in rows:
+                err = term_row_shape_error(row)
+                if err:
+                    errors.append(f"{bank} {row[0]!r}: {err}")
+                    if len(errors) > 40:
+                        return errors, stats
+                    continue
+                if isinstance(row[6], int) and not isinstance(row[6], bool):
+                    seqs.add(row[6])
+                for item in row[5]:
+                    if isinstance(item, list):
+                        stats["redirect_items"] += 1
+                        if item[0] not in all_terms and not (
+                                not full_rows and item[0] in term_index):
+                            errors.append(
+                                f"{bank} {row[0]!r}: dangling redirect -> {item[0]!r}")
+                    elif isinstance(item, dict) and item.get("type") == "structured-content":
+                        collect_sc_classes(item["content"], used_classes)
+                        for link in iter_sc_links(item["content"]):
+                            href = link.get("href") or ""
+                            if href.startswith("?query="):
+                                stats["query_links"] += 1
+                                target = unquote(href[len("?query="):].split("&")[0])
+                                if target not in all_terms and not (
+                                    not full_rows and target in term_index):
+                                    stats["dangling_links"] += 1
+                                    if stats["dangling_links"] <= 20:
+                                        errors.append(
+                                            f"{bank} {row[0]!r}: dangling query link -> {target!r}")
+        # sequence numbers must be unique and gapless (index.sequenced is true)
+        if seqs:
+            if len(seqs) != max(seqs) + 1:
+                errors.append(
+                    f"sequence gap: {len(seqs)} unique values but max is {max(seqs)}")
+            stats["sequence_ok"] = int(len(seqs) == max(seqs) + 1)
+        meta_banks = sorted(n for n in names if re.fullmatch(r"term_meta_bank_\d+\.json", n))
+        stats["term_meta_banks"] = len(meta_banks)
+        for bank in meta_banks:
+            rows = json.loads(zf.read(bank).decode("utf-8"))
+            stats["freq_rows"] += len(rows)
+            for row in rows:
+                ok = (isinstance(row, list) and len(row) == 3
+                      and isinstance(row[0], str) and row[1] == "freq"
+                      and isinstance(row[2], dict)
+                      and isinstance(row[2].get("value"), (int, float))
+                      and isinstance(row[2].get("displayValue"), str))
+                if not ok:
+                    errors.append(f"{bank}: malformed freq row {row!r}")
+                    if len(errors) > 40:
+                        return errors, stats
+                    continue
+                if row[0] not in all_terms:
+                    errors.append(f"{bank}: freq row for unknown term {row[0]!r}")
+        css = zf.read("styles.css").decode("utf-8") if "styles.css" in names else ""
+        defined = set()
+        for m in re.findall(r'\[data-sc-class="([^"]+)"\]', css):
+            defined.update(m.split())
+        for m in re.findall(r'\[data-sc-class~="([^"]+)"\]', css):
+            defined.update(m.split())
+        missing = used_classes - defined
+        if missing:
+            errors.append("CSS missing selectors for: " + ", ".join(sorted(missing)))
+    return errors, stats
+
+
+# ---------------------------------------------------------------------------
+# Build pipeline
+# ---------------------------------------------------------------------------
+
+
+def build(input_path, output_dir, mode="bilingual", revision=None, test_words=None,
+          open_panels=False, keep_json=False, validate=True, show_progress=True,
+          limit=None):
+    start = time.time()
+    os.makedirs(output_dir, exist_ok=True)
+    revision = revision or date.today().strftime("%Y.%m.%d")
+    source_revision = infer_source_revision(input_path)
+
+    debug = bool(test_words)
+    test_set = None
+    if debug:
+        test_set = {w.strip().casefold() for w in re.split(r"[,;，、]", test_words) if w.strip()}
+
+    # Bank rows are numerous and short-lived, so a higher GC threshold avoids
+    # constant generation-0 scanning. NOTE: gc.disable() is NOT safe here --
+    # BeautifulSoup trees hold parent references (cycles), so they are only
+    # reclaimed by the cyclic collector.
+    gc_threshold = gc.get_threshold()
+    gc.set_threshold(50000, 100, 100)
+
+    ui_zh = mode == "bilingual"
+    zip_name = (f"LDOCE5pp_Yomitan_{date.today().strftime('%Y.%m.%d')}"
+                + ("" if ui_zh else "_EN") + ("_DEBUG" if debug else "") + ".zip")
+    zip_path = os.path.join(output_dir, zip_name)
+    zip_tmp = zip_path + ".part"
+
+    print("[*] Pass A: collecting headword index ...")
+    term_index = TermIndex()
+    alias_rows = []
+    seen_kinds = Counter()
+    n_records = 0
+    # No count_lines() pre-scan: Pass A visits every record anyway, so its tally
+    # is exact and the 877 MB file is no longer read a third time.
+    for key, content in tqdm(iter_records(input_path), total=None,
+                             desc="index", disable=not show_progress):
+        n_records += 1
+        k = strip_invisible(key).strip()
+        if not k:
+            continue
+        kind, target = classify_record(k, content)
+        seen_kinds[kind] += 1
+        if kind == "entry":
+            term_index.add(k)
+        elif kind == "redirect":
+            alias_rows.append((k, target))
+    print(f"[OK] Pass A: entries={seen_kinds['entry']} unique={len(term_index.exact)} "
+          f"redirects={seen_kinds['redirect']} skipped={seen_kinds['skip']} "
+          f"records={n_records}")
+
+    # alias graph
+    target_map = {}
+    for word, target in alias_rows:
+        if target and target != word:
+            target_map.setdefault(word, []).append(target)
+
+    def resolve_with(word, reachable, fold, normm):
+        out = []
+        seen = set()
+        stack = list(target_map.get(word, []))
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            hit = current
+            if hit not in reachable:
+                alt = fold.get(hit.casefold()) or normm.get(norm_target(hit))
+                if alt:
+                    hit = alt
+            if hit in reachable:
+                out.append(hit)
+            elif current in target_map:
+                stack.extend(target_map[current])
+        return list(dict.fromkeys(out))
+
+    # Provisional alias resolution against Pass-A entry keys: decides which
+    # alias words will get rows, so query links only target real rows.
+    # (Rendering drop-outs are ~0; the strict validator catches any mismatch.)
+    prov_fold = {k.casefold(): k for k in term_index.exact}
+    prov_norm = {norm_target(k): k for k in term_index.exact}
+    planned_alias = set()
+    if not debug:  # in debug builds rows only cover test words: keep links strict
+        for word in target_map:
+            if word in term_index.exact:
+                continue
+            if resolve_with(word, term_index.exact, prov_fold, prov_norm):
+                planned_alias.add(word)
+                term_index.add_alias_word(word)
+    print(f"[*] Alias plan: rows planned={len(planned_alias)} "
+          f"unresolvable={len(target_map) - len(planned_alias) if not debug else 0}")
+
+    print("[*] Pass B: rendering structured content ...")
+    renderer = LdoceRenderer(term_index, mode=mode, open_panels=open_panels)
+    term_bank = []
+    file_index = 1
+    sequence = 0
+    generated = []
+    rendered_keys = set()
+    key_rules = {}
+    freq_meta = {}
+    written_exprs = set()
+    stats = Counter()
+
+    # Banks are streamed straight into the archive: previously each 65 MB bank
+    # was written to a temp file and then read back by zf.write(), i.e. 475 MB
+    # written and re-read for nothing. Written to "*.part" and renamed at the
+    # end so a crashed build never leaves a half-valid zip under the real name.
+    zf = zipfile.ZipFile(zip_tmp, "w", zipfile.ZIP_DEFLATED,
+                         compresslevel=COMPRESS_LEVEL)
+
+    def save_bank(rows, idx):
+        name = f"term_bank_{idx}.json"
+        data = sanitize_inplace(rows)
+        payload = json.dumps(data, ensure_ascii=False,
+                             indent=1 if debug else None,
+                             separators=None if debug else (",", ":"))
+        if keep_json:
+            path = os.path.join(output_dir, name)
+            with io.open(path, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+            generated.append(path)
+        zf.writestr(name, payload)
+
+    def flush_if_full():
+        nonlocal term_bank, file_index
+        if len(term_bank) >= TERM_BANK_BATCH:
+            save_bank(term_bank, file_index)
+            print(f"    -> wrote term_bank_{file_index}.json ({len(term_bank)} rows)")
+            term_bank = []
+            file_index += 1
+
+    processed = 0
+    for key, content in tqdm(iter_records(input_path), total=n_records,
+                             desc="render", disable=not show_progress):
+        processed += 1
+        k = strip_invisible(key).strip()
+        if not k:
+            continue
+        kind, _target = classify_record(k, content)
+        if kind != "entry":
+            continue
+        if debug and k.casefold() not in test_set:
+            continue
+        try:
+            nodes = renderer.render_record(k, content)
+        except Exception as exc:  # noqa: BLE001
+            stats["render_errors"] += 1
+            if stats["render_errors"] <= 8:
+                print(f"[WARN] render error {k!r}: {exc!r}")
+            continue
+        if not nodes or not sc_has_text(nodes):
+            stats["empty_records"] += 1
+            continue
+        pos_tokens, freq_tokens = extract_tags(content)
+        tags, rules = pos_tags_rules(pos_tokens, freq_tokens)
+        rendered_keys.add(k)
+        key_rules[k] = rules
+        if freq_tokens:
+            freq_meta[k] = list(dict.fromkeys(freq_tokens))
+        gloss = [{"type": "structured-content",
+                  "content": sc("div", nodes, cls="ld")}]
+        term_bank.append([k, "", tags, rules, ENTRY_SCORE, gloss, sequence, ""])
+        written_exprs.add(k)
+        sequence += 1
+        flush_if_full()
+        if limit and len(rendered_keys) >= limit:
+            break
+
+    term_index.finalize_rendered(rendered_keys)
+
+    # ---- redirect rows ------------------------------------------------------
+    rendered_fold = {k.casefold(): k for k in rendered_keys}
+    rendered_norm = {norm_target(k): k for k in rendered_keys}
+    alias_rendered = 0
+    dropped_alias = 0
+    for word in sorted(target_map):
+        if word in rendered_keys:
+            continue
+        targets = resolve_with(word, rendered_keys, rendered_fold, rendered_norm)
+        if not targets:
+            dropped_alias += 1
+            continue
+        rules = " ".join(dict.fromkeys(
+            tok for t in targets for tok in (key_rules.get(t) or "").split()))
+        content_gloss = [[t, ["redirect"]] for t in targets]
+        term_bank.append([word, "", "non-lemma", rules, REDIRECT_SCORE,
+                          content_gloss, sequence, ""])
+        written_exprs.add(word)
+        sequence += 1
+        alias_rendered += 1
+        flush_if_full()
+    print(f"[*] Redirect rows: {alias_rendered} (dropped unresolvable: {dropped_alias})")
+    if term_bank:
+        save_bank(term_bank, file_index)
+        print(f"    -> wrote term_bank_{file_index}.json ({len(term_bank)} rows)")
+
+    # ---- term_meta_bank: real frequency metadata ----------------------------
+    # Yomitan reads frequency from its own bank (the importer matches
+    # /^term_meta_bank_(\d+)\.json$/). Without it the package carried no frequency
+    # data at all: the S/W grades existed only as decorative chips, so results
+    # could not be sorted by frequency.
+    freq_rows = 0
+    if freq_meta:
+        meta_rows = []
+        for word, codes in freq_meta.items():
+            for code in codes:
+                value = FREQ_VALUE.get(code)
+                if value is not None:
+                    meta_rows.append([word, "freq",
+                                      {"value": value, "displayValue": code}])
+        # NOTE: the zip is already open at this point (banks are streamed straight
+        # into it), so the meta bank must go through zf.writestr() too -- writing a
+        # plain file on disk would leave it out of the package entirely.
+        # Also: do NOT name the loop variable `start` -- that shadows the build
+        # start time and turns the elapsed-time report into a nonsense number.
+        for offset in range(0, len(meta_rows), TERM_BANK_BATCH):
+            idx = offset // TERM_BANK_BATCH + 1
+            name = f"term_meta_bank_{idx}.json"
+            chunk = meta_rows[offset:offset + TERM_BANK_BATCH]
+            payload = json.dumps(chunk, ensure_ascii=False,
+                                 indent=1 if debug else None,
+                                 separators=None if debug else (",", ":"))
+            if keep_json:                 # same policy as save_bank(): the zip is
+                path = os.path.join(output_dir, name)   # the artefact, the loose
+                with io.open(path, "w", encoding="utf-8") as handle:   # file is only
+                    handle.write(payload)                              # for debugging
+                generated.append(path)
+            zf.writestr(name, payload)
+            freq_rows += len(chunk)
+            print(f"    -> wrote {name} ({len(chunk)} rows)")
+
+    # ---- metadata ----------------------------------------------------------
+    desc_bits = ["Longman Dictionary of Contemporary English 5++ V2.15",
+                 f"converter v{VERSION}"]
+    if ui_zh:
+        desc_bits.insert(1, "朗文当代高级英语辞典 · 双语增强版")
+    if source_revision:
+        desc_bits.append(f"source {source_revision}")
+    index_data = {
+        "title": "LDOCE5++ (LM5pp)",
+        "format": 3,
+        "revision": revision,
+        "sequenced": True,
+        # AUTHOR / URL are ASCII on purpose: a mono package declares
+        # targetLanguage "en" and must not carry CJK metadata.
+        "author": AUTHOR,
+        "url": PROJECT_URL,
+        "description": "；".join(desc_bits) if ui_zh else "; ".join(desc_bits),
+        "attribution": ("Longman Dictionary of Contemporary English (Pearson); "
+                        "LM5pp HTML edition; data: " + SOURCE_FORUM_URL),
+        "sourceLanguage": "en",
+        "targetLanguage": "zh" if ui_zh else "en",
+    }
+    dumps = lambda obj: json.dumps(  # noqa: E731
+        obj, ensure_ascii=False,
+        indent=1 if debug else None,
+        separators=None if debug else (",", ":"))
+
+    for name, payload in (("index.json", dumps(index_data)),
+                          ("tag_bank_1.json", dumps(build_tag_bank(ui_zh))),
+                          ("styles.css", generate_css())):
+        path = os.path.join(output_dir, name)
+        with io.open(path, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        generated.append(path)
+        zf.writestr(name, payload)
+
+    zf.close()
+    os.replace(zip_tmp, zip_path)          # atomic: *.part -> real name
+    print(f"[*] Compressed {zip_name}")
+
+    if renderer.unknown_classes:
+        print("[*] Top unknown classes kept generically:")
+        for name, cnt in renderer.unknown_classes.most_common(25):
+            print(f"      {cnt:>9}  {name}")
+
+    print("\n=== Stats ===")
+    print(f"[*] Records scanned: {processed}")
+    print(f"[*] Rendered entries: {len(rendered_keys)}")
+    print(f"[*] Redirect rows: {alias_rendered} (alias keys: {len(target_map)})")
+    print(f"[*] Frequency rows: {freq_rows}")
+    print(f"[*] Empty after render: {stats['empty_records']}")
+    print(f"[*] Render errors: {stats['render_errors']}")
+    print(f"[*] Query links: live={renderer.stats['links_live']} "
+          f"demoted={renderer.stats['links_dead']}")
+    print(f"[*] Elapsed: {time.time() - start:.1f}s")
+
+    if validate:
+        print("[*] Validating package ...")
+        errors, vstats = validate_package(
+            zip_path, term_index, revision, mode,
+            full_rows=debug is False and limit is None,
+            known_exprs=written_exprs)
+        print(f"[*] Validator: rows={vstats['rows']} banks={vstats['term_banks']} "
+              f"query_links={vstats['query_links']} dangling={vstats['dangling_links']} "
+              f"redirect_items={vstats['redirect_items']} "
+              f"seq_ok={vstats['sequence_ok']} "
+              f"freq_rows={vstats['freq_rows']}")
+        if errors:
+            print("[FAIL] Validation errors:")
+            for err in errors[:60]:
+                print("   - " + err)
+        else:
+            print("[OK] Validation passed.")
+    if not keep_json:
+        for path in list(generated):
+            if os.path.basename(path).startswith(("term_bank_", "term_meta_bank_")):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+    gc.set_threshold(*gc_threshold)
+    print(f"[OK] Dictionary package: {zip_path}")
+    return zip_path
+
+
+def infer_source_revision(path):
+    m = re.search(r"(20\d{6})(\d{4,6})?", os.path.basename(str(path)))
+    return m.group(0) if m else ""
+
+
+def main(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(description="LDOCE5++ (LM5pp) -> Yomitan dictionary")
+    parser.add_argument("-i", "--input", required=True, help="MDX file or extracted .mdx.txt")
+    parser.add_argument("-o", "--output", default="./yomitan_ldoce", help="Output directory")
+    parser.add_argument("-m", "--mode", choices=("bilingual", "mono"), default="bilingual")
+    parser.add_argument("--revision", default=None)
+    parser.add_argument("--test-words", default=None,
+                        help="Debug build restricted to these comma-separated headwords")
+    parser.add_argument("--open-panels", action="store_true")
+    parser.add_argument("--keep-json", action="store_true")
+    parser.add_argument("--skip-validation", action="store_true")
+    parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Render at most N entries (smoke testing)")
+    args = parser.parse_args(argv)
+    input_path = prepare_input(args.input)
+    build(
+        input_path,
+        args.output,
+        mode=args.mode,
+        revision=args.revision,
+        test_words=args.test_words,
+        open_panels=args.open_panels,
+        keep_json=args.keep_json,
+        validate=not args.skip_validation,
+        show_progress=not args.no_progress,
+        limit=args.limit,
+    )
+
+
+if __name__ == "__main__":
+    main()

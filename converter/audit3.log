@@ -1,0 +1,26 @@
+sampling 63 rows: 48 entries, 15 aliases
+Pass A done: unique entries 64390
+  !! alias no longer resolvable: 'the-artful-dodger'
+  !! alias no longer resolvable: 'Chemistry-topic TNT'
+  !! alias no longer resolvable: 'rosa-luxemburg'
+  !! alias no longer resolvable: 'Insurance-topic cover'
+  !! alias no longer resolvable: 'Illness & disability-topic canker'
+  !! alias no longer resolvable: 'Education-topic history'
+  !! alias no longer resolvable: 'capsulate'
+  !! alias no longer resolvable: 'denouncers'
+  !! alias no longer resolvable: 't-shirted'
+  !! alias no longer resolvable: 'Daily life-topic arm'
+  !! alias no longer resolvable: 'packed lunches'
+  !! alias no longer resolvable: 'grundy,mrs'
+  !! alias no longer resolvable: 'nellie'
+  !! alias no longer resolvable: 'stubbed'
+  !! alias no longer resolvable: 'cauterisation'
+
+reproducible rows: 45  mismatched: 0  (100% byte-identical)
+
+== independent structural scan ==
+  rows=245933  seq unique=245933 range=0..245932 contiguous=True
+  SC key violations: none
+  link targets: 63805  not-a-row: 0
+  redirect targets: 52138  not-a-row: 0
+  CSS classes used=104 defined=120 missing=[]
