@@ -247,6 +247,25 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
     （所以 audit9 里那部分"缺失"不是缺陷）；而 `span.HEADING`（义项分组标签）与 `span.GEO`/`span.LINKWORD`
     （变形区域标签/注解）在原版**是可见的**，丢掉才是缺陷。
 
+42. **`landscape` / `portrait` 的默认方向容易读反** —— 必须看 `@media` 上下文。`.portrait{display:none}` 之后
+    在 `@media screen and (max-width:500px)` 里还有 `.landscape{display:none}; .portrait{display:inline}`。
+    也就是说：**默认显示完整标签（landscape），缩写（portrait）只在窄屏出现**。用"按花括号切规则"的粗糙正则
+    去读（会丢掉 `@media` 包裹）会得出**完全相反**的结论 —— 我据此差点否掉 D14 的方向。正确读法：先把 CSS
+    按 `@media` 分块，再逐块解析。
+43. **同一个缺陷类要一次找齐所有调用点**：D14 为 `GRAM` 修了 `span.portrait` 泄漏（引入 `_no_portrait_text()`），
+    却把 `POS`（`_pick_landscape()`）和 `Inflections` 的 `infllab` 留在旧 helper 上，于是同一个 bug 又活了
+    两处：**479 个词条的变形标签出现 `past tense pst abode`，168 个 POS span 丢掉并列项（`Algeria` → `adjective`
+    而非 `noun, adjective`）**。改完一个 helper，务必 `grep` 它的全部调用点。
+44. **新 CSS 类写进 `generate_css()` 不等于接线了**：`ld-infl-lab` 从首版就定义在样式表里，包内出现 **0 次**
+    —— 定义了却从未被任何渲染分支输出。审查时把"CSS 定义了但包里 0 次使用"当成一条独立检查项，能反推出
+    漏接的分支（本轮据此找到变形标签从未走标签类）。
+45. **`.gitignore` 的判定别用子串 `in`**：我写了 `if '*.log' not in s` 来判断是否已加规则，而文件里已有的
+    `converter/_*.log` 正好包含子串 `*.log`，于是规则从未写入、`git check-ignore` 一路报"仍入库"。
+    判断忽略规则请直接用 `git check-ignore -v <路径>`，不要自己解析 `.gitignore`。
+46. **审计日志别入库**（本轮起 `.gitignore` 已覆盖 `*.log`）：库里留着 46 个日志不只是噪音 —— 复审时我读到
+    的 `audit5.log` 是**上一轮**的旧内容，差点据此判定"新包词头污染未检"。**重建后必须整批重跑审计**，
+    或至少删掉旧日志，否则"读到的结论"和"当前的包"不是一回事。
+
 ## 6. Yomitan 契约速查（format-3）
 
 - **ZIP 成员**：`index.json`、`styles.css`、`tag_bank_1.json`、`term_meta_bank_1..N.json`（可选，频率元数据）、`term_bank_1..N.json`（文件名数字任意）。

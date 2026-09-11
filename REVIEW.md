@@ -432,7 +432,7 @@ FREQ_SCAN_RE = re.compile(r'<span class="[^"]*\bFREQ\b[^"]*">\s*([SW][123])\s*<'
 
 **建议：维持现状（显示）。** 它信息量正确、对我们有利，且"应该隐藏"的证据不成立。
 
-### D11【低】词族面板丢两类内容：`span.opp` 反义词标记与裸文本成员 ✅ 已修复（代码层，待重建）
+### D11【低】词族面板丢两类内容：`span.opp` 反义词标记与裸文本成员 ✅ 已修复并进包（09.11）
 
 来源：对 `audit9`（文本守恒门禁）那 **1.738%** 做逐词元归因（`converter/audit9c_compose.py` —— 按词元把缺失量分摊到承载它的源路径上），发现"未到达输出"的文本里有可修的真损失，集中在 `render_wordfams()`：
 
@@ -456,7 +456,7 @@ FREQ_SCAN_RE = re.compile(r'<span class="[^"]*\bFREQ\b[^"]*">\s*([SW][123])\s*<'
 
 **状态**：代码已改，**待全量重建生效**（当前 09.11 包仍是改前状态）。
 
-### D13【中】"LDOCE Online" 增补条目被当普通词条渲染 —— 618 个词条出现无标记的第二个词条 ✅ 已修复（代码层，待重建）
+### D13【中】"LDOCE Online" 增补条目被当普通词条渲染 —— 618 个词条出现无标记的第二个词条 ✅ 已修复并进包（09.11）
 
 来源：对 `render_head` / 词族的残余缺失继续归因时，发现产物里 `absurd` 有**两个 `ld-entry`**，第二个是源里默认隐藏的 LDOCE4 遗留条目。
 
@@ -588,7 +588,7 @@ D18 的两次修复之所以各自引入一次回归，共同原因是**只针�
 > 该门禁自己的第一版也骗了我一次：拼接片段时用了 `''.join`，把相邻词粘成 `abandonwareadjective`，
 > 于是报了 97% 的词条"内容丢失"。**比对类脚本必须先自证**（用已知完整的样本跑通再上全量）。
 
-### D17【低】变形列表丢掉区域标签与注解 —— 58/2,389 个 Inflections 跨度 ✅ 已修复（代码层，待重建）
+### D17【低】变形列表丢掉区域标签与注解 —— 58/2,389 个 Inflections 跨度 ✅ 已修复并进包（09.11）；**但同族的 `infllab` 缩写泄漏漏修，见 R1**
 
 `span.Inflections` 是**有序序列**：变形形式 + 限定它们的注解。旧的 `render_inflections()` 只收集
 形式类（`PLURALFORM`/`PTandPPX`/…），另两类直接子元素被丢弃：
@@ -609,7 +609,7 @@ ann `['same pronunciation']`；`child`/`improve` 无注解不受影响。
 > 注：`portrait` 里的缩写（`BrE`/`AmE`/`C`/`U`）是原版 JS 与全称**二选一显示**的变体，
 > 全项目统一渲染全称，故"缺少 BrE"不是缺陷。
 
-### D14【低】词头 `GRAM` 的方括号与限定词丢失 —— 508/1,501 词条 ✅ 已修复（代码层，待重建）
+### D14【低】词头 `GRAM` 的方括号与限定词丢失 —— 508/1,501 词条 ✅ 已修复并进包（09.11）
 
 **位置**：`render_head()` 的 `GRAM` 分支用了 `_pick_landscape()`
 
@@ -653,7 +653,7 @@ ann `['same pronunciation']`；`child`/`improve` 无注解不受影响。
 
 （方法论备注：`audit9c` 把缺失量按路径份额**分摊**；更早的一版按路径全量累加，总和达到实际缺失的 271%，已删除。用 800 词样本时口径与 `audit9_text_conservation.py` 逐位吻合 —— 3,340 / 1.738%。）
 
-### D10【低】频率等级被 `definitionTags` 的 6 标签上限截断 —— 140 行自我矛盾 ✅ 已修复（代码层，待重建）
+### D10【低】频率等级被 `definitionTags` 的 6 标签上限截断 —— 140 行自我矛盾 ✅ 已修复并进包（09.11）
 
 **位置**：`ldoce2yomitan.py` 的 `pos_tags_rules()`，`return " ".join(tags[:6]), ...`
 
@@ -876,3 +876,60 @@ cd scgen_test && NODE_PATH=./node_modules \
 当前实现是把这类链接渲染成 `ld-xref-dead` 样式的**纯文本**（不带下划线、不可点）—— 与原版"可点但点了没反应"相比，至少不误导用户去点。这是**最忠实**的处理。
 
 **唯一的例外**：279 条 `LDOCE4 Page A1..A15` 指向的是那 15 张整版插图。要救它们就得把 jpg 打进包（见 §2 D8 之后的"机会"一节）—— 但 `_getImageMedia()` 在路径取不到时**直接 throw**，会让**整个词典导入失败**，风险不对称，**不建议**。
+
+
+---
+
+# 第三轮：外部改动复审后的修复（2026-09-11 晚）
+
+> 对另一会话提交 `5e343c4` 的独立复审报告见 `REVIEW-verify-2026-09-11.md`。
+> 下面三条是复审发现、并已实施的问题。
+
+## D20【中】变形列表把窄屏缩写当正文渲染 —— 479 个词条（`be`、`bad`、`arise`…）✅ 已修复
+
+**同族 bug 漏修**：D14 为 `GRAM` 修掉了 `span.portrait` 缩写泄漏，但 `Inflections` 里的标签没走同一条路径。
+
+源结构：
+
+```html
+<span class="PASTTENSE">
+  <span class="infllab"><span class="landscape">past tense</span>
+                        <span class="portrait">pst</span> </span>abode</span>
+```
+
+原版 CSS 默认 `.portrait { display:none }`，只在 `@media (max-width:500px)` 里才 `.landscape{display:none} + .portrait{display:inline}`——即**默认显示完整标签，缩写只在窄屏出现**。`render_inflections()` 对形态 span 直接 `get_text()`，因此把缩写一起吞下。
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| `abide` | `past tense pst abode` | `past tense · abode` |
+| `bad` | `comparative comp worse · superlative supl worst` | `comparative · worse · superlative · worst` |
+| `be` | `past tense pst was · … · past participle pp been` | `past tense · was · … · past participle · been` |
+
+泄漏取值：`pst` 310 / `pp` 309 / `supl` 167 / `comp` 166 / `3rd` 16，**共 968 处、涉及 479 个词条**；全量复核后 **= 0**。
+
+**修法**：
+1. 新增 `text_no_portrait(node)`（递归剔除 `span.portrait` 子树）与 `label_and_form(span)`（把 `span.infllab` / `span.italic` 标签从形态中拆出，标签文本走 `_no_portrait_text()`）。
+2. 顺带**接线了 `ld-infl-lab`** —— 该 CSS 类自首版就存在，包内出现 **0 次**（定义了但从未输出）。现在标签有独立类，且在原版里本就是斜体（`.infllab{font-style:italic}`）。
+3. `push_annot()` 的 strip 集合从 `"() "` 扩到 `" ,;.()"`：`LINKWORD` 会自带列表分隔逗号（`be` 的 `, first person singular`），与我们的 `·` 分隔符重复。
+
+**验证**：`be`/`bad`/`ante`/`abide`/`appendix`/`adieu`/`awake`/`angry` 单点核对；全量 2,808 个含 `Inflections` 的词条 **0 泄漏**；`backpedal`/`age` 的区域标签顺序未受影响。
+
+## D21【低】词头 POS 标签丢掉并列项 —— 168 个 span（`Algeria`、`4-F`、`andante`…）✅ 已修复
+
+与 D20 同源（D14 只改了 GRAM 用的那个 helper）：
+
+```html
+<span class="lm5pp_POS"> noun, <span class="landscape">adjective</span><span class="portrait">adj</span></span>
+```
+
+`_pick_landscape()` 只返回 landscape span 自己的文本，于是 `noun,` 被丢掉，`Algeria` 只显示 `adjective`——而它是 `noun, adjective`。`4-F`、`Andorra`、`Antigua`、`andante`（应为 `adjective, adverb`）等同理。
+
+**修法**：`_pick_landscape()` 在**确实存在 landscape** 时委托给 `_no_portrait_text()`；无 landscape 的 span 保持原行为（因此改动范围被限制在成对出现的 span 上）。
+
+**影响面实测**：104,837 个 `lm5pp_POS` span 中 **168 个**的最终 `ld-pos` 文本改变，**全部为内容恢复，0 个纯空白差异**。
+
+## D22【流程】文档状态与实际不符（已订正）+ 仓库卫生
+
+- `TYPOGRAPHY.md` 的 T10 一节曾同时写着"未擅自改动"、"已修复（用户拍板）"、"**尚未进包，需一次全量重建才会生效**"。第三条是重建前的残留，实测**已进包**（`close` 只剩 1 个 `ld-panel-wf`，包级 diff 为 `-38`），已订正；"用户拍板"的来源标注为**待确认**。
+- `REVIEW.md` 里 D10/D11/D13/D14/D17 五个标题的"（代码层，待重建）"已改为"已修复并进包（09.11）"。
+- **日志不入库**：`*.log` 与 `converter/_*.py`（除 `_apply_patch.py` / `_restore_all.py` 这两个被 D15 引用的框架文件）已加入 `.gitignore` 并 `git rm --cached`。原因不只是整洁 —— 本次复审就被 **stale 日志**误导过一次（`audit5.log` 是上一轮的旧内容）。

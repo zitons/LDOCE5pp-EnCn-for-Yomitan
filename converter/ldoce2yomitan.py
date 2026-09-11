@@ -969,10 +969,20 @@ class LdoceRenderer:
         return sc("div", out, cls="ld-head")
 
     def _pick_landscape(self, el):
-        land = el.find("span", class_="landscape")
-        if land is not None:
-            return land.get_text(" ", strip=True)
-        return el.get_text(" ", strip=True)
+        """Label of a landscape/portrait pair, with the abbreviation excluded.
+
+        When the pair exists this delegates to _no_portrait_text(), which keeps
+        the loose qualifier beside it: entry '4-F' reads
+        '<span class="lm5pp_POS"> noun, <span class="landscape">adjective</span>
+        <span class="portrait">adj</span></span>' and used to render as the bare
+        'adjective', losing the visible 'noun,'. This is the same defect D14
+        fixed for GRAM (see REVIEW T9/D14); POS was simply left on the old
+        helper. Spans without a landscape keep their previous text, so the
+        behaviour change is confined to the spans that carry a pair.
+        """
+        if el.find("span", class_="landscape") is None:
+            return el.get_text(" ", strip=True)
+        return self._no_portrait_text(el)
 
     def _no_portrait_text(self, el):
         """Full grammatical label, e.g. '[singular, uncountable]'.
@@ -1081,19 +1091,71 @@ class LdoceRenderer:
                     nodes.append(sc("span", part, cls="ld-infl-form"))
 
         def push_annot(raw, cls_name):
-            text = sc_text(raw).strip("() ")
+            # ",;." as well as the brackets: a LINKWORD can carry the list
+            # separator itself (', first person singular'), which duplicates our
+            # own ' · ' separator.
+            text = sc_text(raw).strip(" ,;.()")
             text = re.sub(r"\s+", " ", text)
             if text and text not in seen:
                 seen.add(text)
                 push_sep()
                 nodes.append(sc("span", text, cls=cls_name))
 
+        def text_no_portrait(node):
+            """Text of `node` with every span.portrait subtree removed."""
+            parts = []
+            for d in node.descendants:
+                if not isinstance(d, NavigableString):
+                    continue
+                anc = d.parent
+                skip = False
+                while anc is not None and anc is not node:
+                    if "portrait" in classes_of(anc):
+                        skip = True
+                        break
+                    anc = anc.parent
+                if not skip:
+                    parts.append(str(d))
+            return collapse_ws("".join(parts)).strip()
+
+        def label_and_form(span):
+            """Split a form from the label(s) embedded inside it.
+
+            The label is span.infllab ('past tense and past participle') or
+            span.italic ('plural'); the original styles both italic. Its
+            span.portrait sibling is the narrow-screen abbreviation and must not
+            reach the output (see the module docstring). Returns (labels, form).
+            """
+            labs = [sub for sub in span.find_all("span")
+                    if {"infllab", "italic"} & classes_of(sub)]
+            if not labs:
+                return [], span.get_text(" ", strip=True)
+            parts = []
+            for d in span.descendants:
+                if not isinstance(d, NavigableString):
+                    continue
+                anc = d.parent
+                skip = False
+                while anc is not None and anc is not span:
+                    if any(anc is l for l in labs):
+                        skip = True
+                        break
+                    anc = anc.parent
+                if not skip:
+                    parts.append(str(d))
+            labels = [t for t in (self._no_portrait_text(l) for l in labs) if t]
+            return labels, collapse_ws("".join(parts)).strip()
+
         for child in el.children:
             if isinstance(child, NavigableString):
                 continue
             cls = classes_of(child)
             if cls & self.INFL_FORM_CLASSES:
-                push_form(child.get_text(" ", strip=True))
+                labels, form = label_and_form(child)
+                for lab in labels:
+                    push_annot(lab, "ld-infl-lab")
+                if form:
+                    push_form(form)
                 continue
             if "GEO" in cls:
                 push_annot(self._no_portrait_text(child), "ld-infl-region")
@@ -1105,9 +1167,13 @@ class LdoceRenderer:
                 for sub in child.find_all("span", recursive=True):
                     scls = classes_of(sub)
                     if scls & self.INFL_FORM_CLASSES:
-                        push_form(sub.get_text(" ", strip=True))
+                        labels, form = label_and_form(sub)
+                        for lab in labels:
+                            push_annot(lab, "ld-infl-lab")
+                        if form:
+                            push_form(form)
         if not nodes:
-            text = sc_text(el.get_text(" ", strip=True)).strip()
+            text = sc_text(text_no_portrait(el)).strip()
             if text:
                 nodes = [sc("span", text, cls="ld-infl-form")]
         return sc("span", nodes, cls="ld-infl")
