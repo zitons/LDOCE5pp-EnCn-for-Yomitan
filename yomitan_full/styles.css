@@ -77,6 +77,8 @@
 [data-sc-class="ld-infl"] { font-size:.85em; color:var(--ld-text2); }
 [data-sc-class="ld-infl-form"] { white-space:nowrap; }
 [data-sc-class="ld-infl-lab"] { font-style:italic; opacity:.75; }
+[data-sc-class="ld-infl-region"] { font-style:italic; color:var(--ld-geo, var(--ld-dim)); }
+[data-sc-class="ld-infl-ann"] { color:var(--ld-dim); }
 
 /* ---- chips -------------------------------------------------------------
    One shared frame; each chip only supplies its own colour. color-mix ties the
@@ -85,6 +87,9 @@
 [data-sc-class="ld-freq"], [data-sc-class="ld-gram"], [data-sc-class="ld-geo"],
 [data-sc-class="ld-register"], [data-sc-class="ld-act"], [data-sc-class="ld-synmark"] {
   display:inline-block; font-size:var(--ld-chip-size); font-weight:600; line-height:1.35;
+  text-indent:0;   /* text-indent is inherited: .ld-ex uses -1.6em for its hanging indent,
+                      and an inline-block inherits it onto its own first line, which pulls
+                      the chip's text out of its own box (see REVIEW T9). */
   border-radius:4px; padding:0 5px; margin:0 var(--ld-chip-gap) 0 0; vertical-align:baseline;
   border:1px solid color-mix(in srgb, currentColor 38%, transparent);
   background:color-mix(in srgb, currentColor 10%, transparent);
@@ -96,8 +101,8 @@
 [data-sc-class="ld-act"] { color:var(--ld-frame); font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
 [data-sc-class="ld-synmark"] { font-size:.72em; color:var(--ld-reg); font-weight:700; }
 [data-sc-class="ld-actcn"] { font-size:.8em; color:var(--ld-frame); margin-left:var(--ld-chip-gap); }
-[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
-[data-sc-class="ld-signpost"] { display:inline-block; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-signpost"] { display:inline-block; text-indent:0; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
 
 /* ---- senses ------------------------------------------------------------
    ld-sense-n is emitted TOGETHER with ld-sense when the sense actually carries
@@ -110,7 +115,7 @@
 [data-sc-class="ld-subsense"] { display:block; margin:2px 0 3px; padding-left:1.6em; }
 [data-sc-class="ld-runon"] { display:block; margin:2px 0 4px; padding-left:var(--ld-gutter); color:var(--ld-text2); }
 [data-sc-class="ld-phrventry"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-frame) 45%, transparent); margin:6px 0; padding:2px 0 2px .7em; }
-[data-sc-class="ld-snum"] { display:inline-block; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
+[data-sc-class="ld-snum"] { display:inline-block; text-indent:0; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
 /* 5,742 subsenses DO carry a number. Their own indent (1.6em) is smaller than
    the sense gutter (1.9em), so an unscoped ld-snum would hang 0.3em past the
    subsense box and land on the parent definition text. Scope the hang. */
@@ -123,6 +128,14 @@
 [data-sc-class="ld-en"] { color:inherit; font-weight:600; }
 [data-sc-class="ld-gloss"] { color:var(--ld-dim); font-size:.95em; }
 [data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame); }
+/* Sense-group label inside a collocation/thesaurus box: "- Meaning 1: ...". It
+   belongs to the box that follows it, so it sits at the top of the panel body. */
+[data-sc-class="ld-panel-sub"] { display:block; margin:0 0 4px; padding-bottom:2px; border-bottom:1px solid color-mix(in srgb, currentColor 18%, transparent); }
+[data-sc-class="ld-panel-sub"] [data-sc-class="ld-grouptitle"] { font-weight:700; }
+/* LDOCE Online panel: sits at the same level as a normal entry, so give it a
+   little separation from the preceding entry. */
+[data-sc-class="ld-panel-online"] { display:block; margin:6px 0 6px; }
+[data-sc-class="ld-panel-online"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-dim); }
 
 /* ---- examples ---------------------------------------------------------- */
 [data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px; padding-left:1.6em; text-indent:-1.6em; color:var(--ld-text2); font-size:.97em; }
@@ -152,7 +165,7 @@
 [data-sc-class="ld-thesref"] { font-weight:700; color:var(--ld-frame); }
 [data-sc-class="ld-relatedwd"] { font-weight:600; }
 [data-sc-class="ld-abbr"] { font-weight:600; }
-[data-sc-class="ld-num"] { display:inline-block; min-width:1.2em; text-align:center; color:var(--ld-faint); }
+[data-sc-class="ld-num"] { display:inline-block; text-indent:0; min-width:1.2em; text-align:center; color:var(--ld-faint); }
 
 /* ---- collocations / thesaurus / grammar -------------------------------- */
 [data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { font-weight:700; color:var(--ld-head); }
@@ -181,11 +194,11 @@
 [data-sc-class="ld-th"] { background:color-mix(in srgb, var(--ld-frame) 10%, transparent); font-weight:700; }
 
 /* ---- panels ------------------------------------------------------------ */
-[data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"], [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"] { display:block; margin:5px 0 6px; }
+[data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"], [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"], [data-sc-class="ld-panel-online"] { display:block; margin:5px 0 6px; }
 [data-sc-class="ld-panel-sum"] { cursor:pointer; font-weight:700; color:var(--ld-head); list-style:none; padding:1px 0 1px 1.1em; position:relative; user-select:none; }
 [data-sc-class="ld-panel-sum"]::-webkit-details-marker { display:none; }
 [data-sc-class="ld-panel-sum"]::before { content:""; position:absolute; left:0; top:50%; border-top:.32em solid transparent; border-bottom:.32em solid transparent; border-left:.48em solid var(--ld-frame); transform:translateY(-50%); transition:transform .12s; }
-[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"]::before { transform:translateY(-50%) rotate(90deg); }
+[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-online"][open] > [data-sc-class="ld-panel-sum"]::before { transform:translateY(-50%) rotate(90deg); }
 [data-sc-class="ld-panel-title"] { color:var(--ld-frame); }
 [data-sc-class="ld-panel-title-zh"] { margin-left:.5em; font-size:.85em; color:var(--ld-zh); font-weight:600; }
 [data-sc-class="ld-panel-body"] { border-left:3px solid color-mix(in srgb, var(--ld-frame) 40%, transparent); background:color-mix(in srgb, var(--ld-frame) 6%, transparent); border-radius:0 4px 4px 0; padding:4px 8px; margin-top:3px; }
@@ -197,6 +210,10 @@
 [data-sc-class="ld-wf-pos"] { font-style:italic; font-weight:700; color:var(--ld-pos); margin-right:var(--ld-chip-gap); font-size:.9em; }
 [data-sc-class="ld-wf-word"] { font-weight:600; }
 [data-sc-class="ld-wf-root"] { color:var(--ld-dim); border-bottom:1px dotted color-mix(in srgb, currentColor 60%, transparent); }
+/* Antonym marker inside a word family: "!= disadvantage". The source wraps it in
+   <span class="opp"> with a literal U+2260 plus a link. */
+[data-sc-class="ld-wf-opp"] { color:var(--ld-dim); }
+[data-sc-class="ld-wf-opp"] > a { color:inherit; font-weight:600; }
 
 /* ---- corpus list ------------------------------------------------------- */
 [data-sc-class="ld-exagroup"] { display:block; margin:3px 0; }

@@ -329,6 +329,9 @@ def is_dropped(cls):
 # LDOCE frequency band -> rank ceiling ("within the top N"), which is what
 # Yomitan's frequency sorting expects: lower = more frequent.
 FREQ_VALUE = {"S1": 1000, "W1": 1000, "S2": 2000, "W2": 2000, "S3": 3000, "W3": 3000}
+# Cap on the space-separated definitionTags string. POS tags fill first, then
+# frequency levels, which are never dropped (see pos_tags_rules()).
+TAG_LIMIT = 8
 
 BLOCK_MAP = [
     ("Sense", "ld-sense"),
@@ -736,9 +739,22 @@ class LdoceRenderer:
             return [et] if et else []
         if cls & {"ldoceEntry", "Entry"}:
             inner = self._children_blocks(el)
-            return [sc("div", inner, cls="ld-entry")] if inner else []
+            if not inner:
+                return []
+            # LDOCE Online extra entry (LDOCE4-derived, type="encyc"): the source
+            # hides it with `.dictentry.LDOCEVERSION_new{display:none}` and the
+            # popup's "LDOCE Online" checkbox (#switch_online) reveals it. Emitted
+            # bare it reads as a duplicated second entry for the same headword
+            # (e.g. 'absurd'), so keep the content but collapse it under a
+            # labelled panel -- the same treatment as the original's default state.
+            if self._is_online_entry(el):
+                return [self._online_panel([sc("div", inner, cls="ld-entry")])]
+            return [sc("div", inner, cls="ld-entry")]
         if "dictionary" in cls or "dictentry" in cls:
-            return self._children_blocks(el)
+            inner = self._children_blocks(el)
+            if self._is_online_entry(el) and sc_has_text(inner):
+                return [self._online_panel(inner)]
+            return inner
         if "Head" in cls and "frequent" in cls:
             return [self.render_head(el)]
         if "Inflections" in cls:
@@ -891,7 +907,7 @@ class LdoceRenderer:
                     flush_hwd()
                     out.append(sc("span", sc_text(label).lstrip(" ,;"), cls="ld-pos"))
             elif "GRAM" in cls:
-                label = self._pick_landscape(child)
+                label = self._no_portrait_text(child)
                 if label:
                     flush_hwd()
                     out.append(sc("span", sc_text(label), cls="ld-gram"))
@@ -958,28 +974,143 @@ class LdoceRenderer:
             return land.get_text(" ", strip=True)
         return el.get_text(" ", strip=True)
 
-    def render_inflections(self, el):
-        items = []
-        for child in el.find_all("span", recursive=True):
+    def _no_portrait_text(self, el):
+        """Full grammatical label, e.g. '[singular, uncountable]'.
+
+        A GRAM span is:  ' [' + qualifier text + <span class=landscape>full</span>
+        + <span class=portrait><span class=cap>U</span></span> + ']'  -- the
+        brackets and any loose qualifier ('singular,', 'only after noun') are
+        siblings of the landscape span, so _pick_landscape() dropped them and we
+        emitted a bare 'uncountable'. The portrait span is the abbreviation the
+        original JS swaps in, so it is skipped exactly like _pick_landscape does.
+
+        Also used for the GEO labels inside an Inflections sequence, where the same
+        mistake dropped the loose qualifier ('busses especially American English'
+        used to lose 'especially').
+        """
+        parts = []
+        for child in el.children:
+            if isinstance(child, NavigableString):
+                parts.append(str(child))
+                continue
             cls = classes_of(child)
-            if cls & {"PLURALFORM", "PASTTENSE", "PASTPART", "PRESPART", "T3PERSSING",
-                      "PTandPP", "PTandPPX", "PRESPARTX", "T3PERSSINGX", "FULLFORM",
-                      "COMP", "SUPERL"}:
-                text = sc_text(child.get_text(" ", strip=True)).strip("() ")
-                text = re.sub(r"\s+", " ", text)
-                for part in re.split(r"[,;]", text):
-                    part = part.strip(" ,;.")
-                    if part and part not in items:
-                        items.append(part)
-        if not items:
+            if "portrait" in cls:
+                continue
+            if child.find("span", class_="portrait") is not None:
+                for sub in child.children:
+                    if isinstance(sub, Tag) and "portrait" in classes_of(sub):
+                        continue
+                    if isinstance(sub, NavigableString):
+                        parts.append(str(sub))
+                continue
+            parts.append(child.get_text(" ", strip=True))
+        return collapse_ws("".join(parts)).strip()
+
+    def _is_online_entry(self, el):
+        """True for the OUTERMOST LDOCE Online wrapper only.
+
+        The marker sits on both div.dictentry.LDOCEVERSION_new and the
+        div.ldoceEntry.Entry.LDOCEVERSION_new inside it; wrapping each produced
+        two nested panels. An ancestor check (rather than a render-time flag) is
+        used because _children_blocks() renders the inner entry before the outer
+        wrap happens.
+        """
+        if "LDOCEVERSION_new" not in classes_of(el):
+            return False
+        return el.find_parent(class_="LDOCEVERSION_new") is None
+
+    def _online_panel(self, body):
+        """Collapsed 'LDOCE Online' panel for the LDOCEVERSION_new content.
+
+        The source marks LDOCE Online (LDOCE4-derived, often type="encyc") entries
+        with LDOCEVERSION_new, hides them via `.dictentry.LDOCEVERSION_new
+        {display:none}` and reveals them with the popup's "LDOCE Online" checkbox
+        (#switch_online, default off -- LM5Switch.js filters `.LDOCEVERSION_new`
+        on that checkbox). We keep the content but collapsed, so the default view
+        matches the original and nothing is silently dropped.
+        """
+        summary = [sc("span", "LDOCE Online", cls="ld-panel-title")]
+        if self.mode == "bilingual":
+            summary.append(sc("span", "在线增补", cls="ld-panel-title-zh", lang="zh"))
+        details = sc(
+            "details",
+            [sc("summary", summary, cls="ld-panel-sum"),
+             sc("div", body, cls="ld-panel-body")],
+            cls="ld-panel-online",
+        )
+        if self.open_panels:
+            details["open"] = True
+        return details
+
+    INFL_FORM_CLASSES = {
+        "PLURALFORM", "PASTTENSE", "PASTPART", "PRESPART", "T3PERSSING",
+        "PTandPP", "PTandPPX", "PRESPARTX", "T3PERSSINGX", "FULLFORM",
+        "COMP", "SUPERL",
+    }
+    INFL_SEP = " · "
+
+    def render_inflections(self, el):
+        """Inflection list, keeping source order AND the annotations.
+
+        The span is a SEQUENCE: surface forms plus annotations that qualify the
+        adjacent forms. Two annotation kinds occur inside it and used to be
+        dropped because only the form classes were collected:
+          * <span class="GEO"> British English / especially American English
+            (43 spans corpus-wide; it distinguishes BrE forms from AmE ones,
+            e.g. backpedal -> 'backpedalled, backpedalling British English,
+            backpedaled, backpedaling American English')
+          * <span class="LINKWORD"> 'or' / '(same pronunciation)' (15 spans)
+        Emitting the forms alone silently merged two regional paradigms into one
+        undifferentiated list.
+        """
+        nodes = []
+        seen = set()
+
+        def push_sep():
+            if nodes and nodes[-1] != self.INFL_SEP:
+                nodes.append(self.INFL_SEP)
+
+        def push_form(raw):
+            text = sc_text(raw).strip("() ")
+            text = re.sub(r"\s+", " ", text)
+            for part in re.split(r"[,;]", text):
+                part = part.strip(" ,;.")
+                if part and part not in seen:
+                    seen.add(part)
+                    push_sep()
+                    nodes.append(sc("span", part, cls="ld-infl-form"))
+
+        def push_annot(raw, cls_name):
+            text = sc_text(raw).strip("() ")
+            text = re.sub(r"\s+", " ", text)
+            if text and text not in seen:
+                seen.add(text)
+                push_sep()
+                nodes.append(sc("span", text, cls=cls_name))
+
+        for child in el.children:
+            if isinstance(child, NavigableString):
+                continue
+            cls = classes_of(child)
+            if cls & self.INFL_FORM_CLASSES:
+                push_form(child.get_text(" ", strip=True))
+                continue
+            if "GEO" in cls:
+                push_annot(self._no_portrait_text(child), "ld-infl-region")
+                continue
+            if "LINKWORD" in cls or "italic" in cls:
+                push_annot(child.get_text(" ", strip=True), "ld-infl-ann")
+                continue
+            if child.find("span", recursive=True) is not None:
+                for sub in child.find_all("span", recursive=True):
+                    scls = classes_of(sub)
+                    if scls & self.INFL_FORM_CLASSES:
+                        push_form(sub.get_text(" ", strip=True))
+        if not nodes:
             text = sc_text(el.get_text(" ", strip=True)).strip()
-            items = [text] if text else []
-        children = []
-        for idx, item in enumerate(items):
-            if idx:
-                children.append(" \u00b7 ")
-            children.append(sc("span", item, cls="ld-infl-form"))
-        return sc("span", children, cls="ld-infl")
+            if text:
+                nodes = [sc("span", text, cls="ld-infl-form")]
+        return sc("span", nodes, cls="ld-infl")
 
     def render_example(self, el, cls):
         english = el.find("span", class_="english", recursive=False)
@@ -1041,6 +1172,21 @@ class LdoceRenderer:
             junk.decompose()
         heading = el.find("span", class_="heading") or el.find("span", class_="lm5ppBoxHead")
         title_en, title_zh = self._panel_title(heading, panel_token)
+        # A box may carry TWO headings: the fold header (class "heading", e.g.
+        # COLLOCATIONS) and a sense-group label (class "HEADING" -- uppercase --
+        # e.g. "- Meaning 1: one thing that you do"). The latter sits between the
+        # header and BoxPanel, so rendering only BoxPanel dropped it. 17 boxes
+        # per 1,500 entries carry both; the label tells which sense the
+        # collocations belong to. When there is no fold header the uppercase one
+        # IS the panel title (that is what the lm5ppBoxHead fallback picks up),
+        # hence the identity check.
+        gloss = el.find("span", class_="HEADING")
+        gloss_node = None
+        if gloss is not None and gloss is not heading:
+            gtext = sc_text(gloss.get_text(" ", strip=True)).strip()
+            if gtext:
+                gloss_node = sc("div", [sc("span", gtext, cls="ld-grouptitle")],
+                                cls="ld-panel-sub")
         panel = el.find("div", class_="BoxPanel")
         body = []
         if panel is not None:
@@ -1054,6 +1200,8 @@ class LdoceRenderer:
                     if "heading" in ccls or "lm5ppBoxHead" in ccls:
                         continue
                     body.extend(self.render_element(child))
+        if gloss_node is not None:
+            body = [gloss_node] + body
         body = merge_adjacent_text(body)
         if not sc_has_text(body):
             return None
@@ -1207,13 +1355,44 @@ class LdoceRenderer:
         return sc("div", nodes, cls="ld-exagroup")
 
     def render_wordfams(self, el):
+        # T10: div.wordfams comes in two shapes. The normal one starts with a
+        # <span class="LDOCE5pp_sensefold"> header (the fold toggle) and then the
+        # <span class="LDOCE_word_family"> data. 38 entries (close, cooperate,
+        # definite, ...) carry a SECOND block whose only child is the data span:
+        # no header, and that data span has an inline display:none which the
+        # original CSS never overrides and LM5Switch.js never toggles (its
+        # selector requires the sensefold to be a direct child of .wordfams).
+        # The original dictionary therefore never shows those blocks. Emitting
+        # them gave those 38 entries two identical "Word family" panels.
+        if el.find("span", class_="LDOCE5pp_sensefold", recursive=False) is None:
+            return None
         fam = el.find("span", class_="LDOCE_word_family")
         if fam is None:
             return None
         children = []
         current_group = None
+
+        def append_word(node):
+            nonlocal current_group
+            if current_group is None:
+                current_group = sc("div", [], cls="ld-wf-group")
+                children.append(current_group)
+            group_content = current_group.setdefault("content", [])
+            if group_content:
+                group_content.append(" ")
+            group_content.append(node)
+
         for child in fam.children:
             if not isinstance(child, Tag):
+                # Loose text directly inside LDOCE_word_family carries real
+                # word-family members ('additonal', 'the accused', 'customs',
+                # 'administrate') -- 2.0% of blocks. The old `continue` dropped
+                # them silently. NB sc_text() collapses but does NOT strip, so an
+                # explicit .strip() is required or every inter-tag whitespace gap
+                # becomes a bogus <span class="ld-wf-word"> </span>.
+                text = sc_text(str(child)).strip()
+                if text:
+                    append_word(sc("span", text, cls="ld-wf-word"))
                 continue
             cls = classes_of(child)
             if "pos" in cls:
@@ -1222,7 +1401,56 @@ class LdoceRenderer:
                 children.append(current_group)
                 continue
             node = None
-            if "rootword" in cls:
+            if "opp" in cls:
+                # Antonym marker: <span class="opp"> != <a class="crossRef w">...</a></span>
+                # Matched no branch before, so the whole subtree (12.6% of
+                # word-family blocks, 3,528 in the corpus) was dropped.
+                #
+                # The antonym word is an <a> when it has an entry to link to, but a
+                # bare <span class="w"> / <span class="w rootword"> when it does not.
+                # The bare form used to fall through to the generic inline branch,
+                # losing the word-family styling (and showing up in the unknown-class
+                # report as w/rootword/crossRef). Handle the children explicitly.
+                parts = []
+                for sub in child.children:
+                    if isinstance(sub, NavigableString):
+                        # The antonym word itself may be bare text inside the span
+                        # (academe: '<span class="opp"> != unacademic</span>'), so
+                        # text nodes must be kept -- skipping them dropped the word.
+                        text = sc_text(str(sub)).strip()
+                        if text:
+                            parts.append(sc("span", text, cls="ld-wf-word"))
+                        continue
+                    scls = classes_of(sub)
+                    # Order matters: a word-family word can ALSO carry crossRef and
+                    # an href (e.g. <span class="crossRef rootword w"
+                    # href="/dictionary/dislike#dislike__3">, a self-reference). Test
+                    # the word classes first -- handing those to the generic link
+                    # path was what logged w/rootword/crossRef as unknown classes.
+                    if scls & {"w", "rootword"}:
+                        href = (sub.get("href") or "").strip()
+                        text = sc_text(sub.get("title") or sub.get_text(" ", strip=True))
+                        if not text:
+                            continue
+                        inner = [text]
+                        target = clean_target(entry_target_from_href(href, sub.get("title")))
+                        resolved = self.terms.resolve(target) if target else None
+                        if resolved:
+                            self.stats["links_live"] += 1
+                            parts.append(sc("a", inner,
+                                            href=f"?query={quote(resolved, safe='')}&wildcards=off"))
+                        else:
+                            parts.append(sc("span", inner, cls="ld-wf-word"))
+                    elif sub.name == "a" or (sub.get("href") or "").startswith("entry://"):
+                        rendered = self.render_inline_node(sub)
+                        if rendered:
+                            parts.extend(rendered)
+                    else:
+                        inner = merge_adjacent_text(self._children_blocks(sub))
+                        parts.extend(inner)
+                if sc_has_text(parts):
+                    node = sc("span", parts, cls="ld-wf-opp")
+            elif "rootword" in cls:
                 text = sc_text(child.get("title") or child.get_text(" ", strip=True))
                 if text:
                     node = sc("span", text, cls="ld-wf-root")
@@ -1237,13 +1465,7 @@ class LdoceRenderer:
                     node = sc("span", text, cls="ld-wf-word")
             if node is None:
                 continue
-            if current_group is None:
-                current_group = sc("div", [], cls="ld-wf-group")
-                children.append(current_group)
-            group_content = current_group.setdefault("content", [])
-            if group_content:
-                group_content.append(" ")
-            group_content.append(node)
+            append_word(node)
         body = [g for g in children if g.get("content")]
         if not body:
             return None
@@ -1550,6 +1772,8 @@ def generate_css():
 [data-sc-class="ld-infl"] { font-size:.85em; color:var(--ld-text2); }
 [data-sc-class="ld-infl-form"] { white-space:nowrap; }
 [data-sc-class="ld-infl-lab"] { font-style:italic; opacity:.75; }
+[data-sc-class="ld-infl-region"] { font-style:italic; color:var(--ld-geo, var(--ld-dim)); }
+[data-sc-class="ld-infl-ann"] { color:var(--ld-dim); }
 
 /* ---- chips -------------------------------------------------------------
    One shared frame; each chip only supplies its own colour. color-mix ties the
@@ -1558,6 +1782,9 @@ def generate_css():
 [data-sc-class="ld-freq"], [data-sc-class="ld-gram"], [data-sc-class="ld-geo"],
 [data-sc-class="ld-register"], [data-sc-class="ld-act"], [data-sc-class="ld-synmark"] {
   display:inline-block; font-size:var(--ld-chip-size); font-weight:600; line-height:1.35;
+  text-indent:0;   /* text-indent is inherited: .ld-ex uses -1.6em for its hanging indent,
+                      and an inline-block inherits it onto its own first line, which pulls
+                      the chip's text out of its own box (see REVIEW T9). */
   border-radius:4px; padding:0 5px; margin:0 var(--ld-chip-gap) 0 0; vertical-align:baseline;
   border:1px solid color-mix(in srgb, currentColor 38%, transparent);
   background:color-mix(in srgb, currentColor 10%, transparent);
@@ -1569,8 +1796,8 @@ def generate_css():
 [data-sc-class="ld-act"] { color:var(--ld-frame); font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
 [data-sc-class="ld-synmark"] { font-size:.72em; color:var(--ld-reg); font-weight:700; }
 [data-sc-class="ld-actcn"] { font-size:.8em; color:var(--ld-frame); margin-left:var(--ld-chip-gap); }
-[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
-[data-sc-class="ld-signpost"] { display:inline-block; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-signpost"] { display:inline-block; text-indent:0; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
 
 /* ---- senses ------------------------------------------------------------
    ld-sense-n is emitted TOGETHER with ld-sense when the sense actually carries
@@ -1583,7 +1810,7 @@ def generate_css():
 [data-sc-class="ld-subsense"] { display:block; margin:2px 0 3px; padding-left:1.6em; }
 [data-sc-class="ld-runon"] { display:block; margin:2px 0 4px; padding-left:var(--ld-gutter); color:var(--ld-text2); }
 [data-sc-class="ld-phrventry"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-frame) 45%, transparent); margin:6px 0; padding:2px 0 2px .7em; }
-[data-sc-class="ld-snum"] { display:inline-block; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
+[data-sc-class="ld-snum"] { display:inline-block; text-indent:0; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
 /* 5,742 subsenses DO carry a number. Their own indent (1.6em) is smaller than
    the sense gutter (1.9em), so an unscoped ld-snum would hang 0.3em past the
    subsense box and land on the parent definition text. Scope the hang. */
@@ -1596,6 +1823,14 @@ def generate_css():
 [data-sc-class="ld-en"] { color:inherit; font-weight:600; }
 [data-sc-class="ld-gloss"] { color:var(--ld-dim); font-size:.95em; }
 [data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame); }
+/* Sense-group label inside a collocation/thesaurus box: "- Meaning 1: ...". It
+   belongs to the box that follows it, so it sits at the top of the panel body. */
+[data-sc-class="ld-panel-sub"] { display:block; margin:0 0 4px; padding-bottom:2px; border-bottom:1px solid color-mix(in srgb, currentColor 18%, transparent); }
+[data-sc-class="ld-panel-sub"] [data-sc-class="ld-grouptitle"] { font-weight:700; }
+/* LDOCE Online panel: sits at the same level as a normal entry, so give it a
+   little separation from the preceding entry. */
+[data-sc-class="ld-panel-online"] { display:block; margin:6px 0 6px; }
+[data-sc-class="ld-panel-online"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-dim); }
 
 /* ---- examples ---------------------------------------------------------- */
 [data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px; padding-left:1.6em; text-indent:-1.6em; color:var(--ld-text2); font-size:.97em; }
@@ -1625,7 +1860,7 @@ def generate_css():
 [data-sc-class="ld-thesref"] { font-weight:700; color:var(--ld-frame); }
 [data-sc-class="ld-relatedwd"] { font-weight:600; }
 [data-sc-class="ld-abbr"] { font-weight:600; }
-[data-sc-class="ld-num"] { display:inline-block; min-width:1.2em; text-align:center; color:var(--ld-faint); }
+[data-sc-class="ld-num"] { display:inline-block; text-indent:0; min-width:1.2em; text-align:center; color:var(--ld-faint); }
 
 /* ---- collocations / thesaurus / grammar -------------------------------- */
 [data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { font-weight:700; color:var(--ld-head); }
@@ -1654,11 +1889,11 @@ def generate_css():
 [data-sc-class="ld-th"] { background:color-mix(in srgb, var(--ld-frame) 10%, transparent); font-weight:700; }
 
 /* ---- panels ------------------------------------------------------------ */
-[data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"], [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"] { display:block; margin:5px 0 6px; }
+[data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"], [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"], [data-sc-class="ld-panel-online"] { display:block; margin:5px 0 6px; }
 [data-sc-class="ld-panel-sum"] { cursor:pointer; font-weight:700; color:var(--ld-head); list-style:none; padding:1px 0 1px 1.1em; position:relative; user-select:none; }
 [data-sc-class="ld-panel-sum"]::-webkit-details-marker { display:none; }
 [data-sc-class="ld-panel-sum"]::before { content:""; position:absolute; left:0; top:50%; border-top:.32em solid transparent; border-bottom:.32em solid transparent; border-left:.48em solid var(--ld-frame); transform:translateY(-50%); transition:transform .12s; }
-[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"]::before { transform:translateY(-50%) rotate(90deg); }
+[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-online"][open] > [data-sc-class="ld-panel-sum"]::before { transform:translateY(-50%) rotate(90deg); }
 [data-sc-class="ld-panel-title"] { color:var(--ld-frame); }
 [data-sc-class="ld-panel-title-zh"] { margin-left:.5em; font-size:.85em; color:var(--ld-zh); font-weight:600; }
 [data-sc-class="ld-panel-body"] { border-left:3px solid color-mix(in srgb, var(--ld-frame) 40%, transparent); background:color-mix(in srgb, var(--ld-frame) 6%, transparent); border-radius:0 4px 4px 0; padding:4px 8px; margin-top:3px; }
@@ -1670,6 +1905,10 @@ def generate_css():
 [data-sc-class="ld-wf-pos"] { font-style:italic; font-weight:700; color:var(--ld-pos); margin-right:var(--ld-chip-gap); font-size:.9em; }
 [data-sc-class="ld-wf-word"] { font-weight:600; }
 [data-sc-class="ld-wf-root"] { color:var(--ld-dim); border-bottom:1px dotted color-mix(in srgb, currentColor 60%, transparent); }
+/* Antonym marker inside a word family: "!= disadvantage". The source wraps it in
+   <span class="opp"> with a literal U+2260 plus a link. */
+[data-sc-class="ld-wf-opp"] { color:var(--ld-dim); }
+[data-sc-class="ld-wf-opp"] > a { color:inherit; font-weight:600; }
 
 /* ---- corpus list ------------------------------------------------------- */
 [data-sc-class="ld-exagroup"] { display:block; margin:3px 0; }
@@ -1788,7 +2027,14 @@ def pos_tags_rules(pos_tokens, freq_tokens):
     for f in dict.fromkeys(freq_tokens):
         if f not in tags:
             tags.append(f)
-    return " ".join(tags[:6]), " ".join(rules[:4])
+    # Frequency levels are appended after the POS tags, so the old flat
+    # tags[:6] cap silently dropped them on multi-POS entries: 'about' lost W2
+    # from definitionTags while its term_meta_bank row still carried it (140
+    # rows disagreed). Reserve room for every S/W level; POS tags yield first.
+    freq_part = [t for t in tags if t in FREQ_VALUE]
+    pos_part = [t for t in tags if t not in FREQ_VALUE]
+    room = max(0, TAG_LIMIT - len(freq_part))
+    return " ".join(pos_part[:room] + freq_part), " ".join(rules[:4])
 
 
 # ---------------------------------------------------------------------------
@@ -1878,17 +2124,32 @@ def term_row_shape_error(row):
     return ""
 
 
-def collect_sc_classes(value, found):
+def collect_sc_classes(value, found, compound=None):
+    """Collect emitted class tokens, split by how they were emitted.
+
+    `found`      -- tokens emitted as the entire class value (="X" or ~="X")
+    `compound`   -- tokens emitted inside a multi-token value (only ~="X" matches)
+
+    Yomitan sets data.class as a single attribute value, so a compound value can
+    only be reached by an attribute-substring selector. Keeping the two sets
+    apart is what makes the CSS check able to catch "ld-panel ld-panel-online".
+    """
+    if compound is None:
+        compound = set()
     if isinstance(value, list):
         for item in value:
-            collect_sc_classes(item, found)
+            collect_sc_classes(item, found, compound)
     elif isinstance(value, dict):
         cls = (value.get("data") or {}).get("class")
         if cls:
-            found.update(cls.split())
+            parts = cls.split()
+            if len(parts) > 1:
+                compound.update(parts)
+            else:
+                found.update(parts)
         for key, item in value.items():
             if key != "data":
-                collect_sc_classes(item, found)
+                collect_sc_classes(item, found, compound)
 
 
 def iter_sc_links(value):
@@ -1915,6 +2176,7 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
     errors = []
     stats = Counter()
     used_classes = set()
+    used_compound = set()
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
         for required in ("index.json", "styles.css", "tag_bank_1.json"):
@@ -1975,7 +2237,7 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
                             errors.append(
                                 f"{bank} {row[0]!r}: dangling redirect -> {item[0]!r}")
                     elif isinstance(item, dict) and item.get("type") == "structured-content":
-                        collect_sc_classes(item["content"], used_classes)
+                        collect_sc_classes(item["content"], used_classes, used_compound)
                         for link in iter_sc_links(item["content"]):
                             href = link.get("href") or ""
                             if href.startswith("?query="):
@@ -2012,14 +2274,24 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
                 if row[0] not in all_terms:
                     errors.append(f"{bank}: freq row for unknown term {row[0]!r}")
         css = zf.read("styles.css").decode("utf-8") if "styles.css" in names else ""
-        defined = set()
+        defined_exact = set()
         for m in re.findall(r'\[data-sc-class="([^"]+)"\]', css):
-            defined.update(m.split())
+            defined_exact.update(m.split())
+        defined_substr = set()
         for m in re.findall(r'\[data-sc-class~="([^"]+)"\]', css):
-            defined.update(m.split())
+            defined_substr.update(m.split())
+        defined = defined_exact | defined_substr
         missing = used_classes - defined
         if missing:
             errors.append("CSS missing selectors for: " + ", ".join(sorted(missing)))
+        # A compound class value is only reachable via an attribute-substring
+        # selector. Exact-match rules look correct in the stylesheet yet can never
+        # apply to those elements, so require ~= for every compound token.
+        loose = used_compound - defined_substr
+        if loose:
+            errors.append(
+                "CSS: compound class values need [data-sc-class~=\"...\"] selectors for: "
+                + ", ".join(sorted(loose)))
     return errors, stats
 
 

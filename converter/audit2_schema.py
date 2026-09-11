@@ -6,14 +6,33 @@ import json
 import random
 import re
 import sys
+import glob
+import os
 import zipfile
 from collections import Counter
 
 import fastjsonschema
 
 SCHEMA_DIR = r"C:\workspace\ldoce\yomitan-ext\data\schemas"
+def _find_zip():
+    """Newest non-debug package in yomitan_full (an explicit argv[1] wins).
+
+    The zip name carries the revision date, so a hardcoded path silently goes
+    stale the moment the dictionary is rebuilt -- which then makes an audit
+    report on the WRONG package. Discover it instead.
+    """
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1].endswith('.zip'):
+        return _sys.argv[1]
+    cands = [p for p in glob.glob(r"C:\\workspace\\ldoce\\yomitan_full\\LDOCE5pp_Yomitan_*.zip")
+             if '_DEBUG' not in p]
+    if not cands:
+        raise SystemExit('no package found in yomitan_full/')
+    return max(cands, key=os.path.getmtime)
+
+
 ZIP = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.10.zip"
+    _find_zip()
 random.seed(7)
 
 

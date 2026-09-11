@@ -1,5 +1,5 @@
 == index.json vs official dictionary-index-schema ==
-  PASS {'title': 'LDOCE5++ (LM5pp)', 'format': 3, 'revision': '2026.09.10', 'sequenced': True}
+  PASS {'title': 'LDOCE5++ (LM5pp)', 'format': 3, 'revision': '2026.09.11', 'sequenced': True}
 == term_meta_bank vs official schema ==
   OK: 1 meta banks, 5971 freq rows
 == tag_bank vs official schema ==

@@ -55,3 +55,15 @@ ym-translator-results.json
 /*.ts
 /*.js
 /*.css
+
+# ============================================================
+#  成品词典包（走 GitHub Release 附件，见 README）
+#  ⚠ 60 MB 的单次 git push 会在约 19 秒后被链路重置，故不入库
+# ============================================================
+yomitan_full/*.zip
+
+# 临时调试构建（与 yomitan_debug*/ 同类）
+yomitan_wf_test/
+
+# 补丁脚本的运行日志（结论已进 REVIEW）
+converter/_*.log

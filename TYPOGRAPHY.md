@@ -294,3 +294,121 @@ HWD → HOMNUM → PronCodes → tt/LEVEL(●●●) → FREQ(S/W) → AC(AWL) �
 
 **T1/T2/T5/T6 只动 `generate_css()`，T3/T4 要动渲染器。** 建议**合并成一次改动 + 一次重建**（约 11 分钟），并复用现有门禁：
 `audit3`（逐字节复现，验证 T3/T4 以外的行未受影响）、`audit4`（CSS 覆盖零缺失）、`audit5`（词头污染仍为 0）、`audit6`（对比本轮包，差异应只出现在 `ld-stress` / `ld-sense-n` 相关的类上）。
+
+
+---
+
+## T9【中等】`text-indent` 被继承进 `inline-block` 芯片 → 文字"跃出"自己的边框 ✅ 已修复并验证
+
+> 触发来源：用户反馈「`rather` 这个单词 British English 样式有问题，字跃出了边界」。
+
+**根因**：例句块用 `text-indent` 做悬挂缩进：
+
+```css
+[data-sc-class="ld-ex"] { padding-left:1.6em; text-indent:-1.6em; }
+```
+
+而 **`text-indent` 是继承属性**。芯片（`ld-geo` 等）是 `display:inline-block`，**inline-block 会建立新的块容器**，于是继承了 `-1.6em` 并作用到它自己的首行 —— 芯片内的文字被整体**左移约 19px**，而盒子的内在宽度又是按"首行左移"算出来的，于是**比文字还窄**。
+
+真浏览器实测（真实包 CSS + 真实 SC 结构）：
+
+| | 芯片边框盒 | 盒内文字 | 文字相对盒左内缩 | 文字是否溢出盒 |
+|---|---|---|---|---|
+| 修复前 | W=**97.6** | W=**110.5** | **-18.9px** | **YES +12.8px** |
+| 修复后 | W=**122.5** | W=110.5 | **+6.0px** | **no** |
+
+（修复后 122.5 = 文字 110.5 + 左右 padding 10 + 边框 2；+6.0 = padding 5 + 边框 1，均正确。）
+
+**后果**：芯片的背景/边框包不住自己的文字，文字还会**压到前一句上**（`rather` 的例句最典型：`…difficult child` 后面直接叠了 `British English`）。这也解释了为何 `ld-excn`（中文例句）那条规则里早就写了 `text-indent:0` —— 有人为同类问题打过补丁，但只补了那一处。
+
+**影响面**：包内落在例句/语料库例句内的芯片共 **598 处**（`ld-geo` 453、`ld-register` 109、`ld-gram` 36），占全部芯片的 0.20%。数量不大，但命中的都是常见词。
+
+**修法**：给所有 `display:inline-block` 的规则显式加 `text-indent:0`（共享芯片底座 + `ld-field`/`ld-fieldxx` + `ld-signpost` + `ld-snum` + `ld-num`）。只动 `generate_css()`。
+
+**教训**：`text-indent` / `line-height` / `letter-spacing` / `text-align` / `visibility` / `word-spacing` 都是**继承属性**，而 `display:inline-block` 会开新的块容器 —— 父级的负 `text-indent` 会落到它自己身上。凡给块级容器加悬挂缩进，都要对内部 inline-block 子元素重置 `text-indent`。
+
+---
+
+## T10【存疑 · 待决策】`close` 等 38 个词条有两个 "Word family" / "词族" 面板
+
+> 触发来源：用户反馈「`close` 这个词为什么有两个词族 word family」。
+
+**结论：源里确实有两个 `div.wordfams`，内容不同；但原版只让第一个可见，第二个是隐藏块 —— 我们的渲染器把隐藏块也显示了，并给它补了一个 "Word family" 表头。**
+
+### 事实（全部实测）
+
+`close` 在源里是 **4 个同形词**：`close¹` /kləʊz/ verb、`close²` /kləʊs/ adj、`close³` /kləʊs/ adv、`close⁴` /kləʊz/ noun。整条记录有 **2 个 `div.wordfams`**，内容确实不同：
+
+| | 词族内容 |
+|---|---|
+| 面板 A | noun *closeness, borough* · adjective *close* · verb *close* · adverb *close, closely* |
+| 面板 B | noun *close, closure, closing* · adjective *closed, closing* · verb *close* |
+
+它们在 DOM 里是 `div.dictionary` 的**前两个子元素**，排在所有 `dictentry` 之前（同一个 `entry_content`，不是分属不同同形词）。
+
+### 原版只让第一个可见
+
+源文件级统计：
+
+| | 数量 |
+|---|---|
+| `div.wordfams` 总数 | **4,041** |
+| 以 `LDOCE5pp_sensefold` 开头（**有** `asset_intro` 表头 + `foldsign` 折叠标记） | **4,003** |
+| 直接以 `LDOCE_word_family` 开头（**无**表头、**无**折叠标记） | **38** ← 即这些"第二个面板" |
+
+三条独立证据表明那 38 个不可见：
+
+1. **没有显示机制**：内层 `LDOCE_word_family` 带**内联** `style="display:none;"`。`mdd_assets/LM5Switch.js` 里 `LDOCE_word_family` 只出现 2 次，唯一的显示路径是：
+
+   ```js
+   $('.wordfams > .LDOCE5pp_sensefold').off().on("click", function () {
+       $(this).toggleClass('foldsign_fold');
+       $(this).nextAll('.LDOCE_word_family').first().lm5pp_toggle();
+   })
+   ```
+
+   绑定选择器要求 `.LDOCE5pp_sensefold` 是 `.wordfams` 的**直接子元素**，**只有面板 A 有**。面板 B 既无表头可点、也无折叠标记，内容永远停在 `display:none`。
+
+2. **原版 CSS 里没有 `.LDOCE_word_family` 规则**（`mdd_assets/LM5style.css` 命中 0 条），因此没有任何 `!important` 能覆盖那条内联 `display:none`。
+
+3. **原版 JS 明确写了要去重**：`LM5Switch.js:258` 注释 `// remove duplicate records of 'word family'`，按每个 `.wordfams` 内**第一个 `.w` 的 `title`** 去重并 `.remove()`。
+   （严谨起见：这段去重位于 `multiwordsSetup()`，其前提 `$('.lm5ppbody > .entry_content:not(.topic)').length > 1` 对这 38 个**都不成立**，所以它不会被执行；这 38 个里已有 7 个首个 `.w` 标题与面板 A 相同。但无论如何，第 1、2 条已足以证明面板 B 显示不出来。）
+
+### 为什么会出现两个
+
+**源数据自身的冗余**（LDOCE5++ 转换遗留），不是我们造成的重复。原版靠 JS 隐藏/删除兜底。
+
+### 现状与可选修法
+
+`render_wordfams()` 对**每个** `div.wordfams` 都输出一个完整 `<details class="ld-panel-wf">`，并**无条件**加 `Word family / 词族` 表头。于是 38 个隐藏块变成了可见的第二个面板。
+
+| 方案 | 效果 | 代价 |
+|---|---|---|
+| **A. 跳过无表头的 `wordfams`** | 与原版可见输出一致（38 个词条少一个面板） | **删掉** 38 条源内容 |
+| B. 保留内容但不加表头 | 不再像"两个 Word family"，内容不丢 | 多出一段无标题词族列表，仍显突兀 |
+| C. 保持现状 | 内容不丢 | 38 个词条看起来像有重复面板 |
+
+**倾向 A**（精确对齐原版），但这是"删内容"的决定 —— 本项目原则是内容忠实优先，故**未擅自改动**。
+
+**当前状态：已修复（2026-09-11，方案 A，用户拍板）。**
+
+**修法**：`render_wordfams()` 开头加守卫 —— 若该 `div.wordfams` **没有直接子** `span.LDOCE5pp_sensefold`，直接返回 `None`（跳过整块）。这正是上表"面板 B 显示不出来"的结构特征，一行判定，无启发式。
+
+**验证**（`converter/wf_count_probe.py`、`converter/verify_wf.py`）：
+
+| 检查 | 结果 |
+|---|---|
+| 源端用 bs4 枚举**所有** class 含 `wordfams` 的元素 | 27,148 个 = `wordfams newfamily` **23,107** + 精确 `wordfams` **4,041** |
+| 其中无直接子 `sensefold` 的 | **38**（全部落在精确 `wordfams` 组，含 `Independent, the`） |
+| 出厂包（09.11）里有 ≥2 个 `ld-panel-wf` 的词条 | **38**（与源端 38 严格对应） |
+| 改后定向重建（37 个 T10 词 + 5 个对照词） | T10 词每个 **1** 个面板；`improve`/`about`/`back`/`second class`/`seeing` 仍各 1 个；`the` 本就 0 个 |
+| 内嵌校验器（严格模式） | `[OK] Validation passed.` |
+
+> 口径订正：本节正文的"4,041 个 `div.wordfams`"是**精确类名**口径；实际还有 23,107 个
+> `class="wordfams newfamily"`（**全部带表头**，不受守卫影响）。两种口径下"无表头 = 38"一致，
+> 且 23,107 个不受影响 —— 故守卫**无误伤**。
+
+> 注：`--test-words` 按逗号切分，`Independent, the` 传不进去；该 key 由源端谓词复核覆盖。
+
+**落地状态**：代码已改，**尚未进包** —— 09.11 交付包仍是改前状态，需一次全量重建才会生效。
+

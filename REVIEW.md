@@ -432,6 +432,245 @@ FREQ_SCAN_RE = re.compile(r'<span class="[^"]*\bFREQ\b[^"]*">\s*([SW][123])\s*<'
 
 **建议：维持现状（显示）。** 它信息量正确、对我们有利，且"应该隐藏"的证据不成立。
 
+### D11【低】词族面板丢两类内容：`span.opp` 反义词标记与裸文本成员 ✅ 已修复（代码层，待重建）
+
+来源：对 `audit9`（文本守恒门禁）那 **1.738%** 做逐词元归因（`converter/audit9c_compose.py` —— 按词元把缺失量分摊到承载它的源路径上），发现"未到达输出"的文本里有可修的真损失，集中在 `render_wordfams()`：
+
+**（1）`<span class="opp">` 反义词标记整棵被丢** —— 它是 `LDOCE_word_family` 的直接子元素，但不匹配渲染器任何一个分支（只认 `pos` / `rootword` / `crossRef` / `w`），于是走到 `continue` 被静默丢弃。
+
+```html
+<span class="opp"><span class="neutral span"> ≠ </span><a class="crossRef w" href="entry://disadvantage">disadvantage</a></span>
+```
+
+影响面实测：**141/1,119 个词族块（12.6%）**；全库 `class="opp"` 共 **3,528** 处。`advantage` 一个词就丢 4 个反义标记（`≠ disadvantageous` / `≠ disadvantaged` / `≠ disadvantageously`）。
+
+**（2）`LDOCE_word_family` 的裸文本节点被丢** —— 旧代码 `if not isinstance(child, Tag): continue`，而源里确实用裸文本承载词族成员。
+
+影响面：**22/1,119 块（2.0%）**，实例 `additonal`（`add`）、`the accused`（`accuse`）、`customs`（`accustom`）、`administrate`（`administration`）。
+
+> 踩坑记录：修复时第一次用 `sc_text(str(child))` 判空 —— **`sc_text()` 只折叠空白、不 strip**（即 D1 的同一个坑），结果每个标签间空白都生成了一个 `<span class="ld-wf-word"> </span>` 外加空分组。已改为 `.strip()`。修复后核对 `advantage/add/accuse/accustomed/administration`：`empty_groups=0`，词族成员数与源一致。
+
+**修法**：`render_wordfams()` 重构为 `append_word()` 闭包 + `opp` 分支（经 `render_inline_node` 保留内部活链接），裸文本加 `.strip()` 守卫；新增 CSS `ld-wf-opp`。
+
+**验证**：800 词样本 audit9 → **1.738% → 1.680%**（3,340 → 3,228 词元）；定向重建的内嵌校验器 `[OK] Validation passed.`
+
+**状态**：代码已改，**待全量重建生效**（当前 09.11 包仍是改前状态）。
+
+### D13【中】"LDOCE Online" 增补条目被当普通词条渲染 —— 618 个词条出现无标记的第二个词条 ✅ 已修复（代码层，待重建）
+
+来源：对 `render_head` / 词族的残余缺失继续归因时，发现产物里 `absurd` 有**两个 `ld-entry`**，第二个是源里默认隐藏的 LDOCE4 遗留条目。
+
+**源结构**（`absurd`）：
+
+```html
+<div class="dictionary">
+  <div class="dictentry"><span class="dictlink"><div class="ldoceEntry Entry" ...>   <!-- 正常词条 -->
+  <div class="dictentry LDOCEVERSION_new"><span class="dictlink">
+      <div class="ldoceEntry Entry LDOCEVERSION_new" type="encyc">                    <!-- LDOCE Online 增补 -->
+```
+
+**原版是默认隐藏 + 开关控制**，两条独立证据：
+
+1. `LM5style.css`：`.dictentry.LDOCEVERSION_new { display: none; }`
+2. `LM5Switch.js` 有 `#switch_online` 复选框（源里标签就是 `LDOCE Online`），其过滤逻辑
+   `return !($(this).is('.LDOCEVERSION_new') && !$('#switch_online').is(':checked'));`
+   —— 开关**默认关闭**，此时 `.LDOCEVERSION_new` 内容被过滤掉。
+
+**根因**：`LDOCEVERSION_new` 位于 `UNWRAP_CLASSES`，于是包装节点被当透明容器剥掉，隐藏内容被原样发出，显示成"同一词条的第二个词条"（无任何标记）。
+
+**影响面全库实测**：**618/64,659 个词条（0.96%）**含 LDOCE4 遗留子条目（`dictentry.LDOCEVERSION_new` 618 个、`Entry.LDOCEVERSION_new` 640 个）。
+
+> ⚠️ 修法陷阱：**不能按类名整类丢弃**。`LDOCEVERSION_new` 同时出现在**可见**的盒子元素上
+> （如 `<div class="ColloBox LDOCEVERSION_new BoxHide lm5ppBox">` 搭配框），而
+> `.ldoceEntry .LDOCEVERSION_new{display:none}` 是**折叠**机制（`BoxHide` + `lm5ppBox` 的 JS 展开），
+> 不是删除内容。按类名一刀切会连搭配框一起删掉。
+
+**修法**：保留内容，改为**默认折叠的带标签面板**，与原版"默认隐藏、可展开"一致：
+`_is_online_entry()` 只认**最外层** `LDOCEVERSION_new` 容器（祖先检查 —— 标记同时在内层 `Entry` 上，
+按"渲染期标志位"做会嵌套包两层），`_online_panel()` 输出
+`<details class="ld-panel ld-panel-online">`，标题 `LDOCE Online / 在线增补`。
+
+**验证**：`absurd/academe/academy/access/act` 各 **恰好 1 个** online 面板（修复中间产物曾出现 2 个，已修正），
+`Theatre of the Absurd` 等内容保留；`improve`（无增补）为 0；内嵌校验器 `[OK]`；真生成器 407/407。
+
+**若用户希望完全对齐原版默认视图**：把 `_online_panel()` 的返回改为 `[]` 即可丢弃（一处开关）。
+
+### D15【流程事故】转换器源文件被截断为 0 字节，已从 git 恢复 ✅ 已恢复并逐字节验证
+
+**发生了什么**：用 `io.open(path, "w", encoding="utf-8", newline="\\n")` 写补丁时，`newline` 参数非法
+（`\\n` 是两个字面字符），`io.open` 在**校验参数失败之前已经完成截断**，把 2,585 行的
+`converter/ldoce2yomitan.py` 变成 0 字节。`__pycache__` 里的 `.pyc` 随后被"编译空文件"覆盖，也无用。
+
+**损失范围**：HEAD 之后的所有未提交改动（T9 及本轮的 T10 / D10 / D11 / D13 / D14 / 词族与义项注解）。
+
+**恢复过程**：
+
+1. 全库扫描 git 对象（`cat-file --batch-all-objects`，102 个 blob），确认**没有任何 blob 含本轮标记**
+   （`TAG_LIMIT` / `_is_online_entry` / `_gram_text`）→ 工作区版本从未进过 git 对象库，无法直接还原。
+2. 从 `HEAD:converter/ldoce2yomitan.py`（106,963 B）取原始字节恢复。
+3. 按记录逐条重放补丁，**每条都带 `assert` 计数校验**，写入改为**原子写**（临时文件 + `os.replace`，
+   失败不触碰原文件）——工具固化在 `converter/_apply_patch.py`，补丁在 `_restore_all.py`。
+4. **正确性证据**：重放 T9 后文件 md5 = `67e7ed2523…`，与事故前 `check_state.py` 自己打印的
+   `md5: 67e7ed25230d` **完全一致** → T9 部分逐字节还原；其余部分用行为验证（见下）。
+
+**事故后的行为验证**（`converter/verify_recovered.py`，全部 PASS）：
+词族 `opp` 反义词 / 裸文本成员、词头 GRAM 括号与限定词、LDOCE Online 面板、义项变形注解
+（BrE/AmE 区域标签、`same pronunciation`）、以及"无复合 class"检查。
+
+**预防措施**：
+1. `converter/ldoce2yomitan.py.LATEST.py.bak` —— 每次改动后立即快照（已存在）。
+2. 所有程序化改写必须走 `_apply_patch.write_atomic()`；**禁止**直接 `io.open(p, "w")`。
+3. 改动应及时 `git add`：工作区版本一旦被截断，未入库的内容只能靠重放恢复。
+
+### D16【中】校验器漏检复合 class —— 本轮同类 bug 的两个实例 ✅ 已修复并加固
+
+Yomitan 把 `data:{class}` 写进**单个属性值**，所以 `[data-sc-class="X"]` 只在取值**恰好等于** X 时命中。
+复合取值（`"a b"`）会让所有精确匹配规则静默失效。本轮就踩了两次：
+
+1. `cls="ld-panel ld-panel-online"` —— 面板基础样式（`[data-sc-class="ld-panel"]`）永远不生效。
+   **已改为单 token** `ld-panel-online`，并把该 token 并入全部面板逗号选择器列表。
+2. 更值得警惕的是：`ld-sense-cross ld-sense-n` 这类**故意**的复合值（靠 `~=` 匹配）是**正确**的，
+   所以不能一味禁止复合，只能要求"复合取值的每个 token 必须有 `~=` 选择器"。
+
+**加固**（`validate_package`）：`collect_sc_classes()` 现在把"整值 token"与"复合值内的 token"分开收集，
+CSS 检查据此分流——整值 token 允许 `=` 或 `~=`，**复合值 token 必须**有 `~=` 选择器，否则报
+`CSS: compound class values need [data-sc-class~="..."] selectors for: ...`。
+
+**反向验证**（故意造一个带复合 class 但只有精确选择器的包）：校验器正确报错
+`CSS: compound class values need [data-sc-class~="..."] selectors for: ld-bogus-compound, ld-panel`。
+真实包上该检查通过（437 个复合取值全部有 `~=` 覆盖）。
+
+### D18【低】`span.opp` 内的词族词丢失类名（并污染 unknown-class 报表）✅ 已修复
+
+D11 引入 opp 分支后，`span.opp` 的**非锚**子元素（`<span class="w">` / `<span class="w rootword">`，
+反义词无对应词条可链时就是这种形式）会走到 `render_inline_node` 的通用分支：文本**没丢**、链接**也没丢**
+（带链接的反义词都是 `<a class="crossRef w">`），但那些词拿不到 `ld-wf-word` 样式，且在构建报告里被记成
+未识别类（上一轮构建报 `w` 529 / `rootword` 237 / `crossRef` 6）。
+
+**修法**：`render_wordfams()` 的 opp 分支改为**显式遍历子节点**——`crossRef`/`<a>` 走链接、`w`/`rootword`
+发 `ld-wf-word`、其余（`neutral` 的 `≠`）走通用子渲染。
+
+> ⚠️ **修这个时我自己引入了一次回归**：新循环写的是 `if isinstance(sub, NavigableString): continue`，
+> 而反义词**可能就是裸文本节点**：
+> `<span class="opp"><span class="neutral span"> ≠ </span>unacademic</span>`
+> —— 于是 `academe`/`academy` 的 `≠ unacademic` 变成了只有 `≠`。**裸文本子节点必须保留**（同 D11 的教训）。
+> 这次是 `verify_recovered.py` 的 A 组断言当场抓住的，未进入全量包。
+
+**修后实测**：6000 词样本的 unknown-class 从 `{'Tail': 622, 'w': 4, 'rootword': 3, 'Error': 1}`
+降到 `{'Tail': 622, 'Error': 1}`。**全库首轮重建后仍余 6 个**（`w`/`crossRef`/`rootword` 各 6）——
+用渲染器全量扫描 + 计数器差分定位到 6 个词条（`dislike`/`disrespect`/`distrust`/`import`/`independence`/`invalid`）：
+它们的 `span.opp` 里含有**带 href 的锚形式 span**：
+
+```html
+<span class="opp"><span class="neutral span"> ≠ </span>
+  <span class="crossRef w rootword" href="/dictionary/dislike#dislike__3" title="dislike">dislike</span></span>
+```
+
+opp 循环**先判 `crossRef`**，把它交给了通用链接路径，而 `href="/dictionary/..."` 被 `render_link` 的
+`/` 前缀拦截，最终落到通用 span 分支 → 记录为未识别类。
+
+**修法**：opp 循环改为**先判词族词类（`w`/`rootword`）**，再做链接；词族词若解析到真实词条则发 `<a>`，
+否则发 `ld-wf-word`（片段锚 `#...` 是同词条自引用，按纯文本处理）。
+
+**修后实测（全库）**：`{'w': 0, 'crossRef': 0, 'rootword': 0}`，构建报告中词族相关噪声**归零**，
+只剩解析器固有的 `Tail`（7,196）与 `Error`（11）。
+
+### D19【流程】修正一处"改动不看全貌"的教训 ✅
+
+D18 的两次修复之所以各自引入一次回归，共同原因是**只针对眼前样本改代码、没有先看该类元素的全部形态**。
+本轮把三类形态都枚举后才定稿：`<a class="crossRef w">`（有链接）、`<span class="w|rootword">`（无链接）、
+`<span class="crossRef w rootword" href="...">`（锚形式 span，6 例）、以及 `span.opp` 的**裸文本**子节点。
+**通法**：改一个类名分派分支前，先用 bs4 把该类元素在全库的**子结构形状**聚类统计，再写分支。
+
+**新增门禁**：`converter/verify_wf_complete.py` —— 把源里"渲染器会保留的词族块"文本与产物
+`ld-panel-wf` 面板文本做多重集比对。1501 词 / 575 个词族 **零缺失**。
+
+> 该门禁自己的第一版也骗了我一次：拼接片段时用了 `''.join`，把相邻词粘成 `abandonwareadjective`，
+> 于是报了 97% 的词条"内容丢失"。**比对类脚本必须先自证**（用已知完整的样本跑通再上全量）。
+
+### D17【低】变形列表丢掉区域标签与注解 —— 58/2,389 个 Inflections 跨度 ✅ 已修复（代码层，待重建）
+
+`span.Inflections` 是**有序序列**：变形形式 + 限定它们的注解。旧的 `render_inflections()` 只收集
+形式类（`PLURALFORM`/`PTandPPX`/…），另两类直接子元素被丢弃：
+
+| 注解元素 | 含义 | 跨度数 | 实例 |
+|---|---|---|---|
+| `span.GEO` | 区域标签 | 43 | `backpedal` → 形式列表里 BrE 与 AmE 两套变位被合并成一份无差别列表 |
+| `span.LINKWORD` | `or` / `(same pronunciation)` | 15 | `bus` → `plural buses or busses especially American English` |
+
+**修法**：`render_inflections()` 改为**保序**遍历直接子元素，形式走 `ld-infl-form`、区域标签走
+`ld-infl-region`、注解走 `ld-infl-ann`；区域标签用 `_no_portrait_text()` 读取（保留
+`especially` 这类裸限定词，跳过 `portrait` 缩写）。新增对应 CSS 两条。
+
+**验证**：`backpedal`/`cancel` → regions `['British English', 'American English']`；
+`bus` → `['especially American English']` + ann `['or','or']`；`agent provocateur` →
+ann `['same pronunciation']`；`child`/`improve` 无注解不受影响。
+
+> 注：`portrait` 里的缩写（`BrE`/`AmE`/`C`/`U`）是原版 JS 与全称**二选一显示**的变体，
+> 全项目统一渲染全称，故"缺少 BrE"不是缺陷。
+
+### D14【低】词头 `GRAM` 的方括号与限定词丢失 —— 508/1,501 词条 ✅ 已修复（代码层，待重建）
+
+**位置**：`render_head()` 的 `GRAM` 分支用了 `_pick_landscape()`
+
+```html
+<span class="GRAM"><span class="neutral span"> [</span>singular,
+  <span class="landscape">uncountable</span><span class="portrait"><span class="cap">U</span></span>
+  <span class="neutral span">]</span></span>
+```
+
+方括号在 `neutral span` 里、`singular,` 是 GRAM 内的裸文本，两者都是 `landscape` 的**兄弟节点**，
+而 `_pick_landscape()` 只取 `landscape` 的文本 ⇒ 输出裸 `uncountable`，`[`、`]`、`singular,` 全丢。
+
+**影响面**：1501 词样本中 **508 个词条**的 Head 带 GRAM，全部含方括号。实例：
+`12` / `15` → 旧 `uncountable`，新 `[singular, uncountable]`；`18-wheeler` → `[countable]`；
+`2.0` → `[only after noun]`。
+
+**修法**：新增 `_gram_text()`（跳过 `portrait` 缩写变体，保留方括号与裸限定词），GRAM 分支改用它。
+**词性（POS）仍用 `_pick_landscape()`** —— 那里确实只要词性词，行为不变。
+
+**验证**：`ld-gram` 节点内容 `[singular, uncountable]` / `[countable]` / `[only after noun]` 均正确；
+义项级 GRAM 本来就走另一条路径（`[intransitive, transitive]`），未受影响。
+
+### D12【审计口径澄清】audit9 的残余 ~1.6% 大部分**不是**可修的丢失
+
+对上述样本做逐词元路径归因（`audit9c_compose.py`），残余缺失的构成是：
+
+| 占比 | 来源 | 原版是否可见 |
+|---|---|---|
+| 30.7% | `.portrait` / `.landscape` 变体对 | **两个都 `display:none`**（原版靠 JS 择一显示）；我们渲染全称，丢缩写 `C`/`U`/`i`/`t` —— 与原版"一次只显示一个"一致 |
+| 11.1% | `h1.pagetitle` | `display:none` |
+| 5.4% | `.Crossrefto .REFLEX` | `display:none` |
+| 1.1% | `.LDOCEVERSION*` 版本徽标 | `display:none` |
+| 1.0% | `.bussdict` 商务词典 | `display:none` |
+| 0.3% | `.BoxPanel` | `display:none`（由 JS 展开） |
+| 0.2% | `.suppressed` | `display:none` |
+| ~50% | audit9 未建模的其余路径 | 混合；含语料库/例句的 tokenizer 边界差异与祖先重复计数 |
+
+**结论：这是"审计模型 vs 原版可见性"的口径差，不是数据缺陷。** 把剩下这些"补"回来等于把原版**故意隐藏**的重复变体和 UI 残留塞进词条，属于**反向偏离**。故仅修 D11 的两类真损失，其余维持现状。
+
+**audit9 收敛轨迹（800 词样本）**：初版 1.738%（3,340 词元）→ 修 D11 词族两类损失后 1.680% → 修 D14 词头 GRAM 后 **1.593%**（`action` 76→28、`act` 47→27）。剩余部分即上表的口径差。
+
+（方法论备注：`audit9c` 把缺失量按路径份额**分摊**；更早的一版按路径全量累加，总和达到实际缺失的 271%，已删除。用 800 词样本时口径与 `audit9_text_conservation.py` 逐位吻合 —— 3,340 / 1.738%。）
+
+### D10【低】频率等级被 `definitionTags` 的 6 标签上限截断 —— 140 行自我矛盾 ✅ 已修复（代码层，待重建）
+
+**位置**：`ldoce2yomitan.py` 的 `pos_tags_rules()`，`return " ".join(tags[:6]), ...`
+
+**机制**：频率等级（`S1`–`S3`/`W1`–`W3`）是在**词性标签之后**追加的，扁平截断到 6 个时会把它们切掉。词性多的词因此丢等级：
+
+| 词条 | 行内 `definitionTags`（改前） | 该词 `term_meta_bank` 行 |
+|---|---|---|
+| `about` | `S1 S3 W1 adj adv prep`（**丢 W2**） | `/about` + `W2` ✅ 有 |
+| `back` | `S1 W1 adv noun phrasal-v verb`（**丢 S2、W3**） | `S2`、`W3` ✅ 都有 |
+| `base` | 丢 `S2`、`W2` | 有 |
+
+**影响面实测**：`term_meta_bank` 5,971 行里有 **140 行**的等级在其词条行的标签串中不存在（DSL 侧完整、标签侧缺失）。后果仅限标签过滤/徽标 —— **频率排序走 `term_meta_bank`，不受影响**。
+
+**修法**：新增 `TAG_LIMIT = 8`；频率等级先占位（`freq_part`），词性标签按剩余名额填充，`S/W` 等级**永不被截断**。改后实测：`about` → `prep adv adj S1 W1 S3 W2`；`back` → `adv noun verb phrasal-v S1 W1 S2 W3`；行内标签仍全部在 `tag_bank` 声明内（无游离 token）。
+
+**状态**：2026-09-11 只改代码（用户选择），**下一次全量重建生效**；当前 09.11 包仍是改前状态。
+
 ### ⚠ 方法论修正：`LM5style.css` 不是完整的排版基准
 
 D9 暴露了一件影响全盘的事：**我们取出的原版 CSS 只是 3 个样式表里的 2 个**，缺 `LM5style_switch.css`。因此：
@@ -591,3 +830,49 @@ cd scgen_test && NODE_PATH=./node_modules \
 ```
 
 —— 报告完 ——
+
+
+---
+
+## 附：4,875 条"降级链接"能不能解决 —— 结论：**不能**（2026-09-11）
+
+> 触发来源：用户问「1,946,990 条活链，零悬挂；4,875 条因源库缺目标而降级，这个问题能解决吗」。
+
+**方法**：写脚本独立复现 Pass A + 别名预规划，把每个 `<a>` 链接按 `render_link()` 的同一套过滤规则取目标并逐个 `resolve()`。**复算结果与构建日志逐位吻合：活链 1,949,610（构建口径 1,946,990，差额为 topic 别名行）、降级 4,875、降级去重目标 4,241。**
+
+### 这 4,875 条是什么
+
+| 类别 | 链接数 | 去重目标 | 说明 |
+|---|---|---|---|
+| SYN / 同义词组里的短语标签 | ~4,400 | 4,225 | 例：`keep (something) in mind`、`be aware of something` |
+| `LDOCE4 Page A1..A15` | 279 | 15 | 15 个整版插图页（源键 `ldoce\d+jpg*` 被 skip） |
+| `d_N` | 188 | 1 | 语料库来源代码（`href="entry://d_2" title="d"` → 显示为 `D`） |
+
+**关键事实：这些目标在源 MDX 里没有任何记录** —— 既不是词条、也不是 `@@@LINK=` 别名，连归一化后也不存在。实测三例：
+
+```html
+<!-- bear 的 SYN 里 -->
+<span class="SYN"><span class="synopp span">SYN</span><a href="entry://keep (something) in mind"> keep (something) in mind</a></span>
+
+<!-- abuse 的语料库例句里 -->
+<a class="defRef" href="entry://d_2" title="d">D</a>      <!-- "Kibble List D"，语料库编号 -->
+```
+
+也就是说：**这些链接在原版词典里同样是死链**（点下去什么也不会发生）。这不是我们的转换缺陷。
+
+### 尝试过的"救回"手段与结果
+
+对每个死链目标做表面形式变体（去 `(...)`／去 `[...]`、`a/b` → `a or b`、去 `be/get/go/have/make/take/do/give/put/keep` 动词前缀）后再解析：
+
+| | 结果 |
+|---|---|
+| 能救回的目标数 | **28 / 4,241 = 0.7%** |
+| 副作用 | **会造出错误链接**：`have a bet` 去掉前缀后归一化成 `abet`（完全无关的词）；`go mad` → `mad` 也只算勉强相关 |
+
+**结论：不值得做，且有害。** 0.7% 的收益换来少量错误跳转，而错误跳转比"是个死文本"更糟。
+
+### 建议维持现状
+
+当前实现是把这类链接渲染成 `ld-xref-dead` 样式的**纯文本**（不带下划线、不可点）—— 与原版"可点但点了没反应"相比，至少不误导用户去点。这是**最忠实**的处理。
+
+**唯一的例外**：279 条 `LDOCE4 Page A1..A15` 指向的是那 15 张整版插图。要救它们就得把 jpg 打进包（见 §2 D8 之后的"机会"一节）—— 但 `_getImageMedia()` 在路径取不到时**直接 throw**，会让**整个词典导入失败**，风险不对称，**不建议**。

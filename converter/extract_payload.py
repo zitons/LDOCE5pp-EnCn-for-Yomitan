@@ -1,18 +1,41 @@
+import glob
 import json
+import os
 import random
-import re
+import sys
 import zipfile
-
-from urllib.parse import unquote
 
 random.seed(42)
 out = []
 words_taken = set()
 
-SOURCES = [
-    r"C:\workspace\ldoce\yomitan_debug\LDOCE5pp_Yomitan_2026.09.10_DEBUG.zip",
-    r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.10.zip",
-]
+
+def _find_sources():
+    """Newest full package + newest debug package (explicit argv wins).
+
+    Was hardcoded to 2026.09.10 and silently went stale on rebuild -- the same
+    trap audit2/3/4/5 already guard against with _find_zip(). Keep it dynamic.
+    """
+    explicit = [a for a in sys.argv[1:] if a.endswith(".zip")]
+    if explicit:
+        return explicit
+    srcs = []
+    full = [p for p in glob.glob(r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_*.zip")
+            if "_DEBUG" not in p]
+    if full:
+        srcs.append(max(full, key=os.path.getmtime))
+    dbg = glob.glob(r"C:\workspace\ldoce\yomitan_debug*\*_DEBUG.zip")
+    if dbg:
+        srcs.append(max(dbg, key=os.path.getmtime))
+    if not srcs:
+        raise SystemExit("no package found under yomitan_full/ or yomitan_debug*/")
+    return srcs
+
+
+SOURCES = _find_sources()
+print("payload sources:")
+for _s in SOURCES:
+    print("   ", _s)
 
 rows_pool = []
 for zp in SOURCES:

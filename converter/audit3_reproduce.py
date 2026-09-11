@@ -10,6 +10,8 @@ import json
 import random
 import re
 import sys
+import glob
+import os
 import zipfile
 from collections import Counter
 
@@ -21,7 +23,24 @@ from ldoce2yomitan import (  # noqa: E402
 )
 
 SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.10.zip"
+def _find_zip():
+    """Newest non-debug package in yomitan_full (an explicit argv[1] wins).
+
+    The zip name carries the revision date, so a hardcoded path silently goes
+    stale the moment the dictionary is rebuilt -- which then makes an audit
+    report on the WRONG package. Discover it instead.
+    """
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1].endswith('.zip'):
+        return _sys.argv[1]
+    cands = [p for p in glob.glob(r"C:\\workspace\\ldoce\\yomitan_full\\LDOCE5pp_Yomitan_*.zip")
+             if '_DEBUG' not in p]
+    if not cands:
+        raise SystemExit('no package found in yomitan_full/')
+    return max(cands, key=os.path.getmtime)
+
+
+ZIP = _find_zip()
 random.seed(11)
 
 z = zipfile.ZipFile(ZIP)

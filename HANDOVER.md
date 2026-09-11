@@ -19,7 +19,7 @@
 | `HYP` 重音符被写成中点 | 39,354 个（27%） | **0** |
 | 查询链接 live | 1,945,431 | 1,946,990（词头里的同音词/变体链恢复为活链） |
 | 行数 / 词条 / 别名 | 245,933 / 64,659 / 181,274 | **完全不变** |
-| zip 体积 | 59,919,504 B | 59,866,799 B |
+| zip 体积 | 59,919,504 B | 60,071,408 B |
 
 **第三轮（排版/CSS 层，见 `TYPOGRAPHY.md`）**：主题机制从"跟随操作系统"改为"跟随 Yomitan 的
 `:root[data-theme=dark]`"（原方案在 4 种主题组合里有 2 种文字与背景同色、对比度仅 1.02:1 与 1.39:1）；
@@ -41,6 +41,24 @@ CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/�
 新增审计工具：`audit3_reproduce.py` / `audit4_structure.py` / `audit5_headword.py` /
 `audit6_diff.py` / `audit7_parser_equiv.py` / `audit8_head_order.py` / `bench_parse.py` /
 `build_ref_render.py`（用原版 CSS 生成参考渲染页）。
+
+**第六轮（独立复审 + 修复，见 REVIEW.md D10–D17）**：
+
+| 项 | 结果 |
+|---|---|
+| 词族面板丢内容（`span.opp` 反义词、裸文本成员） | 修（影响 12.6% / 2.0% 的词族块） |
+| 词头 `GRAM` 丢方括号与限定词（`[singular, uncountable]`） | 修（508/1,501 词条） |
+| "LDOCE Online" 增补条目当普通词条外露（`absurd` 两个词条） | 修（618 词条，改为默认折叠面板） |
+| 搭配框 `span.HEADING` 义项分组标签丢 | 修 |
+| 变形列表丢 BrE/AmE 区域标签与 `(same pronunciation)` | 修（58/2,389 跨度） |
+| 复制脚本把源码截断为 0 字节 | **已从 git 恢复**，新增原子写工具与快照 |
+| 校验器漏检复合 class | **已加固**（复合值 token 必须有 `~=` 选择器） |
+| `span.opp` 内词族词丢类名 | 修（unknown-class 噪声归零；修它时引入的裸文本回归被断言当场拦住） |
+
+新增工具：`_apply_patch.py`（原子写补丁框架）、`_restore_all.py`（本轮补丁重放）、
+`_fix_after_recovery.py`、`_patch_validator.py`、`verify_recovered.py`（四项修复的行为验证）、
+`audit9c_compose.py`（把 audit9 的缺失逐词元归因到源路径）、`wf_loss_quant.py` / `box_probe.py` /
+`heading_quant.py` / `gram_quant.py` / `infl_inside.py` 等定量脚本。
 
 
 ---
@@ -188,12 +206,46 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 26. **验证排版不要只看代码，也别只靠静态分析**：用真 Chrome 复刻 Yomitan 的注入结构（`[data-dictionary]` 嵌套 + `--text-color`/`--background-color` 两套变量）跑 `getComputedStyle`，才能量出真实对比度和真实生效情况。本轮的 T1 单靠读代码先后写错了两版。注意两个自己踩过的测量陷阱：① `getComputedStyle().color` 可能返回 `color(srgb r g b)` 小数格式，解析要兼容；② 无头 Chrome 默认 `prefers-color-scheme: dark`，会把"宿主报暗色"这条分支激活，测量前要显式钉住 `color-scheme`。
 27. **元素的可视顺序只能来自源 DOM，不能自造模板**。`render_head()` 曾按 `hwd → gram → pron → pos → chips` 的固定次序拼装，把 `GRAM` 顶到音标前（`18-wheel·er [countable] /…/ noun`）。判定依据不能靠"哪种排布更常见"，而是要证明原版**没有**用 CSS 重排：拿到 `.mdd` 里的 `LM5style.css` 后确认词头区域无任何 `order:`/绝对定位（`.Head` 是 `display:inline`），视觉顺序 = DOM 顺序。**通法**：任何"按类别分桶再按固定次序输出"的渲染器都有此风险；改成单次遍历、遇到什么发什么。
 28. **同一个"位置"在源里可能有多份，且顺序有语义**：`the` 有两条 `lm5pp_POS`（`definite article` + `determiner`），原来用单个 `pos_text` 槽位**只留最后一条**。凡是"每类元素只留一个值"的写法都要先统计该类元素的最大重复数。
+33. **`text-indent` 是继承属性，会给 `display:inline-block` 的子元素埋雷**：例句块 `.ld-ex{text-indent:-1.6em}`，而芯片是 inline-block —— inline-block 会建立**新的块容器**，于是继承的负 `text-indent` 作用到它自己的首行，把盒内文字左移约 19px，且盒子的内在宽度按"首行左移"算 → **盒子比文字还窄，文字溢出边框并压到前一句上**（`rather` 的 `British English` 就是活证据，影响 598 处）。修法是给所有 inline-block 规则加 `text-indent:0`。同理要警惕 `line-height`/`letter-spacing`/`word-spacing`/`text-align`/`visibility` —— 都是继承属性。
+34. **审计脚本不要硬编码包路径**：zip 名带修订日期，重建后路径就过期，审计会静默跑在**旧包**上（本轮踩到：`audit2/3/4/5` 全写死 `2026.09.10`）。已统一改成 `_find_zip()`（取 `yomitan_full` 里最新的非 DEBUG 包，argv 可覆盖）。
+35. **大文件不要走 `git push`**：60 MB 的单次 POST（`Content-Length: 60052449`）无论直连还是经代理都会在**约 19 秒后被链路重置**（`curl 55 Send failure`），`http.postBuffer` 调大/调小、chunked、HTTP/1.1 均无效。**改用 Release 附件**（`uploads.github.com/.../releases/{id}/assets?name=X`）一次通过。
+36. **`git push` 静默失败**：本机 `~/.gitconfig` 里有 `http.proxy`，且凭据助手会干扰；用 `git -c credential.helper= push <带 token 的 URL>` 才稳定。
 30. **zip 在 Pass B 之前就已打开**（bank 是 `zf.writestr()` 流式写进去的，见 §9.8 的性能优化）。因此**任何在 Pass B 之后新产出的文件都必须走 `zf.writestr(name, payload)`**；只写磁盘文件不会进包。我加 `term_meta_bank` 时正是漏了这点，包内一度完全没有它，而磁盘上却躺着那个文件。
 31. **别用 `start` 当循环变量**：`build()` 里 `start = time.time()` 是计时基准，遮蔽它会让 `Elapsed` 输出成 17 亿秒。用 `offset`/`idx` 之类。
 32. **`cls & DROP_CLASSES` 不能作为"整块丢弃"的唯一判据**：元素可以同时带有意义的类与被丢弃的类（`Crossref imagerelated LDOCE5 ldoce4img`），首个命中就丢会连带丢掉真实内容。统一改用 `is_dropped(cls)`（`DROP_EXEMPT` 允许 `Crossref`/`crossRef` 胜出）。
 29. **`.mdd` 的读取**：`mdict_utils.reader.MDD` **不支持下标**（`m[k]` 报 `TypeError`），要用 `m.items()` / `m.keys()`；返回的**键是 `bytes`**（需解码），且 `m.header` 是 **dict** 不是对象（没有 `.version` 属性）。别用全量 `findall` 去测"按单个 key 调用"的正则（`SKIP_KEY_RE` 就是这么被我误判成零命中的）。
 
 ---
+
+37. **⚠️ 绝不要用 `io.open(path, "w")` 改这个文件——`newline` 参数非法也会先截断**。本轮把
+    `ldoce2yomitan.py` 写成 0 字节就是这么发生的：`io.open(p, "w", encoding="utf-8", newline="\\n")`
+    里 `newline` 传了**两个字面字符**（应为 `"\n"`），`io.open` 在抛 `ValueError` **之前**已经完成截断，
+    2,585 行源码瞬间归零；随后一次"编译空文件"把 `__pycache__` 里的 `.pyc` 也覆盖成 113 字节，彻底断掉退路。
+    **所有程序化改写必须走 `converter/_apply_patch.py` 的 `write_atomic()`**（临时文件 + `os.replace`，
+    失败不触碰原文件），并且每条替换都要 `assert` 命中数。补丁示例见 `converter/_restore_all.py`。
+    另：**改动要尽快 `git add`** —— 工作区版本一旦被截断，未入库的内容只能靠重放恢复（本轮全库 102 个
+    git blob 里没有任何一个含本轮标记，直接还原无门）。恢复的锚点是"T9 重放后 md5 与事故前日志里
+    打印过的 md5 逐位相同"。
+38. **复合 `data.class` 只能用 `~=` 选择器命中，而它有两种截然不同的性质**。Yomitan 把 `data:{class}`
+    写进**单个属性值**，`[data-sc-class="a b"]` 永不命中。于是：
+    * **误用**：`cls="ld-panel ld-panel-online"` → 面板基础样式静默全失效（本轮实例，已改单 token）。
+    * **正当用法**：`"ld-sense-cross ld-sense-n"` 这种"基础 + 修饰"是**设计如此**，靠
+      `[data-sc-class~="ld-sense-n"]` 命中，不能一刀切禁止。
+    **校验器已按此加固**：`collect_sc_classes()` 分开收集"整值 token"与"复合值内 token"，后者**必须**有
+    `~=` 选择器，否则报错。改动渲染器发新 class 时，这条检查会在构建时就抓住问题。
+39. **`sc_text()` 只折叠空白、不 `strip()`**（与 D1 同源）。凡是拿它做"这段文本非空吗"的判断，都要自己
+    `.strip()`；本轮给词族加裸文本分支时正是漏了这一点，把每个标签间空白都变成了
+    `<span class="ld-wf-word"> </span>` 外加空分组。
+40. **一个元素类名可能同时承载"隐藏"与"可见"两种语义，按类名一刀切必错**：`LDOCEVERSION_new` 既在
+    默认隐藏的 LDOCE Online 增补条目上（`.dictentry.LDOCEVERSION_new{display:none}`），也在**可见**的
+    搭配框上（`<div class="ColloBox LDOCEVERSION_new BoxHide lm5ppBox">`，`.ldoceEntry .LDOCEVERSION_new`
+    那条规则是**折叠**机制而 `BoxHide` 由 JS 展开）。判据要落到**祖先结构**上（本轮用
+    `_is_online_entry()`：只认最外层容器），而不是类名本身。
+41. **判定"原版是否显示"要去 `.mdd` 的 CSS/JS 里找反证，不能凭观感**：本轮据此确认了三件事——
+    `.portrait` 与 `.landscape` **各自**都有 `display:none`（由 JS 二选一，故渲染全称是对的）；
+    `h1.pagetitle`、`.Crossrefto .REFLEX`、`.bussdict`、`.suppressed`、`.BoxPanel` 原版都隐藏
+    （所以 audit9 里那部分"缺失"不是缺陷）；而 `span.HEADING`（义项分组标签）与 `span.GEO`/`span.LINKWORD`
+    （变形区域标签/注解）在原版**是可见的**，丢掉才是缺陷。
 
 ## 6. Yomitan 契约速查（format-3）
 
@@ -221,7 +273,9 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | `div.EXAMPLE` | `div.ld-ex` + 内嵌 `div.ld-excn` | 风味单 token 阶梯：ld-gramexa > ld-colloexa > ld-ex-good(✓::before) > ld-ex-bad(✗) > ld-ex；`span.english` 定中文归属域 |
 | `div.F2NBox/GramBox/ThesBox/ColloBox/UsageBox` | `details.ld-panel`（summary 双语标题 PANEL_TITLES_ZH） | heading 去 foldsign 后取文本；FrequenceBox 整个跳过；BoxPanel→ld-panel-boxbody |
 | `div.asset + 连续 div.assetlink` | 合并成一个 `details.ld-panel-corpus` | exaGroup→`ul.ld-corpulist`，`span.exa[type=X]`→`li.ld-corpexa-X`（X∈corpus/dics/encyc/online/phrases） |
-| `div.wordfams` | `details.ld-panel-wf` | POS 分组 `ld-wf-group`，crossRef 词→活链接，词根 `ld-wf-root` |
+| `div.wordfams` | `details.ld-panel-wf` | **只处理带直接子 `sensefold` 的那种**（无表头的 38 个在原版永不显示）；POS 分组 `ld-wf-group`，crossRef 词→活链接，词根 `ld-wf-root`，反义词标记 `span.opp`→`ld-wf-opp`，裸文本成员→`ld-wf-word` |
+| `div.dictentry.LDOCEVERSION_new` | `details.ld-panel-online`（默认折叠） | LDOCE Online 增补条目（LDOCE4 遗留，`type="encyc"`）。原版 `display:none` + `#switch_online` 开关，故保留内容但折叠；`_is_online_entry()` 只认最外层容器。**不能按类名整类丢弃**——同类名也在可见的搭配框上 |
+| `span.HEADING`（盒内） | `div.ld-panel-sub > span.ld-grouptitle` | 义项分组标签（`– Meaning 1: …`），夹在折叠头与 `BoxPanel` 之间，旧代码只渲染 `BoxPanel` 把它丢了 |
 | `span.etym` | `details.ld-panel-etym` | CENTURY/ORIGIN/TRAN/LANG → ld-century/origin/tran/lang |
 | `a` href=`entry://X` | `?query=X&wildcards=off` 活链 / 降级 `span.ld-xref-dead` | resolve 链见 §5.6；topic-full 锚整个丢弃；`ACTIV:`/cn_topic→`span.ld-act(cn)` 绿芯片 |
 | `span.GRAM/GEO/SENSENUM/SIGNPOST/REFHWD/...` | 同名 ld-* 芯片 | 全表在 part `CHIP_MAP/INLINE_MAP/UNWRAP_CLASSES`（文件头 400 行内） |
