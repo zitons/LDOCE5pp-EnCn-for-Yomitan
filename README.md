@@ -3,7 +3,10 @@
 把《朗文当代高级英语辞典 5++（LDOCE5++ V2.15 En-Cn）》的 MDX/MDD 转成
 [Yomitan](https://github.com/yomitan/yomitan) format-3 词典包。
 
-**成品**：`yomitan_full/LDOCE5pp_Yomitan_2026.09.10.zip`（约 60 MB）
+**成品**（约 57 MB）——从 Release 下载，不入库（GitHub 大包推送会被链路重置）：
+
+> **[⬇ 下载 `LDOCE5pp_Yomitan_2026.09.10.zip`](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/download/v2026.09.10/LDOCE5pp_Yomitan_2026.09.10.zip)**
+> 全部版本见 [Releases](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases)。
 
 | | |
 |---|---|
@@ -16,7 +19,14 @@
 
 ## 安装
 
-Yomitan → `Dictionaries` → `Load zip` → 选 `yomitan_full/LDOCE5pp_Yomitan_2026.09.10.zip`。
+Yomitan → `Dictionaries` → `Load zip` → 选下载到的 `LDOCE5pp_Yomitan_2026.09.10.zip`。
+
+## 仓库内容
+
+本仓库只放**源码、文档与审计脚本**（约 2 MB），词典包走 Release 附件 ——
+试过直接 `git push` 57 MB 的单次请求，无论是直连还是经代理，都会被链路在
+约 19 秒后重置（`curl 55 Send failure: Connection was reset`），故改用 Release 附件的
+上传端点（`uploads.github.com`），一次通过。
 
 ## 重建
 
@@ -68,7 +78,7 @@ python converter/ldoce2yomitan.py -i "extract/LDOCE5++ V 2-15.mdx.txt" \
 
 ```
 converter/                   转换器与全部审计脚本（唯一事实来源：ldoce2yomitan.py）
-yomitan_full/                成品包
+yomitan_full/                构建输出（入库的只有 index/styles/tag_bank；zip 见 Release）
 mdd_assets/                  从 .mdd 取出的原版 LM5style.css 等（用于排版核对）
 scgen_test/                  Node+jsdom 里跑 Yomitan 真 structured-content 生成器的测试台
 shot_*.png / preview.html    排版与内容的可视证据
