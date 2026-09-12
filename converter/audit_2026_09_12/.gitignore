@@ -1,0 +1,11 @@
+# Reproducible local evidence; keep scripts, REPORT.md and FIXES.md in version
+# control. regress_publish_gate/ holds throwaway builds from regress_gates.py
+# (its *.zip members are already covered by *.zip, but index.json, styles.css
+# and tag_bank_1.json would otherwise show up as untracked noise).
+*.json
+*.log
+*_fixture.mdx.txt
+*.zip
+isolated_mono_build/
+regress_publish_gate/
+__pycache__/

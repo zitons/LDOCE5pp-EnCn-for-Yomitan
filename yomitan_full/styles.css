@@ -79,6 +79,7 @@
 [data-sc-class="ld-infl-lab"] { font-style:italic; opacity:.75; }
 [data-sc-class="ld-infl-region"] { font-style:italic; color:var(--ld-geo, var(--ld-dim)); }
 [data-sc-class="ld-infl-ann"] { color:var(--ld-dim); }
+[data-sc-class="ld-infl-pron"] { color:var(--ld-text2); font-size:.92em; }
 
 /* ---- chips -------------------------------------------------------------
    One shared frame; each chip only supplies its own colour. color-mix ties the

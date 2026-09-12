@@ -35,6 +35,16 @@ CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/�
 `18-wheeler` 从 `18-wheel·er [countable] /…/ noun` 变为正确的 `18-wheel·er /…/ noun [countable]`。
 顺带修好：多词性词条（如 `the`）原来只保留最后一个词性标签，现在逐条发出。
 **配色未采用原版**（原版是亮色专用，本项目坚持主题自适应）。构建 669 s；行数/词条/别名仍完全不变。
+
+**第六轮（外部审计 A1–A6 / D23–D28，2026-09-12）**：修掉发布门禁（校验失败不得覆盖好包、CLI 退出码
+0 → 2）、别名 rules 未按表达式取并集（940 → 0）、POS 正则被嵌套标签截断（281 → 0）、变形列表丢失
+文字音标（596 词/816 块 → 0）、mono 模式泄漏中文（243 → 0，两处成因）、sequence 校验盲点。
+交付包 `LDOCE5pp_Yomitan_2026.09.12.zip`，60,209,514 B；**245,933 行逐行比对，表达式/评分/sequence
+全部不变，glossary 变化全是纯插入**。细节与验证见 `converter/audit_2026_09_12/FIXES.md`。
+
+**第七轮：本仓库首次把「审源码」而非「只审 ZIP」的审计纳入流程。** 该审计还暴露了一个环境级教训：
+报告第一版因 PowerShell `$OutputEncoding` 为 `us-ascii`，中文在进管道时被替换成 `?` 而**不可逆丢失**
+（详见坑列表 #47）。今后所有写报告的脚本必须显式 UTF-8 并做写入前后字节比对。
 `.mdd` 里的 182,065 个 mp3 **接不进弹窗**（SC 无 audio tag），插图仅 15 张，均不做——见 §9.9。
 
 **§5 的坑列表本轮新增 27–29 三条（顺序不可自造、同类元素可重复、`.mdd` 读取方式），§9 新增 §9.9，§4 的文件清单有较大变化，§10 的依赖多一个 `lxml`。**
@@ -76,7 +86,8 @@ CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/�
 
 | 路径 | 说明 | 状态 |
 |---|---|---|
-| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.10.zip` | **主交付物**，双语版，57.1 MB（未压缩 470 MB，25 个 term bank + index + tag_bank + styles.css） | ✅ 最终版 |
+| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip` | **主交付物**，双语版，60,209,514 B（未压缩 470 MB，25 个 term bank + index + tag_bank + styles.css）。sha256 `d63a7ad99fcde2131982f5177b27237ec788034aa1c32cdca5d97665e44095f7` | ✅ 最终版（A1–A6 修复后） |
+| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip` | 上一版交付物，保留用于逐行比对（`converter/audit_2026_09_12/diff_before_after.py`） | 📦 归档 |
 | `C:\workspace\ldoce\converter\ldoce2yomitan.py` | **转换器，唯一事实来源**（单文件 ~2060 行，无包依赖结构） | ✅ 最终版 |
 | `C:\workspace\ldoce\yomitan_debug\..._DEBUG.zip` + `term_bank_1.json` | 13 个测试词条的调试包（JSON 带缩进，可 diff） | ✅ 与主版同步 |
 | `C:\workspace\ldoce\yomitan_mono_smoke\..._EN.zip` | 纯英文模式冒烟包（--limit 300，非全量） | ⚠️ 演示用 |
@@ -265,6 +276,35 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 46. **审计日志别入库**（本轮起 `.gitignore` 已覆盖 `*.log`）：库里留着 46 个日志不只是噪音 —— 复审时我读到
     的 `audit5.log` 是**上一轮**的旧内容，差点据此判定"新包词头污染未检"。**重建后必须整批重跑审计**，
     或至少删掉旧日志，否则"读到的结论"和"当前的包"不是一回事。
+47. **`$OutputEncoding` 会把中文吃掉，而且是不可逆的**（2026-09-12 报告编码事故）：PowerShell 5.1 的
+    `$OutputEncoding` 默认是 `us-ascii` 且用替换式回退，中文 here-string **在进管道之前**就被换成 `?`
+    （0x3F），此后任何 UTF-8 写入都救不回。症状是"英文/路径/数字都在，中文全变问号"——
+    这与"用错编码读文件"完全不同（后者字节还在，换个编码就能还原）。修法是**在产生管道数据之前**
+    设 `$OutputEncoding = [System.Text.UTF8Encoding]::new($false,$true)`，并**在写入前后按字节比对**；
+    只设 `PYTHONIOENCODING=utf-8` 不够。
+48. **正则 `(.*?)</span>` 不能配对嵌套 span**：`POS_SCAN_RE` 遇到第一个内层 `</span>` 就停，于是
+    `<span class="lm5pp_POS"> <span class="landscape">adverb</span>…` 只捕获到 `' <span class="landscape">adverb'`，
+    紧随其后的第二个 `lm5pp_POS` 只捕获到 `','` —— `above` 丢 `preposition`、`andante` 丢 `adverb`，
+    共 **281 个词条**的 definitionTags/rules 错误。正确做法：正则只匹配**开标签**，正文用深度计数读取。
+    注意这**不是**解析器差异（audit7 已证明 bs4/lxml 字节等价），**缺陷在正则本身**。
+49. **"先发布、后校验"是反模式**：`build()` 曾在校验前就 `os.replace(.part → 正式包)`，校验失败只打印
+    `[FAIL]`，随后仍打印 `[OK] Dictionary package` 并 **exit 0** —— 坏包静默覆盖好包，且对外报告成功。
+    审查任何构建脚本时，除了"校验是否存在"，还要问三件事：**校验对象是未发布的文件吗？失败会覆盖旧产物吗？
+    退出码/最后一行输出会骗人吗？**
+50. **mono 的过滤逻辑分散在两处**：中文侧通常是 `span.cn_txt`，由 `render_inline_node()` 在 mono 下丢弃；
+    但 ErrorBox 的「不要说…」用的是 **`div.cn_txt`**，div 到不了 `render_inline_node()`，会落到
+    `render_div()` 的通用兜底（连 `ld-zh` 类都不加）而泄漏进 mono 包。修完标题后仍有 **56 个词条**泄漏，
+    就是这条漏网。**加任何 mode 相关的过滤，必须同时覆盖 inline 与 div 两条分派路径。**
+51. **新增 SC 类要同步审计脚本的白名单**：`ld-infl-pron`（A4 新增）会被 `audit8_head_order.py` 当成
+    "我们这边多出来的 token"，报 `INFL / ld-infl-pron / INFL` 假阳性 —— 它需要被加进"属于 Inflections
+    序列的注解"忽略列表。**加了新类就重跑全部门禁**，别只看审核通过就收工。
+52. **本沙箱会拦截文件删除**：`shutil.rmtree` / `os.remove` 触发 fail-closed 回收站策略（
+    `SAFE_DELETE_FAIL_CLOSED`），要么静默失败要么直接中止进程。两个后果：① 回归脚本不要靠"先删旧目录"
+    开局，改用唯一目录名；② 断言"临时文件已清理"之前先探测该能力，否则会把环境限制误报成代码 bug
+    （`regress_gates.py` 里已有这个探测）。另外 `dangerouslyDisableSandbox` 那一次运行是通过的，
+    所以**同一条检查在有无沙箱下结论可能相反**。
+53. **交付包名带构建日期，审计脚本必须自动挑最新的**：`_find_zip()` 之类"取 `yomitan_full` 里最新的
+    非 debug 包"是必需的，硬编码 `…2026.09.11.zip` 会在重建后静默过期（audit3 的注释里记了这条教训）。
 
 ## 6. Yomitan 契约速查（format-3）
 

@@ -933,3 +933,103 @@ cd scgen_test && NODE_PATH=./node_modules \
 - `TYPOGRAPHY.md` 的 T10 一节曾同时写着"未擅自改动"、"已修复（用户拍板）"、"**尚未进包，需一次全量重建才会生效**"。第三条是重建前的残留，实测**已进包**（`close` 只剩 1 个 `ld-panel-wf`，包级 diff 为 `-38`），已订正；"用户拍板"的来源标注为**待确认**。
 - `REVIEW.md` 里 D10/D11/D13/D14/D17 五个标题的"（代码层，待重建）"已改为"已修复并进包（09.11）"。
 - **日志不入库**：`*.log` 与 `converter/_*.py`（除 `_apply_patch.py` / `_restore_all.py` 这两个被 D15 引用的框架文件）已加入 `.gitignore` 并 `git rm --cached`。原因不只是整洁 —— 本次复审就被 **stale 日志**误导过一次（`audit5.log` 是上一轮的旧内容）。
+
+---
+
+# 第四轮：外部审计（2026-09-12）六项发现的修复
+
+来源：`converter/audit_2026_09_12/REPORT.md`（另一会话产出，是**第一轮审源码而非只审 ZIP** 的审计）。动手前我逐条独立复核，六条全部属实；修复后每条都有独立验证。完整数字、命令与产物哈希见 **`converter/audit_2026_09_12/FIXES.md`**。
+
+结论：**六条全部修复，且产物变化被证明"就是预期的那些、没有别的副作用"** —— 245,933 行逐行比对，表达式/评分/sequence 全部不变，glossary 变化 634 行全是纯插入，`styles.css` 只多一条规则，`tag_bank` 不变。
+
+## D23【P1】校验失败仍发布，坏包覆盖好包 —— 触发条件：任何一次校验失败 ✅ 已修复
+
+`build()` 在校验**之前**就 `os.replace(zip_tmp, zip_path)`；校验失败只 `print("[FAIL]")`，随后仍无条件打印 `[OK] Dictionary package` 并正常 return，**CLI 退出码 0**。后果：看退出码、看最后一行 OK 的自动构建会把失败产物当成功发布，并顺手毁掉上一份合格包。
+
+复现证据（审计留下、我复核过）：`build_age.log` 同一份日志里 `[FAIL] term_bank_1.json: mono build contains CJK text` 紧跟 `[OK] Dictionary package`；磁盘上 `isolated_mono_build/` 里活下来的正是失败的 `age`（含中文「时代/世代」），先构建且校验通过的 `be` 已被覆盖。
+
+**修法**：新增 `BuildValidationError`；校验对象改成尚未发布的 `*.part`；只有校验通过才 `os.replace` 到正式路径；失败时删 `.part`、恢复 GC 阈值、打印 `[FAIL] Nothing published…` 并抛异常；`main()` 捕获后 `return 2`，`__main__` 改为 `sys.exit(main())`。
+
+**验证**（`regress_gates.py`）：注入校验失败后 —— 抛 `BuildValidationError`、日志有 `[FAIL]`、**日志里没有任何 `[OK] Dictionary package`**、**上一份好包 sha256 不变**、CLI 退出码 **2**（修前 0）。没有用 `try/finally` 包住整段渲染：渲染中途崩溃只会残留一个从不发布的 `*.part`，而真 P1（失败覆盖好包 + 假成功）已由发布门禁本身消除。
+
+## D24【P2】别名 rules 未按表达式取并集 —— 940 / 181,274 条 ✅ 已修复
+
+`key_rules[k] = rules` 被同表达式的后续记录覆盖（语料有 269 条重复表达式，`bail out` 同时是 `noun phrasal-v` 与 `phrasal-v`），别名继承的是**最后一条**记录的规则，而不是目标表达式全部内容行的并集：
+
+| 别名 | 修前 rules | 目标行并集 | 修后 |
+|---|---|---|---|
+| `bailout` | `v` | `n v` | `n v` |
+| `Air-topic check-in` | `v` | `n v` | `n v` |
+| `, the fed` | （空） | `n` | `n` |
+
+开启默认 `partsOfSpeechFilter` 时，`bailout's → bailout` 的名词候选链会被错误规则切断（审计用官方 `LanguageTransformer` 复现）。
+
+**修法**：`key_rules[k]` 改为按表达式**保序累积**全部记录（`dict.fromkeys` 保序去重，产物仍逐字节可复现）；别名侧的并集逻辑不变。**内容行自身的 rules 不受影响**。
+
+**验证**：拆包复算全部 181,274 个别名 —— 修前 940 条不等，修后 **0**。
+
+## D25【P2】POS 正则被嵌套标签截断 —— 281 个词条 ✅ 已修复
+
+`POS_SCAN_RE` 用 `(.*?)</span>` 配对，遇到**第一个内层** `</span>` 就停：
+
+```html
+<span class="lm5pp_POS"> <span class="landscape">adverb</span><span class="portrait">adv</span></span>
+<span class="lm5pp_POS"> <span class="neutral span">, </span>preposition</span>
+```
+
+第一段捕获到 `' <span class="landscape">adverb'`（连开标签一起吞），第二段只捕获到 `','`。于是 `above` 丢掉 `preposition`、`andante` 丢掉 `adverb`、`amen` 的 tags/rules 变成空串。注意这**不是**解析器问题 —— `audit7` 早已证明 bs4/lxml 一致，缺陷就在正则本身。
+
+**修法**：正则只匹配**开标签**，正文改用带深度计数的 `_span_body()` 读取（带 `limit` 兜底，防止畸形标记吞掉整条记录）；再用 `_drop_portrait_spans()` 剔除 `span.portrait` 子树，与显示路径 `_pick_landscape()` 的取舍保持一致。
+
+**验证（决定性）**：拿审计自己用 lxml DOM 建的参考值逐条比 —— 旧提取 **281/281 条与参考不一致**（正好复现审计数字）；新提取 **0 条不一致**；扩到全部被改动词条，370 条里旧≠参考 **370**、新≠参考 **0**。包内实测 tags 变化 **281 行**（与审计的 281 精确吻合）：`above`→`adv prep adj`、`andante`→`noun adj adv`、`amen`→`noun`/`n`。
+
+## D26【P2】变形列表丢掉文字音标 —— 596 词条 / 816 个发音块 ✅ 已修复
+
+`render_inflections()` 的子元素分派没有 `PronCodes` 分支，兜底又只找形态类，于是变形音标被静默丢弃：
+
+```html
+<span class="COMP">…comparative… worse</span>
+<span class="PronCodes"><span class="PRON">wɜːs</span><span class="AMEVARPRON"> $ wɜːrs</span></span>
+```
+
+`bad` 于是只剩 `comparative · worse · superlative · worst`。**这是文字音标而非音频资源**，不能用"SC 不支持 audio"解释。
+
+**修法**：新增 `PronCodes`/`PRON`/`AMEVARPRON` 分支，复用词头音标的取法（`get_text("", strip=True)`，故英/美写法与词头一致：`/wɜːs$wɜːrs/`）；刻意**不**走 `seen` 去重 —— 音标属于它前面那个形态，两个形态可能共用同一串。新增 CSS 类 `ld-infl-pron`（`.92em`，与 `ld-pron` 对齐）。
+
+**门禁同步**：`audit8_head_order.py` 必须把 `ld-infl-pron` 加进"属于 Inflections 序列的注解"忽略列表，否则报 `INFL / ld-infl-pron / INFL` 假阳性。已更新，重跑 2,982 个头块 0 不一致。
+
+**验证**：① 源端 `.Head` ↔ 包内 `ld-head` 全量配对：配对失败 **0**、仍缺失音标 **0**（修前 596 词/816 块）；② A4 词表 **609/609** 现在都带 `ld-infl-pron`；③ 包级 diff：634 行 glossary 变化**全部是纯插入**；④ 文本守恒门禁略改善（未到达输出 3060 → 3050）。
+
+## D27【P2】mono 模式泄漏中文 —— 243 个词条，两处成因 ✅ 已修复
+
+mono 包声明 `targetLanguage: "en"`，自带校验器强制全 bank 零 CJK。**两个成因**：
+
+1. **标题拍平**：`render_block_by_token()` 的 `SECHEADING/HEADING/boxheader/spokensectheader` 分支与 `render_box()` 的义项分组标题分支直接 `get_text()`，把 `span.cn_txt` 拍平成普通字符串，绕过 `render_inline_node()` 的 mono 过滤。例：`age` → `− Meaning 5: a particular period of history 时代，世代`。
+2. **`div.cn_txt` 漏网**（审计只报了标题，这是我修完标题后剩的 56 条）：中文侧通常是 **span**，被 `render_inline_node()` 过滤；但 ErrorBox 的「不要说…」用的是 **div**：
+
+```html
+<span class="Error …">Don’t say ‘<span class="BADCOLLO">a small accident</span>’. Say …
+  <div class="cn_txt"> 不要说<span class="en_txt"> </span>…</div></span>
+```
+
+div 永远到不了 `render_inline_node()`，直接落到 `render_div()` 的通用兜底（该分支连 `ld-zh` 类都不加）。
+
+**修法**：新增 `_label_text()`，bilingual 分支与原实现逐字符相同（保证双语产物不变），mono 分支按 `ZH_CLASSES` 跳过中文子树；`render_div()` 开头加 `mode == "mono" and cls & ZH_CLASSES → []`。**没有**用"全局删 CJK 字符"掩盖分派问题。
+
+**验证**：243 个候选词条逐个以 mono 渲染 —— 修前 243 条检出 CJK，修后 **0**；`age`/`bad`/`run` 单记录 mono 构建由"校验失败"转为"校验通过"。
+
+## D28【门禁盲点】重复 sequence 被当成合法连续序列 ✅ 已修复
+
+校验只比 `len(set(sequences)) == max(sequence) + 1`，未与**行数**比较：两条 `sequence` 都为 `0` 的包得到 `{0}`，`len 1 == max+1`，于是 `errors=[]`、`sequence_ok=1`。正式包没有此问题（实测 `sorted(sequence) == list(range(245933))`），但这是"唯一且从 0 连续"这条项目约束的回归防线缺口。
+
+**修法**：同时断言"唯一值数 == 行数"、"min == 0"、"max == 行数 − 1"。
+
+**验证**：`[0,0,1]` / `[0,0]` / `[1,2]` / `[0,2]` 四种负例全部被拒（修前静默通过），`[0,1,2]` 与 40 行满区间仍通过。
+
+---
+
+# 第四轮附带修正：审计报告编码事故
+
+`converter/audit_2026_09_12/REPORT.md` 第一版是**真正的数据丢失，不是显示乱码**：8,026 字节、非 ASCII 字节 0、字面量 `?`(0x3F) 2,929 个。原因是生成报告的命令跑在 PowerShell 5.1 里，`$OutputEncoding` 为 `us-ascii` 且用替换式回退，中文 here-string **在进管道时就被换成 `?`**；之后即便 `write_atomic()` 用 UTF-8 写入也救不回。**只设 `PYTHONIOENCODING=utf-8` 不够**，必须在数据进管道之前设 `$OutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)`。现版本 16,212 字节、非 ASCII 10,555，已由对方从原内容重新生成。
+
+**教训**：任何写报告/日志的脚本必须显式 `encoding="utf-8"`，并在写入前后按字节比对；这份报告一度只存在于未跟踪目录里，靠人工比对才没丢。

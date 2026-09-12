@@ -65,10 +65,12 @@ def our_tokens(head):
             continue
         elif 'ld-infl-form' in toks:
             out.append('INFL')
-        elif any(t in toks for t in ('ld-infl-ann', 'ld-infl-region', 'ld-infl-lab')):
+        elif any(t in toks for t in ('ld-infl-ann', 'ld-infl-region', 'ld-infl-lab',
+                                     'ld-infl-pron')):
             # Annotations INSIDE an Inflections sequence ('or', '(same
-            # pronunciation)', 'British English'). The renderer inlines the
-            # ld-infl wrapper's children into ld-head, so these sit between two
+            # pronunciation)', 'British English', and since audit A4 the
+            # inflected form's own IPA). The renderer inlines the ld-infl
+            # wrapper's children into ld-head, so these sit between two
             # ld-infl-form nodes; they belong to the INFL run and must not break
             # it, or squash() reports INFL / ann / INFL against the source's one
             # Inflections element (10 false positives before this).

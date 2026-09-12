@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 import zipfile
@@ -47,6 +48,10 @@ HTML_PARSER = "lxml"
 INVISIBLE_RE = re.compile("[\u00ad\u200b\u200c\u200d\u2060\ufeff\u2061\u2062\u2063\u2064]")
 WS_RE = re.compile(r"\s+")
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+# Source classes holding the Chinese side of a bilingual label. render_inline_node
+# drops these in mono mode; every *flattening* reader of a label must do the same
+# (see LdoceRenderer._label_text, audit A5).
+ZH_CLASSES = frozenset({"cn_txt", "cn_txt_ext"})
 
 
 def strip_invisible(value):
@@ -721,6 +726,17 @@ class LdoceRenderer:
     # -- div dispatch -------------------------------------------------------
 
     def render_div(self, el, cls):
+        # A5 residual: the Chinese side of a bilingual note is usually a SPAN,
+        # which render_inline_node() drops in mono mode -- but the ErrorBox note
+        # uses a DIV:
+        #   <div class="cn_txt"> 不要说<span class="en_txt"> </span>
+        #   <span class="BADCOLLO">...<div class="cn_txt">
+        # A div never reaches render_inline_node(), so it fell through to the
+        # generic branch below and leaked Chinese into a package that declares
+        # targetLanguage "en". Checked before every other branch and only in
+        # mono, so bilingual output is bit-for-bit unchanged.
+        if self.mode == "mono" and cls & ZH_CLASSES:
+            return []
         if "asset" in cls:
             return self.render_asset(el, cls)
         if "assetlink" in cls:
@@ -777,7 +793,7 @@ class LdoceRenderer:
             return self.render_example(el, classes_of(el))
         scname = BLOCK_SCNAME.get(token) or "ld-block"
         if token in ("SECHEADING", "HEADING", "boxheader", "spokensectheader"):
-            text = sc_text(el.get_text(" ", strip=True))
+            text = self._label_text(el)
             return sc("div", [text], cls=scname) if text else sc("div", [], cls="ld-empty")
         inner = self._children_blocks(el)
         if not inner:
@@ -1016,6 +1032,33 @@ class LdoceRenderer:
             parts.append(child.get_text(" ", strip=True))
         return collapse_ws("".join(parts)).strip()
 
+    def _label_text(self, el):
+        """Text of a heading/label, dropping the Chinese side in mono mode.
+
+        Section headings and sense-group labels were read with get_text(), which
+        flattens span.cn_txt into a single string and so bypasses the mono filter
+        in render_inline_node(). The mono package declares targetLanguage "en"
+        but every one of the 243 candidate entries leaked Chinese into its
+        headings ('age' -> '- Meaning 5: a particular period of history 时代，世代').
+        Bilingual output is untouched, so the shipped package is unaffected.
+        """
+        if self.mode == "bilingual":
+            return sc_text(el.get_text(" ", strip=True))
+        parts = []
+        for d in el.descendants:
+            if not isinstance(d, NavigableString):
+                continue
+            anc = d.parent
+            skip = False
+            while anc is not None and anc is not el:
+                if classes_of(anc) & ZH_CLASSES:
+                    skip = True
+                    break
+                anc = anc.parent
+            if not skip:
+                parts.append(str(d))
+        return sc_text(collapse_ws(" ".join(p.strip() for p in parts)).strip())
+
     def _is_online_entry(self, el):
         """True for the OUTERMOST LDOCE Online wrapper only.
 
@@ -1070,8 +1113,10 @@ class LdoceRenderer:
             e.g. backpedal -> 'backpedalled, backpedalling British English,
             backpedaled, backpedaling American English')
           * <span class="LINKWORD"> 'or' / '(same pronunciation)' (15 spans)
+          * <span class="PronCodes"> the inflected form's own IPA, e.g.
+            'worse /wɜːs $ wɜːrs/' (816 blocks)
         Emitting the forms alone silently merged two regional paradigms into one
-        undifferentiated list.
+        undifferentiated list, and stripped every inflected pronunciation.
         """
         nodes = []
         seen = set()
@@ -1159,6 +1204,24 @@ class LdoceRenderer:
                 continue
             if "GEO" in cls:
                 push_annot(self._no_portrait_text(child), "ld-infl-region")
+                continue
+            # A4: the inflected form's own pronunciation. The source pairs
+            #   <span class="COMP">...worse</span><span class="PronCodes">
+            #   <span class="PRON">wɜːs</span><span class="AMEVARPRON"> $ wɜːrs
+            #   </span></span>
+            # -- PronCodes matched no branch above and the fallback below only
+            # collects form classes, so the IPA was silently dropped: 'bad' kept
+            # 'comparative · worse · superlative · worst' and lost both blocks
+            # (596 entries / 816 blocks corpus-wide). This is TEXT, not an audio
+            # asset, so the "no audio in structured content" decision never
+            # covered it. Deliberately not routed through seen{}: the block
+            # belongs to the form that precedes it, and two forms may share one
+            # pronunciation string.
+            if "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
+                pron = sc_text(child.get_text("", strip=True))
+                if pron:
+                    push_sep()
+                    nodes.append(sc("span", pron, cls="ld-infl-pron"))
                 continue
             if "LINKWORD" in cls or "italic" in cls:
                 push_annot(child.get_text(" ", strip=True), "ld-infl-ann")
@@ -1249,7 +1312,7 @@ class LdoceRenderer:
         gloss = el.find("span", class_="HEADING")
         gloss_node = None
         if gloss is not None and gloss is not heading:
-            gtext = sc_text(gloss.get_text(" ", strip=True)).strip()
+            gtext = self._label_text(gloss).strip()
             if gtext:
                 gloss_node = sc("div", [sc("span", gtext, cls="ld-grouptitle")],
                                 cls="ld-panel-sub")
@@ -1840,6 +1903,7 @@ def generate_css():
 [data-sc-class="ld-infl-lab"] { font-style:italic; opacity:.75; }
 [data-sc-class="ld-infl-region"] { font-style:italic; color:var(--ld-geo, var(--ld-dim)); }
 [data-sc-class="ld-infl-ann"] { color:var(--ld-dim); }
+[data-sc-class="ld-infl-pron"] { color:var(--ld-text2); font-size:.92em; }
 
 /* ---- chips -------------------------------------------------------------
    One shared frame; each chip only supplies its own colour. color-mix ties the
@@ -2061,12 +2125,79 @@ def build_tag_bank(ui_zh):
 # so requiring `">` immediately after the class value matched 0 of the 32195 FREQ
 # spans -> S1-S3/W1-W3 never reached definitionTags and the six `frequency` tags
 # declared in the tag bank were dead declarations (REVIEW.md D7).
-POS_SCAN_RE = re.compile(r'<span[^>]*\bclass="[^"]*\blm5pp_POS\b[^"]*"[^>]*>(.*?)</span>', re.S)
+#
+# The POS span is matched as an OPENING TAG only; its body is read with a depth
+# counter. Pairing it with a non-greedy `(.*?)</span>` stopped at the first INNER
+# closing tag, so the real markup
+#   <span class="lm5pp_POS"> <span class="landscape">adverb</span><span
+#   class="portrait">adv</span></span><span class="lm5pp_POS"> <span
+#   class="neutral span">, </span>preposition</span>
+# captured ' <span class="landscape">adverb' for the first span and only ','
+# for the second: 'above' lost its preposition, 'andante' its adverb, and 281
+# entries shipped wrong definitionTags/rules (audit A3). It was never a parser
+# problem -- audit7 proved bs4/lxml agree -- the regex was the defect.
+POS_SCAN_RE = re.compile(
+    r'<span[^>]*\bclass="[^"]*\blm5pp_POS\b[^"]*"[^>]*>', re.S)
 FREQ_SCAN_RE = re.compile(r'<span[^>]*\bclass="[^"]*\bFREQ\b[^"]*"[^>]*>\s*([SW][123])(?![0-9])')
+# The narrow-screen abbreviation the original JS swaps in. It must never reach
+# the metadata, exactly as _pick_landscape()/_no_portrait_text() skip it on the
+# display path.
+PORTRAIT_SCAN_RE = re.compile(
+    r'<span[^>]*\bclass="[^"]*\bportrait\b[^"]*"[^>]*>', re.S)
+SPAN_TAG_RE = re.compile(r'<span\b[^>]*>|</span\s*>', re.S)
+
+
+def _span_body(html, start, limit=1500):
+    """Body of the <span> opened just before `start`, honouring nested spans.
+
+    Returns (body, index just after its closing tag). A span left unclosed
+    within `limit` characters is treated as malformed and cut at its first
+    `</span>` -- the old non-greedy behaviour -- rather than swallowing the rest
+    of the record.
+    """
+    depth = 1
+    pos = start
+    while True:
+        m = SPAN_TAG_RE.search(html, pos)
+        if m is None:
+            break
+        if m.group(0).startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return html[start:m.start()], m.end()
+        else:
+            depth += 1
+        pos = m.end()
+        if pos - start > limit:
+            break
+    close = html.find("</span", start)
+    if close == -1:
+        return html[start:], len(html)
+    return html[start:close], close + len("</span")
+
+
+def _drop_portrait_spans(html):
+    """`html` minus every span.portrait subtree, nested spans respected."""
+    out = []
+    pos = 0
+    for m in PORTRAIT_SCAN_RE.finditer(html):
+        if m.start() < pos:
+            continue                       # already inside a removed portrait
+        out.append(html[pos:m.start()])
+        _, pos = _span_body(html, m.end())
+    out.append(html[pos:])
+    return "".join(out)
 
 
 def extract_tags(content):
-    pos_tokens = POS_SCAN_RE.findall(content)
+    pos_tokens = []
+    consumed = 0
+    for m in POS_SCAN_RE.finditer(content):
+        if m.start() < consumed:
+            continue                       # nested occurrence inside a POS span
+        body, end = _span_body(content, m.end())
+        pos_tokens.append(_drop_portrait_spans(body))
+        consumed = end
     freq_tokens = FREQ_SCAN_RE.findall(content)
     return pos_tokens, freq_tokens
 
@@ -2278,7 +2409,7 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
         else:
             all_terms = known_exprs
 
-        seqs = set()
+        seqs = []
         for bank in banks:
             raw = zf.read(bank)
             text = raw.decode("utf-8")
@@ -2294,7 +2425,7 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
                         return errors, stats
                     continue
                 if isinstance(row[6], int) and not isinstance(row[6], bool):
-                    seqs.add(row[6])
+                    seqs.append(row[6])
                 for item in row[5]:
                     if isinstance(item, list):
                         stats["redirect_items"] += 1
@@ -2315,12 +2446,21 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
                                     if stats["dangling_links"] <= 20:
                                         errors.append(
                                             f"{bank} {row[0]!r}: dangling query link -> {target!r}")
-        # sequence numbers must be unique and gapless (index.sequenced is true)
+        # Sequence numbers must be unique and gapless from 0 (index.sequenced).
+        # Comparing len(set) with max+1 alone was blind to duplicates that happen
+        # to fill the range: a package with two rows at 0 and a row at 1 gave
+        # {0,1}, len 2 == max+1, so validation passed (audit A6). Compare against
+        # the row count instead.
         if seqs:
-            if len(seqs) != max(seqs) + 1:
+            unique = len(set(seqs))
+            ok = (unique == len(seqs) and min(seqs) == 0
+                  and max(seqs) == len(seqs) - 1)
+            if not ok:
                 errors.append(
-                    f"sequence gap: {len(seqs)} unique values but max is {max(seqs)}")
-            stats["sequence_ok"] = int(len(seqs) == max(seqs) + 1)
+                    f"sequence numbers must be unique and 0..{len(seqs) - 1}: "
+                    f"{len(seqs)} rows, {unique} unique value(s), "
+                    f"min={min(seqs)}, max={max(seqs)}")
+            stats["sequence_ok"] = int(ok)
         meta_banks = sorted(n for n in names if re.fullmatch(r"term_meta_bank_\d+\.json", n))
         stats["term_meta_banks"] = len(meta_banks)
         for bank in meta_banks:
@@ -2364,6 +2504,22 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
 # ---------------------------------------------------------------------------
 # Build pipeline
 # ---------------------------------------------------------------------------
+
+
+class BuildValidationError(RuntimeError):
+    """The built package failed validation, so it was NOT published.
+
+    Raised instead of printing a success line: before this existed a failing
+    build still renamed its "*.part" over the real package, printed
+    "[OK] Dictionary package" and exited 0, silently replacing the last good
+    archive with an invalid one (audit A1).
+    """
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        super().__init__(
+            f"package validation failed ({len(self.errors)} error(s)); "
+            "the existing package was left untouched")
 
 
 def build(input_path, output_dir, mode="bilingual", revision=None, test_words=None,
@@ -2522,7 +2678,15 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         pos_tokens, freq_tokens = extract_tags(content)
         tags, rules = pos_tags_rules(pos_tokens, freq_tokens)
         rendered_keys.add(k)
-        key_rules[k] = rules
+        # A2: several records can share one expression (269 in this corpus) --
+        # 'bail out' has a noun-phrasal-v row and a phrasal-v row. The alias
+        # rows inherit this map, so it has to be the union over EVERY row with
+        # that key; assigning per record left only the last one's rules and made
+        # 940 aliases under-report theirs (partsOfSpeechFilter then cut the
+        # deinflected candidates: bailout's -> bailout found nothing). Union
+        # keeps first-seen order so the banks stay byte-reproducible.
+        key_rules[k] = " ".join(dict.fromkeys(
+            (key_rules.get(k) or "").split() + rules.split()))
         if freq_tokens:
             freq_meta[k] = list(dict.fromkeys(freq_tokens))
         gloss = [{"type": "structured-content",
@@ -2634,8 +2798,6 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         zf.writestr(name, payload)
 
     zf.close()
-    os.replace(zip_tmp, zip_path)          # atomic: *.part -> real name
-    print(f"[*] Compressed {zip_name}")
 
     if renderer.unknown_classes:
         print("[*] Top unknown classes kept generically:")
@@ -2653,10 +2815,14 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
           f"demoted={renderer.stats['links_dead']}")
     print(f"[*] Elapsed: {time.time() - start:.1f}s")
 
+    # ---- publish gate -----------------------------------------------------
+    # Validation reads the still-unpublished "*.part" archive; the rename only
+    # happens when it passes. The rename used to come FIRST, so a failing build
+    # replaced the good package and still reported success (audit A1).
     if validate:
         print("[*] Validating package ...")
         errors, vstats = validate_package(
-            zip_path, term_index, revision, mode,
+            zip_tmp, term_index, revision, mode,
             full_rows=debug is False and limit is None,
             known_exprs=written_exprs)
         print(f"[*] Validator: rows={vstats['rows']} banks={vstats['term_banks']} "
@@ -2665,11 +2831,25 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
               f"seq_ok={vstats['sequence_ok']} "
               f"freq_rows={vstats['freq_rows']}")
         if errors:
-            print("[FAIL] Validation errors:")
+            print(f"[FAIL] Validation failed with {len(errors)} error(s):")
             for err in errors[:60]:
                 print("   - " + err)
-        else:
-            print("[OK] Validation passed.")
+            # Discard the unpublished archive and stop. The previous package
+            # keeps its name and stays installable.
+            try:
+                os.remove(zip_tmp)
+            except OSError:
+                pass
+            gc.set_threshold(*gc_threshold)
+            print(f"[FAIL] Nothing published; any previous {zip_name} is untouched.")
+            raise BuildValidationError(errors)
+        print("[OK] Validation passed.")
+    else:
+        print("[*] Validation skipped on request (--skip-validation).")
+
+    os.replace(zip_tmp, zip_path)          # atomic: *.part -> real name
+    print(f"[*] Compressed {zip_name}")
+
     if not keep_json:
         for path in list(generated):
             if os.path.basename(path).startswith(("term_bank_", "term_meta_bank_")):
@@ -2704,19 +2884,26 @@ def main(argv=None):
                         help="Render at most N entries (smoke testing)")
     args = parser.parse_args(argv)
     input_path = prepare_input(args.input)
-    build(
-        input_path,
-        args.output,
-        mode=args.mode,
-        revision=args.revision,
-        test_words=args.test_words,
-        open_panels=args.open_panels,
-        keep_json=args.keep_json,
-        validate=not args.skip_validation,
-        show_progress=not args.no_progress,
-        limit=args.limit,
-    )
+    try:
+        build(
+            input_path,
+            args.output,
+            mode=args.mode,
+            revision=args.revision,
+            test_words=args.test_words,
+            open_panels=args.open_panels,
+            keep_json=args.keep_json,
+            validate=not args.skip_validation,
+            show_progress=not args.no_progress,
+            limit=args.limit,
+        )
+    except BuildValidationError as exc:
+        # A1: a failing build must be visible to whoever ran it. Previously the
+        # process still exited 0 and packaging scripts shipped the failure.
+        print(f"[FAIL] {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
