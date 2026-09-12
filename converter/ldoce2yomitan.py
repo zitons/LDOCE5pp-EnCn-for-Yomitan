@@ -334,8 +334,47 @@ def is_dropped(cls):
 # LDOCE frequency band -> rank ceiling ("within the top N"), which is what
 # Yomitan's frequency sorting expects: lower = more frequent.
 FREQ_VALUE = {"S1": 1000, "W1": 1000, "S2": 2000, "W2": 2000, "S3": 3000, "W3": 3000}
-# Cap on the space-separated definitionTags string. POS tags fill first, then
-# frequency levels, which are never dropped (see pos_tags_rules()).
+
+# ---------------------------------------------------------------------------
+# Semantic inlining (scheme B).
+#
+# 5 CSS ::before rules carry real information (example dash, correct/incorrect
+# usage, corpus bullet). A host that cannot load the stylesheet at all -- Anki
+# exports, plain-HTML previews, other readers -- loses that information entirely.
+# So the marker is ALSO written into the content as
+#     <span class="ld-mark">MARKER</span>
+# and CSS hides it again ([data-sc-class="ld-mark"]{display:none}), keeping the
+# ::before rule as the visible one. Verified on a real engine: with the
+# stylesheet the marker span computes to display:none and ::before still draws
+# the character (visual result unchanged); without it the span is an ordinary
+# inline node, so the information survives.
+#
+# The marker is applied per container class so the character matches the rule it
+# stands in for.
+SCHEME_B_MARKERS = {
+    "ld-ex":            "\u2013\u00a0",   # - (en dash, like the ::before content)
+    "ld-gramexa":       "\u2013\u00a0",
+    "ld-colloexa":      "\u2013\u00a0",
+    "ld-ex-good":       "\u2713\u00a0",   # check
+    "ld-ex-bad":        "\u2717\u00a0",   # cross
+    "ld-corpexa":       "\u2022\u00a0",   # bullet
+    "ld-corpexa-corpus": "\u2022\u00a0",
+    "ld-corpexa-dics":  "\u2022\u00a0",
+    "ld-corpexa-encyc": "\u2022\u00a0",
+    "ld-corpexa-online": "\u2022\u00a0",
+    "ld-corpexa-phrases": "\u2022\u00a0",
+}
+
+
+def scheme_b_prefix(cls):
+    """Marker text for a container class, or "" when it needs none."""
+    return SCHEME_B_MARKERS.get(cls, "")
+
+
+# OBSERVATION THRESHOLD, not a cap. pos_tags_rules() emits every tag (see the
+# comment there): real data peaks at 11 ('like' = 7 POS + 4 frequency codes), so
+# any truncation loses metadata. validate_package() reports rows above this
+# threshold so genuine data drift stays visible. Re-derive with _cap_choose.py.
 TAG_LIMIT = 8
 
 BLOCK_MAP = [
@@ -808,6 +847,13 @@ class LdoceRenderer:
             # Deliberately multi-token: the CSS matches the modifier with `~=`
             # so the base rule keeps working. See generate_css.
             node_cls += " ld-sense-n"
+        # Scheme B: several marker-carrying classes arrive through BLOCK_SCNAME
+        # (GramExa / ColloExa / GOODEXA / BADEXA), not through render_example(), so
+        # the marker has to be injected here as well. Doing it at this single exit
+        # covers every BLOCK_MAP-derived class, including ones added later.
+        marker = SCHEME_B_MARKERS.get(node_cls)
+        if marker:
+            inner = [sc("span", marker, cls="ld-mark")] + list(inner)
         return sc("div", inner, cls=node_cls)
 
     # -- semantic blocks ----------------------------------------------------
@@ -1294,6 +1340,13 @@ class LdoceRenderer:
         out = list(en_nodes) + cn_nodes
         if not out:
             return sc("div", [], cls="ld-empty")
+        # Scheme B: also write the leading marker into the content. With a
+        # stylesheet present the ld-mark span is display:none and the ::before
+        # rule draws the character, so the visual result is unchanged; a host with
+        # no stylesheet (Anki export, plain HTML) still shows it.
+        marker = SCHEME_B_MARKERS.get(flavor)
+        if marker:
+            out = [sc("span", marker, cls="ld-mark")] + out
         return sc("div", out, cls=flavor)
 
     def render_box(self, el, panel_token):
@@ -1476,6 +1529,12 @@ class LdoceRenderer:
             if kind not in ("corpus", "dics", "encyc", "online", "phrases"):
                 kind = ""
             cls = "ld-corpexa-" + kind if kind else "ld-corpexa"
+            # Scheme B (see render_example): re-add the bullet we just stripped,
+            # this time inside the content and hidden by CSS when a stylesheet is
+            # available.
+            marker = SCHEME_B_MARKERS.get(cls)
+            if marker:
+                body = [sc("span", marker, cls="ld-mark")] + list(body)
             items.append(sc("li", body, cls=cls))
         if items:
             nodes.append(sc("ul", items, cls="ld-corpulist"))
@@ -1856,20 +1915,34 @@ def generate_css():
    falls back to the inherited text colour -- degraded, never unreadable.
    ========================================================================== */
 [data-sc-class="ld"] {
-  /* accents: mid-tone hue blended with the inherited text colour */
-  --ld-link:  color-mix(in srgb, #3b8ee0 68%, var(--text-color, currentColor) 32%);
-  --ld-pos:   color-mix(in srgb, #3f86d6 68%, var(--text-color, currentColor) 32%);
-  --ld-frame: color-mix(in srgb, #22a06b 68%, var(--text-color, currentColor) 32%);
-  --ld-zh:    color-mix(in srgb, #a274e8 68%, var(--text-color, currentColor) 32%);
-  --ld-reg:   color-mix(in srgb, #cc7233 68%, var(--text-color, currentColor) 32%);
-  --ld-field: color-mix(in srgb, #7f8c2f 68%, var(--text-color, currentColor) 32%);
-  --ld-geo:   color-mix(in srgb, #9163e6 68%, var(--text-color, currentColor) 32%);
-  --ld-warn:  color-mix(in srgb, #e0503f 68%, var(--text-color, currentColor) 32%);
-  --ld-level: color-mix(in srgb, #b8860b 68%, var(--text-color, currentColor) 32%);
-  /* neutrals: the text colour at reduced alpha */
-  --ld-text2: color-mix(in srgb, var(--text-color, currentColor) 88%, transparent);
-  --ld-dim:   color-mix(in srgb, var(--text-color, currentColor) 70%, transparent);
-  --ld-faint: color-mix(in srgb, var(--text-color, currentColor) 55%, transparent);
+  /* ---------------------------------------------------------------------
+     PORTABLE DEFAULTS (scheme A).
+     These static values are what any host that cannot parse color-mix()
+     (Anki WebView, older readers, non-Yomitan consumers) will use. Each is the
+     hue mixed toward mid grey and measured >= 3.0 contrast on BOTH a #ffffff
+     and a #1e1e1e background (converter/_fallback_derive.py). Without them the
+     variables stay DEFINED-but-invalid and every consumer falls back to the
+     inherited text colour, which is why cards looked unstyled.
+     The theme-adaptive color-mix() versions are applied further down inside an
+     @supports block; a false @supports test means those are never parsed, so
+     these defaults survive intact.
+     --------------------------------------------------------------------- */
+  --ld-link:  #458cd3;
+  --ld-pos:   #4885ca;
+  --ld-frame: #2f9c6e;
+  --ld-zh:    #9d76d9;
+  --ld-reg:   #c1743e;
+  --ld-field: #7f8a3a;
+  --ld-geo:   #8f67d8;
+  --ld-warn:  #d35748;
+  --ld-level: #b0851b;
+  /* neutrals: text at reduced alpha -- expressed with rgba() rather than
+     color-mix() so they work everywhere. --text-color is a Yomitan variable and
+     may be absent, in which case the element's own colour is inherited via the
+     color: declaration at the end of this rule. */
+  --ld-text2: rgba(120,120,120,.92);
+  --ld-dim:   rgba(120,120,120,.78);
+  --ld-faint: rgba(120,120,120,.62);
   /* headword is plain theme text -- never a fixed colour */
   --ld-head:  var(--text-color, currentColor);
   /* metrics */
@@ -1877,8 +1950,36 @@ def generate_css():
   display:block; line-height:1.5; font-size:1em; color:var(--text-color,#202124);
 }
 
+/* Theme-adaptive palette: only parsed by engines that actually support
+   color-mix(). Verified on a real engine (Chrome 152 via CDP) that a static
+   default outside @supports survives when the test is false; a browser that
+   does not understand color-mix() reports CSS.supports(...) === false and the
+   block below is skipped entirely. */
+@supports (color: color-mix(in srgb, red 50%, blue 50%)) {
+  [data-sc-class="ld"] {
+    --ld-link:  color-mix(in srgb, #3b8ee0 68%, var(--text-color, currentColor) 32%);
+    --ld-pos:   color-mix(in srgb, #3f86d6 68%, var(--text-color, currentColor) 32%);
+    --ld-frame: color-mix(in srgb, #22a06b 68%, var(--text-color, currentColor) 32%);
+    --ld-zh:    color-mix(in srgb, #a274e8 68%, var(--text-color, currentColor) 32%);
+    --ld-reg:   color-mix(in srgb, #cc7233 68%, var(--text-color, currentColor) 32%);
+    --ld-field: color-mix(in srgb, #7f8c2f 68%, var(--text-color, currentColor) 32%);
+    --ld-geo:   color-mix(in srgb, #9163e6 68%, var(--text-color, currentColor) 32%);
+    --ld-warn:  color-mix(in srgb, #e0503f 68%, var(--text-color, currentColor) 32%);
+    --ld-level: color-mix(in srgb, #b8860b 68%, var(--text-color, currentColor) 32%);
+    --ld-text2: color-mix(in srgb, var(--text-color, currentColor) 88%, transparent);
+    --ld-dim:   color-mix(in srgb, var(--text-color, currentColor) 70%, transparent);
+    --ld-faint: color-mix(in srgb, var(--text-color, currentColor) 55%, transparent);
+  }
+}
+
 [data-sc-class="ld-entry"] { display:block; }
 [data-sc-class="ld-entry"] + [data-sc-class="ld-entry"] { border-top:1px solid rgba(128,128,128,.3); margin-top:8px; padding-top:8px; }
+/* Scheme B: the inline copy of a semantic marker (example dash, tick/cross,
+   corpus bullet). Hidden as long as ANY stylesheet is applied, so the ::before
+   rules above stay the single visible prefix and the rendering is unchanged.
+   A host that loads no CSS at all -- an Anki export, a plain-HTML preview --
+   sees this as an ordinary inline span, so the information survives. */
+[data-sc-class="ld-mark"] { display:none; }
 [data-sc-class="ld-empty"] { display:none; }
 
 /* ---- headword ---------------------------------------------------------- */
@@ -1916,8 +2017,8 @@ def generate_css():
                       and an inline-block inherits it onto its own first line, which pulls
                       the chip's text out of its own box (see REVIEW T9). */
   border-radius:4px; padding:0 5px; margin:0 var(--ld-chip-gap) 0 0; vertical-align:baseline;
-  border:1px solid color-mix(in srgb, currentColor 38%, transparent);
-  background:color-mix(in srgb, currentColor 10%, transparent);
+  border:1px solid rgba(128,128,128,.38); border:1px solid color-mix(in srgb, currentColor 38%, transparent); /* static fallback, scheme A */;
+  background:rgba(128,128,128,.10); background:color-mix(in srgb, currentColor 10%, transparent); /* static fallback, scheme A */;
 }
 [data-sc-class="ld-freq"] { font-size:.72em; color:var(--ld-pos); font-variant-numeric:tabular-nums; }
 [data-sc-class="ld-gram"] { color:var(--ld-pos); }
@@ -1939,7 +2040,7 @@ def generate_css():
 [data-sc-class~="ld-sense-n"] { padding-left:var(--ld-gutter); }
 [data-sc-class="ld-subsense"] { display:block; margin:2px 0 3px; padding-left:1.6em; }
 [data-sc-class="ld-runon"] { display:block; margin:2px 0 4px; padding-left:var(--ld-gutter); color:var(--ld-text2); }
-[data-sc-class="ld-phrventry"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-frame) 45%, transparent); margin:6px 0; padding:2px 0 2px .7em; }
+[data-sc-class="ld-phrventry"] { display:block; border-left:3px solid rgba(47,156,110,.45); border-left:3px solid color-mix(in srgb, var(--ld-frame) 45%, transparent); /* static fallback, scheme A */; margin:6px 0; padding:2px 0 2px .7em; }
 [data-sc-class="ld-snum"] { display:inline-block; text-indent:0; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
 /* 5,742 subsenses DO carry a number. Their own indent (1.6em) is smaller than
    the sense gutter (1.9em), so an unscoped ld-snum would hang 0.3em past the
@@ -1955,7 +2056,7 @@ def generate_css():
 [data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame); }
 /* Sense-group label inside a collocation/thesaurus box: "- Meaning 1: ...". It
    belongs to the box that follows it, so it sits at the top of the panel body. */
-[data-sc-class="ld-panel-sub"] { display:block; margin:0 0 4px; padding-bottom:2px; border-bottom:1px solid color-mix(in srgb, currentColor 18%, transparent); }
+[data-sc-class="ld-panel-sub"] { display:block; margin:0 0 4px; padding-bottom:2px; border-bottom:1px solid rgba(128,128,128,.18); border-bottom:1px solid color-mix(in srgb, currentColor 18%, transparent); /* static fallback, scheme A */; }
 [data-sc-class="ld-panel-sub"] [data-sc-class="ld-grouptitle"] { font-weight:700; }
 /* LDOCE Online panel: sits at the same level as a normal entry, so give it a
    little separation from the preceding entry. */
@@ -1969,9 +2070,9 @@ def generate_css():
 [data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; }
 [data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh); font-size:.95em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
-[data-sc-class="ld-hint"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); background:color-mix(in srgb, var(--ld-level) 8%, transparent); padding:3px 8px; margin:4px 0; }
+[data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
 [data-sc-class="ld-hint-inline"] { color:var(--ld-level); font-style:italic; }
-[data-sc-class="ld-dontsay"] { display:block; border-left:3px solid color-mix(in srgb, var(--ld-warn) 60%, transparent); background:color-mix(in srgb, var(--ld-warn) 7%, transparent); padding:3px 8px; margin:4px 0; }
+[data-sc-class="ld-dontsay"] { display:block; border-left:3px solid rgba(211,87,72,.60); border-left:3px solid color-mix(in srgb, var(--ld-warn) 60%, transparent); /* static fallback, scheme A */; background:rgba(211,87,72,.07); background:color-mix(in srgb, var(--ld-warn) 7%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
 [data-sc-class="ld-warn"] { display:block; color:var(--ld-warn); }
 [data-sc-class="ld-good-word"] { font-weight:700; color:var(--ld-frame); }
 [data-sc-class="ld-bad-word"] { font-weight:700; color:var(--ld-warn); text-decoration:line-through; }
@@ -2015,8 +2116,8 @@ def generate_css():
 [data-sc-class="ld-block"] { display:block; }
 [data-sc-class="ld-frequency"] { display:block; padding:4px; }
 [data-sc-class="ld-table"] { border-collapse:collapse; margin:4px 0; width:auto; }
-[data-sc-class="ld-td"], [data-sc-class="ld-th"] { border:1px solid color-mix(in srgb, var(--ld-dim) 45%, transparent); padding:2px 6px; font-size:.95em; text-align:left; }
-[data-sc-class="ld-th"] { background:color-mix(in srgb, var(--ld-frame) 10%, transparent); font-weight:700; }
+[data-sc-class="ld-td"], [data-sc-class="ld-th"] { border:1px solid rgba(128,128,128,.45); border:1px solid color-mix(in srgb, var(--ld-dim) 45%, transparent); /* static fallback, scheme A */; padding:2px 6px; font-size:.95em; text-align:left; }
+[data-sc-class="ld-th"] { background:rgba(47,156,110,.10); background:color-mix(in srgb, var(--ld-frame) 10%, transparent); /* static fallback, scheme A */; font-weight:700; }
 
 /* ---- panels ------------------------------------------------------------ */
 [data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"], [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"], [data-sc-class="ld-panel-online"] { display:block; margin:5px 0 6px; }
@@ -2026,15 +2127,15 @@ def generate_css():
 [data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"]::before, [data-sc-class="ld-panel-online"][open] > [data-sc-class="ld-panel-sum"]::before { transform:translateY(-50%) rotate(90deg); }
 [data-sc-class="ld-panel-title"] { color:var(--ld-frame); }
 [data-sc-class="ld-panel-title-zh"] { margin-left:.5em; font-size:.85em; color:var(--ld-zh); font-weight:600; }
-[data-sc-class="ld-panel-body"] { border-left:3px solid color-mix(in srgb, var(--ld-frame) 40%, transparent); background:color-mix(in srgb, var(--ld-frame) 6%, transparent); border-radius:0 4px 4px 0; padding:4px 8px; margin-top:3px; }
+[data-sc-class="ld-panel-body"] { border-left:3px solid rgba(47,156,110,.40); border-left:3px solid color-mix(in srgb, var(--ld-frame) 40%, transparent); /* static fallback, scheme A */; background:rgba(47,156,110,.06); background:color-mix(in srgb, var(--ld-frame) 6%, transparent); /* static fallback, scheme A */; border-radius:0 4px 4px 0; padding:4px 8px; margin-top:3px; }
 [data-sc-class="ld-panel-boxbody"] { display:block; }
-[data-sc-class="ld-panel-corpus"] > [data-sc-class="ld-panel-body"] { background:color-mix(in srgb, var(--ld-pos) 6%, transparent); border-left-color:color-mix(in srgb, var(--ld-pos) 40%, transparent); }
+[data-sc-class="ld-panel-corpus"] > [data-sc-class="ld-panel-body"] { background:rgba(72,133,202,.06); background:color-mix(in srgb, var(--ld-pos) 6%, transparent); /* static fallback, scheme A */; border-left-color:rgba(72,133,202,.40); border-left-color:color-mix(in srgb, var(--ld-pos) 40%, transparent); /* static fallback, scheme A */; }
 [data-sc-class="ld-panel-etym"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-reg); }
 [data-sc-class="ld-panel-wf"] > [data-sc-class="ld-panel-body"] { display:flex; flex-direction:column; gap:2px; }
 [data-sc-class="ld-wf-group"] { display:block; }
 [data-sc-class="ld-wf-pos"] { font-style:italic; font-weight:700; color:var(--ld-pos); margin-right:var(--ld-chip-gap); font-size:.9em; }
 [data-sc-class="ld-wf-word"] { font-weight:600; }
-[data-sc-class="ld-wf-root"] { color:var(--ld-dim); border-bottom:1px dotted color-mix(in srgb, currentColor 60%, transparent); }
+[data-sc-class="ld-wf-root"] { color:var(--ld-dim); border-bottom:1px dotted rgba(128,128,128,.60); border-bottom:1px dotted color-mix(in srgb, currentColor 60%, transparent); /* static fallback, scheme A */; }
 /* Antonym marker inside a word family: "!= disadvantage". The source wraps it in
    <span class="opp"> with a literal U+2260 plus a link. */
 [data-sc-class="ld-wf-opp"] { color:var(--ld-dim); }
@@ -2219,19 +2320,27 @@ def pos_tags_rules(pos_tokens, freq_tokens):
             rule = POS_RULE_MAP.get(part, "")
             if rule and rule not in rules:
                 rules.append(rule)
-        if len(tags) >= 4:
-            break
     for f in dict.fromkeys(freq_tokens):
         if f not in tags:
             tags.append(f)
-    # Frequency levels are appended after the POS tags, so the old flat
-    # tags[:6] cap silently dropped them on multi-POS entries: 'about' lost W2
-    # from definitionTags while its term_meta_bank row still carried it (140
-    # rows disagreed). Reserve room for every S/W level; POS tags yield first.
-    freq_part = [t for t in tags if t in FREQ_VALUE]
-    pos_part = [t for t in tags if t not in FREQ_VALUE]
-    room = max(0, TAG_LIMIT - len(freq_part))
-    return " ".join(pos_part[:room] + freq_part), " ".join(rules[:4])
+    # Nothing is truncated here -- on purpose.
+    #
+    # Three successive caps each silently dropped real metadata:
+    #   * `if len(tags) >= 4: break` + `rules[:4]`  -> 53 entries lost their 5th+
+    #     POS ('back' lost 'adj', 'cross' lost 'adv'+'prefix', 'after'/'arch'
+    #     lost 'prefix'); those tokens also vanished from definitionTags, which
+    #     is the same defect class as audit A2/A3 (parts-of-speech filtering of
+    #     deinflection candidates).
+    #   * a flat `tags[:6]` -> frequency codes were appended last and got cut
+    #     (140 rows disagreed with term_meta_bank).
+    #   * `TAG_LIMIT = 8`   -> still cut 'like' (7 POS + 4 freq = 11).
+    #
+    # definitionTags is a space-separated string with no declared maximum, so the
+    # only correct behaviour is to emit everything. TAG_LIMIT now serves as an
+    # observation threshold: validate_package() warns when a row exceeds it, so
+    # genuine data drift stays visible without any silent loss. Re-derive it with
+    # converter/_cap_choose.py if that warning ever fires.
+    return " ".join(tags), " ".join(rules)
 
 
 # ---------------------------------------------------------------------------
@@ -2426,6 +2535,18 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
                     continue
                 if isinstance(row[6], int) and not isinstance(row[6], bool):
                     seqs.append(row[6])
+                # Observation only, never an error: nothing is truncated any more,
+                # so a row above TAG_LIMIT just means the source grew richer than
+                # when the threshold was derived. Collected into stats so the
+                # caller can print it without failing an otherwise good build.
+                if isinstance(row[2], str):
+                    n_tags = len(row[2].split())
+                    if n_tags > TAG_LIMIT:
+                        stats["rows_over_tag_limit"] += 1
+                        if stats["rows_over_tag_limit"] <= 5:
+                            examples = stats.setdefault("tag_limit_examples", [])
+                            if isinstance(examples, list):
+                                examples.append(f"{row[0]!r}={n_tags}")
                 for item in row[5]:
                     if isinstance(item, list):
                         stats["redirect_items"] += 1
@@ -2830,6 +2951,11 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
               f"redirect_items={vstats['redirect_items']} "
               f"seq_ok={vstats['sequence_ok']} "
               f"freq_rows={vstats['freq_rows']}")
+        if vstats.get("rows_over_tag_limit"):
+            print(f"[!] {vstats['rows_over_tag_limit']} row(s) carry more than "
+                  f"TAG_LIMIT={TAG_LIMIT} definitionTags "
+                  f"(e.g. {', '.join(vstats.get('tag_limit_examples') or [])}); "
+                  f"nothing was truncated -- re-derive TAG_LIMIT with _cap_choose.py.")
         if errors:
             print(f"[FAIL] Validation failed with {len(errors)} error(s):")
             for err in errors[:60]:

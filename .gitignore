@@ -80,3 +80,23 @@ yomitan_wf_test/
 converter/_*.py
 !converter/_apply_patch.py
 !converter/_restore_all.py
+
+# ============================================================
+#  第三方代码副本（Hoshi-Reader-Android，取回只读核对，不入库）
+# ============================================================
+_hoshi/
+
+# CDP 探针与临时渲染产物（结论已进 REVIEW.md）
+scgen_test/_expr*.js
+scgen_test/_*.mjs
+scgen_test/_*.css
+scgen_test/_*.json
+scgen_test/cdp.mjs
+scgen_test/cssprobe*.mjs
+_sc*.html
+_sb*.html
+_cssfallback_probe*.html
+_scheme_*.html
+
+# 定向验证构建（与 yomitan_debug*/ 同类）
+yomitan_cap_test/
