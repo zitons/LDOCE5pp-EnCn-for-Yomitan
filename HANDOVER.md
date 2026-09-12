@@ -27,6 +27,27 @@
 （只在义项确有编号时才留悬挂缩进，49% 的义项没有编号）；修正副义项编号越界；6 类芯片统一底座与间距。
 CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/别名仍完全不变。
 
+**第四轮（无 CSS 可移植性，2026-09-14，见 `REVIEW.md` D31–D33）**：起因是用户实测反馈
+「Anki 制卡后 `S2W2AWLadjective` 都没分割了，抽掉样式之后基本没有什么改善」。逐层挖出三类问题：
+
+| 层 | 问题 | 修法 | 规模 |
+|---|---|---|---|
+| 一 | **行内芯片分隔全靠 CSS** | `separate_head_atoms()` 插真实空格 | 28,252/76,554 个词头零空白 |
+| 二 | **所有 inline run 同理** | `separate_inline_runs()` 在各产出者共同出口递归 | 覆盖义项芯片/双语标签/面板标题 |
+| 三 | **块级只有换行、没有层级** | **改用原生列表语义** `<ol><li>` + 嵌套 `<ul><li>` | 见下 |
+| — | 方案 A/B 兜底 | `@supports` 调色板 + `ld-mark` 内联标记 | D31 |
+
+第三层是根因：块间距全靠 `margin`，抽掉样式表后**实测 gap 全为 0**（`ld-def`→`ld-defcn`、
+`ld-excn`→下一 `ld-act`），用户原话「找哪个释义都费劲」。**空格救不了块级间距**（块之间的空白被布局丢弃），
+最终参照现成成品 `LDOCE5.zip` 改用**浏览器原生列表语义**：义项 `<ol><li>`（自动编号 + 40px 缩进）、
+例句嵌套 `<ul><li>`（自动 `•`），并用**双模式技巧**兼顾两种环境——chip 行内 `font-size:0` 在无 CSS 时
+让位给原生编号，CSS 用 `font-size:1em !important` 还原（`!important` 压得过行内样式）。
+
+结果：`<li>` 836,768 / `<ol>` 99,131 / `<ul>` 212,149，**孤儿 `<li>` = 0**；全量构建 840 s，
+**行数/词条/别名完全不变**，245,664 个共享词条**剥离空白后逐字符相同（0 内容损失）**。
+包 60.7 MB，sha256 `bc067411…bef71f`。
+
+
 **第五轮（D7 + D8）**：修好频率扫描正则（改为属性顺序不敏感；FREQ 命中 **0 → 32,195**），使 S1–S3/W1–W3 真正进入 `definitionTags`（此前 tag_bank 里 6 个 frequency 标签是死声明），并新增 `term_meta_bank_*.json` 让 Yomitan **能按频率排序**；把裸的 `cls & DROP_CLASSES` 换成 `is_dropped()`，恢复被整块丢弃的 1,548 条 `→ N See picture of 见图 X` 交叉引用。**未给 ACTIV 义项标签加中文**——源里查无对照（见 REVIEW.md D9）。
 
 **第四轮（词头顺序 + `.mdd` 普查）**：拿到 `.mdd` 后取出原版 `LM5style.css`，终结了 T8 的争议——
@@ -86,25 +107,31 @@ CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/�
 
 | 路径 | 说明 | 状态 |
 |---|---|---|
-| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip` | **主交付物**，双语版，60,209,514 B（未压缩 470 MB，25 个 term bank + index + tag_bank + styles.css）。sha256 `d63a7ad99fcde2131982f5177b27237ec788034aa1c32cdca5d97665e44095f7` | ✅ 最终版（A1–A6 修复后） |
+| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip` | **主交付物**，双语版，63,649,164 B（60.7 MB；25 个 term bank + index + tag_bank + styles.css）。sha256 `bc0674113e9a991da633ab8ac844ac8c44e31ae92a34e572672f5e0ae2bef71f` | ✅ 最终版（原生列表语义 + 词头分隔 + 块间距） |
+| `C:\workspace\ldoce\LDOCE5.zip` | **参照成品**（同一本 LDOCE5++ 的另一个转换版，作者 lng）。**无 styles.css 却有结构** —— 靠原生 `<ol>/<li>` + 嵌套 `<ul><li>` + 4 种行内样式。本轮列表语义改造的正解来源，留作对照 | 📖 只读参照 |
+| `C:\workspace\ldoce\_MODE_COMPARE.html` | **双模式对比页**：左栏 Yomitan（样式表作用域 `.y`）、右栏 Anki（无样式），同词条并排。浏览器直接打开即可验收 | ✅ 验收工具 |
 | `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip` | 上一版交付物，保留用于逐行比对（`converter/audit_2026_09_12/diff_before_after.py`） | 📦 归档 |
-| `C:\workspace\ldoce\converter\ldoce2yomitan.py` | **转换器，唯一事实来源**（单文件 ~2060 行，无包依赖结构） | ✅ 最终版 |
+| `C:\workspace\ldoce\converter\ldoce2yomitan.py` | **转换器，唯一事实来源**（单文件 ~3350 行，无包依赖结构） | ✅ 最终版 |
 | `C:\workspace\ldoce\yomitan_debug\..._DEBUG.zip` + `term_bank_1.json` | 13 个测试词条的调试包（JSON 带缩进，可 diff） | ✅ 与主版同步 |
 | `C:\workspace\ldoce\yomitan_mono_smoke\..._EN.zip` | 纯英文模式冒烟包（--limit 300，非全量） | ⚠️ 演示用 |
 | `C:\workspace\ldoce\preview.html` | SC→HTML 本地预览（镜像 Yomitan 生成器语义），浏览器直接打开 | ✅ |
 | `C:\workspace\ldoce\README-yomitan.md` | 面向**使用者**的安装/特性说明 | ✅ |
 | 本文档 | 面向**维护者**的交接 | — |
 
-### 最终数字（全量构建，915.7 s）
+### 最终数字（全量构建，840.0 s）
 
 ```
 记录扫描        285,017 条（词条 64,659 / 唯一 key 64,390；redirect 218,252；skip 2,106）
 渲染词条         64,390 行（score 10，同 key 多记录 → 269 个重复表达式各成一行）
 别名重定向行    181,274 行（score -10，"non-lemma" tag，rules 继承目标词条）
 别名行去留     186,424 个别名 key = 181,274 成行 + 5,150 个自身就是真词条的 key（正常让位给词条行）；HTML 污染导致的真断链修复后 = 0
-查询链接       1,945,431 个存活 / 4,596 个降级为虚线 span / 0 悬挂
+查询链接       1,949,979 个存活 / 4,875 个降级为虚线 span / 0 悬挂
+行总数          245,933（term_bank 25 个 + term_meta）
+原生列表        <li> 836,768 / <ol> 99,131 / <ul> 212,149；孤儿 <li> = 0
 渲染异常             0   空内容行  0   seq 0..245932 连续无洞
+内容守恒       245,664 个共享词条剥离空白后逐字符相同（0 损失，见 §8）
 ```
+
 
 ---
 
@@ -173,6 +200,16 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | **`audit5_headword.py`** | 词头污染回归门禁（有 exit code） | 见 §5.15 |
 | **`audit6_diff.py`** | 两包前后对比（行数、`ld-defcn`、词头 diff） | 改渲染器后必跑 |
 | **`audit7_parser_equiv.py`** | 解析器等价性（lxml vs html.parser 逐字节） | 换解析器必跑 |
+| **`regress_head_separation.py`** | 词头/内联芯片分隔门禁：真生成器 + 真 Chrome，断言无粘连 token | 见 §5.58 |
+| **`regress_list_validity.py`** | 列表结构合法性：孤儿 `<li>` = 0、`<ol>/<ul>` 内无非法子元素 | 见 §5.59，改列表语义必跑 |
+| **`regress_scheme_b.py`** / **`regress_css_fallback.py`** / **`regress_pos_cap.py`** | 方案 B 标记完整性 / 方案 A 颜色兜底 / POS 上限 | 见 §5.55–57 |
+| **`glue_detect.py`** | **粘连检测器（带正负例自证）**。⚠️ 必须先用已知正/负例单测，否则会误报：`announcement` 含 `noun`、`proverbial` 含 `verb` 都是假阳性 | 见 §5.63 |
+| **`audit_nocss_final.py`** | 无 CSS 渲染审计：真生成器 → 真 Chrome（无样式表）→ `innerText` → token 检测 | **不要用 `textContent`**，见 §5.58 |
+| **`audit_subsequence_loss.py`** | 内容守恒：剥空白后旧文本须为新文本**有序子序列** | 见 §5.63，改结构后必跑 |
+| **`audit_def_ex_geometry.py`** | 用 `getBoundingClientRect` 量释义/例句的**真实 gap**（判"有没有层级感"） | 见 §5.58 第三层 |
+| **`_verify_listsem_real.py`** | 列表语义双模式验证（有/无 CSS 的 `list-style`/`display`/chip 宽度） | 见 §5.60 |
+| **`_make_mode_page.py`** | 生成 `_MODE_COMPARE.html` 双模式对比页（CSS 作用域到左栏 `.y`） | 验收工具 |
+| **`_find_hide_prop.py`** | 探测"合法的隐藏属性"（`display` 非法，`fontSize:0` 合法） | 见 §5.61 |
 | **`bench_parse.py`** | 解析/渲染基准，含样本缓存 `_bench_sample.pkl` | 避免重复扫 877 MB |
 | `extract_payload.py` | 从 zip 抽 405 条分层样本喂 node 真生成器 | |
 | `..\scgen_test\run_scgen.mjs` | Node+jsdom 加载 Yomitan 真 `structured-content-generator.js`（3 个 stub 模块）渲染样本 | `npm i jsdom` 已装 |
@@ -305,6 +342,63 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
     所以**同一条检查在有无沙箱下结论可能相反**。
 53. **交付包名带构建日期，审计脚本必须自动挑最新的**：`_find_zip()` 之类"取 `yomitan_full` 里最新的
     非 debug 包"是必需的，硬编码 `…2026.09.11.zip` 会在重建后静默过期（audit3 的注释里记了这条教训）。
+54. **CSS 回退：`var()` 救不了"已定义但值非法"的变量**（2026-09-13，方案 A）。真 Chrome + CDP 实测：
+    * `color: rgb(0,128,0); color: var(--未定义)` → **父色**，静态声明被丢弃
+    * `color: var(--已定义但值非法, rgb(255,165,0))` → **父色**，`var()` 回退**不触发**
+    * 静态默认在 `@supports` **外** + 花式值在**内** → **静态值生效**（唯一可靠）
+    所以 `color-mix()` 不被支持时，`--x: color-mix(...)` 仍是"已定义"的，任何回退机制都不触发。
+    **要写"降级可用"的 CSS，就用 `@supports` 双轨，别用双声明或 `var()` 回退。** 详见 `_cssfallback_probe*.html`。
+55. **CSS `::before` 承载的信息在无样式表宿主里会彻底消失**（2026-09-13，方案 B）。本词典有 5 条
+    `::before` 画着 `–`/`✓`/`✗`/`•`，Anki 导出、纯 HTML 预览等宿主一条都看不到（全库 645,801 个节点）。
+    修法是**内容里也写一份标记 + CSS 把它藏起来**，而**不是**删 `::before`：`text-indent:-1.6em`
+    的悬挂缩进是按 `::before` 画的**首行前缀**校准的，删了会破坏缩进。这样有 CSS 时零回归、无 CSS 时信息保留。
+56. **同一个视觉类可能有多条产出路径，注入逻辑要放在"出口"而不是"某个入口"**（2026-09-13）：
+    方案 B 第一版只在 `render_example()` 注入标记，结果 `GramExa`/`ColloExa`/`GOODEXA`/`BADEXA`
+    走 `BLOCK_SCNAME` 分派、**不经过** `render_example()`，**63 个节点漏标记**（被 `regress_scheme_b.py` 抓到）。
+    **通法**：加"给某类节点统一附加东西"的逻辑前，先 grep 该类名**所有**产出点；放在最后一个共同出口更安全。
+57. **上限阈值要从数据推导，并且把"截断"改成"告警"**（2026-09-13）：`pos_tags_rules()` 曾有三处硬上限
+    （词性收满 4 个就 break、`rules[:4]`、扁平 `tags[:6]`/`TAG_LIMIT=8`），逐代各丢一批真实数据；
+    全库实测词性最多 7 个、最宽合计 11。三处上限全部移除，`TAG_LIMIT` 降级为**漂移告警阈值**
+    （超限就提示，但不截断）。**任何 `[:N]` 都要先问：N 是从数据来的，还是拍的？截断丢的是什么？**
+
+58. **芯片能换行，不等于结构存在**（2026-09-14）：本词典的空 CSS 可读性问题分三层，一层比一层深，前两层修完看着"好了"但用户仍抱怨：
+    - **第一层：行内芯片粘连**。词头是 `ld-hwd-wrap ld-pron ld-level ld-freq ld-gloss ld-pos ld-gram` 一串**兄弟 inline span**，彼此分隔**全部来自 CSS**（margin/背景/边框），内容里没有空白字符 → 全库 **76,554 个词头里 28,252 个完全没有空白**，抽掉样式表就是 `a·ban·don1/əˈbændən/●●○W3AWLverb[transitive]`。修法：`separate_head_atoms()` 在词头统一出口按结构插空格，`HEAD_GLUE_CLASSES`（`ld-hyp`/`ld-stress`/`ld-hwd`/`ld-en`/`ld-zh`）豁免以免破坏 `a·ban·don`。
+    - **第二层：所有 inline run 都粘连**，不止词头。`separate_inline_runs()` 在 `render_record` 出口做一次递归，覆盖义项芯片、双语标签、面板双语标题等**全部产出者**。第一层和第二层是同一个病的两个规模。
+    - **第三层（真正的根因）：块级元素虽然换行，但没有任何层级感**。用户原话「找哪个释义都费劲，看起来有结构框架」。块间距靠 margin，抽掉全归零 → `ld-def`/`ld-defcn`/`ld-ex`/`ld-excn` 的 gap 实测**全是 0**。**空格救不了块级间距**（块之间的空白被布局丢弃），只能靠内联 `marginBottom`（值必须**等于** CSS 的值，因为内联样式优先于类规则，用别的数字会改掉有 CSS 时的观感）。
+    - **通法**：判断"有没有分隔"不能只看 `textContent`（它无视布局，会把块级换行也算成粘连，本项目因此报过 236,375 个假阳性）。要用**真 Chrome 的 `innerText`**（行感知）或 `getBoundingClientRect` 量 gap。
+
+59. **原生列表语义是"零 CSS 也有结构"的正解，参照现成成品比自创方案靠谱**（2026-09-14）：用户提供了 `LDOCE5.zip`（同一本 LDOCE5++ 的另一个转换版，作者 lng）。它**没有任何 styles.css**，却天然有结构，做法是：
+    ```
+    div > ol > li              义项，浏览器自动编号 1. 2. 3.
+          li > ul > li         例句，自动 • 项目符号 + 二级缩进
+    行内样式仅 4 种：fontWeight:bold(58,779) color:green(22,496)
+                     backgroundColor:#e0e0e0(19,004) color:DodgerBlue(12,208)
+    ```
+    实测 UA 默认行为（真 Chrome 无 CSS）：`ol` → `block` + `list-style:decimal` + **`padding-left:40px`**；`li` → `list-item`；`ul` → `disc`。**编号、项目符号、缩进全部由浏览器自带样式提供，零依赖**。
+    本项目改法：`<ol class="ld-senselist"><li class="ld-sense">` + 嵌套 `<ul class="ld-exlist"><li class="ld-ex">`，分组放在 `_children_blocks()`（**唯一能看到每层直接子节点的地方**）。
+    - **先试后弃的方案**：一开始自创了 `border-left` 竖线 + `padding` 的"视觉框架"。它能画出框，但**框是装饰**，DOM 里仍无层级、编号/项目符号并不存在。**有现成同类成品时，先解剖它，再动手**。
+
+60. **双模式技巧：行内样式负责"无 CSS 时"，`!important` 负责"有 CSS 时"**（2026-09-14）：核心矛盾是"无 CSS 要有原生编号，有 CSS 要保留我们自己的绿色编号 chip"，两者会**同时出现变成 `1. 1 [countable]`**。解法（真 Chrome 实测）：
+    - 我们的 chip 发出行内 `font-size:0` → 无 CSS 时**宽度归零**，让位给原生 `<ol>` 编号
+    - CSS 用 `[data-sc-class="ld-snum"]{font-size:1em !important; display:inline-block !important}` 还原 → 有 CSS 时 chip 回来（实测 21.59px、绿色），同时 `ol{list-style:none;padding-left:0}` 关掉原生编号和 40px 缩进
+    - **原理要点**：`!important` 的作者声明**压得过行内样式**（普通声明压不过）。所以"行内提供兜底 + CSS `!important` 复位"是可行组合，用于**任何**需要在两种环境下表现不同的属性。
+    - 实测双模式结果：`ol` 无 CSS=decimal/40px、有 CSS=none/0px；`li` 无 CSS=list-item、有 CSS=block；chip 无 CSS=0 宽、有 CSS=21.59px 绿色。
+
+61. **`display` 不是合法的 structured-content style 属性，生成器会静默丢弃**（2026-09-14）：为隐藏 chip 先写了 `style:{display:"none"}`，**生成器输出里该属性直接不见了**（`getAttribute('style')` 为 `null`），导致无 CSS 时双重编号。根因：官方 schema 的 `definitions/structuredContentStyle` **没有 `display`** 且 `additionalProperties:false`。
+    - 合法属性集（本项目已固化为校验器白名单 `SC_STYLE_ALLOWED`）：`fontStyle fontWeight fontSize color background backgroundColor textDecoration* border* clipPath verticalAlign textAlign textEmphasis textShadow margin* padding* wordBreak whiteSpace cursor listStyleType`
+    - **替代**：用 `fontSize:0`（合法、宽度真正归零、且可被 `!important` 还原）。
+    - **最该记住的**：这个 bug **构建时校验通过了**。已给校验器加上非法样式属性检查 —— **凡是"生成器可能静默丢弃"的东西（未知 style 键、未知 tag、超长值），校验器都要显式对照官方 schema 断言**，否则错误只会躺在包里等用户发现。
+
+62. **jsdom 不是浏览器，别用它验证 CSS**（2026-09-14）：本轮用 jsdom + `getComputedStyle` 验证列表规则，得出"`list-style:none` 规则没生效、`display:block` 没生效"的**错误结论**，白绕好几轮。真相：jsdom **不实现 `list-style-type` 的解析/继承**，对 `ol` 一律返回 `decimal`。判据：规则明明在 `document.styleSheets` 里、选择器 `matches()` 也为真，computed 值却不对 —— **立刻换真浏览器**。所有最终结论改用 **Chrome + CDP**（`--headless=new` 或 CDP 端口）后一次就对了。同理 `innerText`（行感知）在 jsdom 里**不存在**，只有真浏览器才有。
+
+63. **"内容守恒"审计的判据必须容忍本次修复本身**（2026-09-14）：同一个审计脚本为判断"有没有丢内容"，先后错了三次：
+    - **按标签比** → `div` 变 `li`/`ol`/`ul` 是**本次修复**，报出 64,659 个假差异
+    - **按文本精确比** → 插入分隔符也是**本次修复**，又报几千个假差异
+    - **按"字母数字 run"比** → 更糟：旧文本 `nouncountable1` 是**粘连**的，修好后变成 `noun countable 1`，旧 run 按定义就不存在了，反而把"修好了"报成"丢了"
+    - **正确判据**：剥掉**空白**后，要求**旧文本是新文本的有序子序列**（`all(ch in iter(new) for ch in old)`）。这样"插空格/插标记/补内容"全部合法，而"删字、改字、乱序"必定失败。实测 **245,664 个词条剥离空白后逐字符相同 → 0 损失**。
+    - **通法**：写审计判据前先问"我这次改了什么"，把改动**预期产生的差异**从判据里排除，否则审计只会告诉你"你改了东西"。
+
+64. **有现成同类成品时，先解剖它再设计**（2026-09-14，同 §59 的教训但更一般）：本轮在自创方案上花了两轮（`border-left` 框架 → 弃用），解剖 `LDOCE5.zip` 半小时就拿到了完整正解。解剖要量化到属性级：标签用量、行内样式键值与频次、UA 默认行为。**"别人怎么做的"是最高价值的情报，尤其当成品就在手边。**
 
 ## 6. Yomitan 契约速查（format-3）
 
@@ -326,10 +420,10 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | 源元素 | 输出 | 备注 |
 |---|---|---|
 | `span.frequent.Head` | `div.ld-head` | **前置守卫**；内含 HWD/HYP(`·`→`ld-hyp`、`ˈ`/`ˌ`→`ld-stress`)/HOMNUM(→`ld-sup`，追加在词头**之后**)/`a.PronCodes`(含 `sound://` 剥离)/LEVEL(●●●,title 提示)/FREQ(S2/W1)/lm5pp_POS/GRAM([countable])/Inflections；**其余子元素一律查 `CHIP_MAP`/`INLINE_MAP` 渲染成芯片**（REGISTERLAB→`ld-register`、GEO→`ld-geo`、FIELD/FIELDXX、AC→`ld-gloss`、Variant/LEXVAR/AmEVariant/BrEVariant→`ld-lexvar`、HOMOPHONE→`ld-homophone`、PHRVBHWD→`ld-refhwd`、LINKWORD→`ld-collo`），`HYPHENATION` 丢弃 |
-| `div.newline.Sense` / `span.Sense` | `div.ld-sense`（有编号时追加 `ld-sense-n` 才留悬挂缩进） | cross_sense/merge_sense → `ld-sense-cross/merge` 单 token；编号为**多 token**（`"ld-sense ld-sense-n"`），CSS 用 `~=` 匹配 |
-| `span.DEF` | `div.ld-def`；纯中文 → `div.ld-defcn[lang=zh]` | cn_only = 剔除 cn_txt 后无残余文本（O(子树)，别重解析） |
+| `div.newline.Sense` / `span.Sense` | **`li.ld-sense`**（在有编号时追加 `ld-sense-n`），外层由 `_children_blocks()` 包成 **`ol.ld-senselist`** | cross_sense/merge_sense → `ld-sense-cross/merge` 单 token；编号为**多 token**（`"ld-sense ld-sense-n"`），CSS 用 `~=` 匹配。**改用 `<li>` 是为无 CSS 环境拿到浏览器原生编号**（见 §5.59） |
+| `span.DEF` | `div.ld-def`；纯中文 → `div.ld-defcn[lang=zh]` + 行内 `color:green` | cn_only = 剔除 cn_txt 后无残余文本（O(子树)，别重解析） |
 | `span.DEF>span.cn_txt`（混排） | `span.ld-zh[lang=zh]` | |
-| `div.EXAMPLE` | `div.ld-ex` + 内嵌 `div.ld-excn` | 风味单 token 阶梯：ld-gramexa > ld-colloexa > ld-ex-good(✓::before) > ld-ex-bad(✗) > ld-ex；`span.english` 定中文归属域 |
+| `div.EXAMPLE` | **`li.ld-ex`**（外层 `_children_blocks()` 包成 `ul.ld-exlist`）+ 内嵌 `div.ld-excn` | 风味单 token 阶梯：ld-gramexa > ld-colloexa > ld-ex-good(✓::before) > ld-ex-bad(✗) > ld-ex；`span.english` 定中文归属域。**无 CSS 时的 `•` 来自浏览器对 `<ul><li>` 的默认样式** |
 | `div.F2NBox/GramBox/ThesBox/ColloBox/UsageBox` | `details.ld-panel`（summary 双语标题 PANEL_TITLES_ZH） | heading 去 foldsign 后取文本；FrequenceBox 整个跳过；BoxPanel→ld-panel-boxbody |
 | `div.asset + 连续 div.assetlink` | 合并成一个 `details.ld-panel-corpus` | exaGroup→`ul.ld-corpulist`，`span.exa[type=X]`→`li.ld-corpexa-X`（X∈corpus/dics/encyc/online/phrases） |
 | `div.wordfams` | `details.ld-panel-wf` | **只处理带直接子 `sensefold` 的那种**（无表头的 38 个在原版永不显示）；POS 分组 `ld-wf-group`，crossRef 词→活链接，词根 `ld-wf-root`，反义词标记 `span.opp`→`ld-wf-opp`，裸文本成员→`ld-wf-word` |
@@ -347,7 +441,9 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 
 | 层 | 工具 | 覆盖 | 最近结果 |
 |---|---|---|---|
-| L1 构建内嵌 | `ldoce2yomitan.py` 的 `validate_package`（自动随 build 跑） | **全部 245,933 行**：行形状/SC 白名单/零悬挂(严格实形)/CSS token 覆盖/index 字段/mono 零 CJK 全 bank | `[OK] Validation passed.` |
+| L1 构建内嵌 | `ldoce2yomitan.py` 的 `validate_package`（自动随 build 跑） | **全部 245,933 行**：行形状/SC 白名单/**非法 style 属性（`SC_STYLE_ALLOWED` 对照官方 schema）**/零悬挂(严格实形)/CSS token 覆盖/index 字段/mono 零 CJK 全 bank | `[OK] Validation passed.` |
+| L1b 结构合法性 | `regress_list_validity.py` | 孤儿 `<li>`=0、`<ol>/<ul>` 内无非法子元素 | 836,768 个 `<li>` **零孤儿** |
+| L1c 可移植性门禁 | `regress_head_separation.py` / `regress_list_validity.py` / `audit_nocss_final.py` | 真 Chrome 无样式表下的**可读性**：无粘连 token、有原生编号/项目符号 | 410 词样本 0 粘连 |
 | L2 官方 schema | `audit2_schema.py`（Yomitan release `data/schemas/*.json` 原版 + fastjsonschema） | index、tag 全量；term **20% 分层抽样(50,402 行)+全库最小/最大各 200 行**；seq 连续性、控制字符、tag 词表、重复表达式 | 全 0 失败 |
 | L3 真代码渲染 | `scgen_test/run_scgen.mjs`：Node24+jsdom 加载**未修改的** `structured-content-generator.js`（仅 stub DisplayContentManager/text-utilities/AnkiCM 三个模块文件） | 405 条样本（最大 run/get、15 最小、370 随机、topic/别名重点词）→ 真 DOM | 405/405 零异常，29,155 链接全部重写 search.html，details 全有 summary |
 | L4 语义普查 | `audit1_aliases.py` + 定向抽查 | 218,252 @@@LINK 全分类；147 HTML 污染目标 100% 救回证明；2,106 skip 逐条核对（1907 ACTIV 主题页 + 184 图片 key + 15 LDOCE4 扫描页）；topic 链接实形存在 | 通过 |
@@ -355,6 +451,26 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 **为何 L2 不跑全量**：fastjsonschema 对 470MB 嵌套 oneOf 实测 >50 分钟（杀），L1 的自研校验器语义等价且做过 diff 级抽查；抽样+极值（嵌套最深的行必在最大 200 行里）+L3 真代码渲染共同补齐。要全量跑就换 AJV（node，`import Ajv; compile(schema)`），预期几分钟。
 
 **已知未验证项**：浏览器里真实扩展导入（chrome-devtools MCP 连不上 9821；headless 走不了扩展 IndexedDB 管线）——最终目检靠人：装 zip 或开 `preview.html`。视觉/深色模式未在真 UI 核对。
+
+---
+
+## 8.9 内容守恒验证（2026-09-14 新增）
+
+结构大改（`div` → `li`/`ol`/`ul`）之后，"有没有丢内容"必须**独立证明**，不能靠"校验器通过"。
+判据的演进本身就是教训（见 §5.63）：
+
+| 判据 | 结果 | 为什么错 |
+|---|---|---|
+| 标签结构相同 | 64,659 个差异 | `div`→`li` **就是本次修复**，比标签等于自欺 |
+| 文本精确相同 | 数千个差异 | 插入分隔符**就是本次修复** |
+| 字母数字 run 集合相同 | 仍有大量差异 | 旧文本 `nouncountable1` 是**粘连**的，修好后按定义就不存在了 |
+| **剥空白后子序列** ✅ | **0 差异** | `all(ch in iter(new) for ch in old)` —— 插空格/插标记/补内容全部合法，删字/改字/乱序必定失败 |
+
+脚本：`converter/audit_subsequence_loss.py`（默认对比最新全量包与 `_baseline/*.R2.zip`）。
+**245,664 个共享词条剥离空白后逐字符相同 → 0 内容损失。**
+
+**通法**：写审计判据前先问"我这次改了什么"，把改动**预期产生的差异**从判据里排除，
+否则审计只会告诉你"你改了东西"，而不会告诉你"你改坏了没有"。
 
 ---
 

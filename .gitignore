@@ -15,6 +15,15 @@ venv/
 scgen_test/node_modules/
 
 # ============================================================
+#  第三方参照成品：LDOCE5.zip 是另一位作者（lng）对同一本词典的转换版，
+#  取回只读核对用（本轮列表语义改造的正解来源），不属于本仓成果。
+# ============================================================
+LDOCE5.zip
+LDOCE*.apkg
+*.apkg
+*.colpkg
+
+# ============================================================
 #  构建 / 调试产物
 # ============================================================
 converter/_bench_sample.pkl
@@ -32,6 +41,7 @@ scgen_test/payload.json
 #  侦察草稿与一次性测量页（可由脚本重新生成）
 # ============================================================
 _*.html
+_*.png
 d_*.txt
 dump_*.txt
 tree_*.txt
@@ -91,6 +101,7 @@ scgen_test/_expr*.js
 scgen_test/_*.mjs
 scgen_test/_*.css
 scgen_test/_*.json
+scgen_test/_*.js
 scgen_test/cdp.mjs
 scgen_test/cssprobe*.mjs
 _sc*.html

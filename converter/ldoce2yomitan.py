@@ -371,6 +371,357 @@ def scheme_b_prefix(cls):
     return SCHEME_B_MARKERS.get(cls, "")
 
 
+# ---------------------------------------------------------------------------
+# Portable separation between head atoms (see render_head + _chip_root_cause).
+#
+# ATOMS are self-contained pieces that must stay distinguishable when no
+# stylesheet is applied. GLUE are parts of the headword itself -- separating them
+# would turn the syllable dots into 'a . ban . don'.
+# ---------------------------------------------------------------------------
+HEAD_ATOM_CLASSES = frozenset({
+    "ld-pron", "ld-pronblk", "ld-pron-amevar", "ld-level", "ld-freq", "ld-gloss",
+    "ld-pos", "ld-gram", "ld-geo", "ld-register", "ld-field", "ld-fieldxx",
+    "ld-act", "ld-actcn", "ld-synmark", "ld-sup", "ld-hwd-wrap", "ld-infl",
+    # Alternative-form annotations: '(also an)', '(also 800 line...)', ', a'.
+    # regress_head_separation.py found 8 heads where such a node sat between two
+    # atoms and neither boundary got a space, e.g. 'a /…/ ●●● S1 W1
+    # (also an)indefinite article'. It is self-contained, so it is an atom too.
+    "ld-lexvar",
+    # inflection-sequence members (render_inflections output, unwrapped into the
+    # head): 'abetting[transitive]' was the observable failure.
+    "ld-infl-form", "ld-infl-lab", "ld-infl-region", "ld-infl-ann", "ld-infl-pron",
+})
+HEAD_GLUE_CLASSES = frozenset({
+    "ld-hyp", "ld-stress", "ld-hwd", "ld-en", "ld-zh",
+    # a homograph number is superscript on the headword: 'abandon1', not 'abandon 1'
+    "ld-sup",
+})
+
+
+def _sc_classes(node):
+    if not isinstance(node, dict):
+        return set()
+    cls = (node.get("data") or {}).get("class")
+    return set(cls.split()) if cls else set()
+
+
+# ---------------------------------------------------------------------------
+# Portable separation for every inline run.
+#
+# A host that drops the stylesheet has no margins or backgrounds, so adjacent
+# inline siblings run together: '[uncountable]SHORT/NOT LONG',
+# 'Corpus examples语料库例句', 'soft sell软推销'.
+# 236,375 such seams exist corpus-wide. Block children already wrap in raw HTML
+# and are left alone.
+# ---------------------------------------------------------------------------
+INLINE_TAGS = frozenset({"span", "a", "b", "i", "em", "strong", "sup", "sub",
+               "ruby", "rt", "rp", "code", "small", "mark", "u"})
+BLOCK_TAGS = frozenset({"div", "details", "summary", "ol", "ul", "li", "table",
+              "thead", "tbody", "tfoot", "tr", "td", "th", "p", "h1",
+              "h2", "h3", "blockquote", "section", "article", "br"})
+
+
+def _sc_tag(node):
+    if isinstance(node, dict):
+        return node.get("tag", "span")
+    return None                      # bare string -> inline text
+
+
+def _is_block(node):
+    t = _sc_tag(node)
+    return t is not None and t in BLOCK_TAGS
+
+
+def _is_inline(node):
+    t = _sc_tag(node)
+    return t is None or t in INLINE_TAGS
+
+
+def _plain_text(node):
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return "".join(_plain_text(x) for x in node)
+    if isinstance(node, dict):
+        return _plain_text(node.get("content", ""))
+    return ""
+
+
+# characters that may END a left node and START a right node such that the two
+# would visually merge. Kept deliberately narrow: only word characters, CJK and
+# closing/opening brackets.
+_LEFT_END = set(")]}、。）］’'")
+# opening brackets and quotes, written as escapes so the literal stays simple
+_RIGHT_START = set("([{\uff08\uff3b\u2018\u201c")
+_WORDISH = set("abcdefghijklmnopqrstuvwxyz"
+               "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+
+def _is_wordish(ch):
+    return ch in _WORDISH or "\u4e00" <= ch <= "\u9fff"
+
+
+# A phonetics block ('/.../', ' /-kli/') is a self-contained atom, and what
+# follows it (a POS, another pronunciation, an inflection) is a different atom.
+# Scoped to the ELEMENT -- a blanket "space after '/'" would corrupt ordinary
+# prose such as 'and/or' or 'km/h'.
+_PRON_BLOCK_CLASSES = frozenset({"ld-pronblk", "ld-pron", "ld-pron-amevar"})
+
+
+def _is_pron_block(node):
+    if not isinstance(node, dict):
+        return False
+    cls = (node.get("data") or {}).get("class")
+    return bool(cls) and bool(set(cls.split()) & _PRON_BLOCK_CLASSES)
+
+
+def _seam_needs_space(left, right):
+    lt, rt = _plain_text(left), _plain_text(right)
+    if not lt or not rt:
+        return False
+    if _is_pron_block(left):
+        return not rt[0].isspace() and rt[0] not in "./,;:"
+    a, b = lt[-1], rt[0]
+    if a.isspace() or b.isspace():
+        return False
+    # never introduce a space before a superscript homograph/inline number
+    if isinstance(right, dict) and (right.get("data") or {}).get("class", "").split() and \
+            "ld-sup" in (right.get("data") or {}).get("class", "").split():
+        return False
+    if isinstance(left, dict) and (left.get("data") or {}).get("class", "").split() and \
+            "ld-sup" in (left.get("data") or {}).get("class", "").split():
+        return False
+    if _is_wordish(a) and (_is_wordish(b) or b in _RIGHT_START):
+        return True
+    if a in _LEFT_END and _is_wordish(b):
+        return True
+    return False
+
+
+# Inline bottom margins for block nodes, mirroring the values generate_css()
+# already declares for the same classes. Without a stylesheet every margin
+# collapses and consecutive blocks (english def / chinese def / example /
+# translation / next sense) read as one wall of text -- a space cannot fix that,
+# because whitespace between block elements is discarded by layout. Because the
+# value EQUALS the class rule, the styled rendering is unchanged; inline styles
+# win over class rules, so using the same number is what keeps it a no-op.
+BLOCK_BOTTOM_MARGIN = {
+    "ld-def": "1px",
+    "ld-defcn": "3px",
+    "ld-ex": "3px",
+    "ld-excn": "2px",
+    "ld-sense": "7px",
+    "ld-subsense": "3px",
+}
+
+
+# ---------------------------------------------------------------------------
+# Native list semantics (reference package: LDOCE5.zip by lng).
+#
+# The reference carries its entire hierarchy in native HTML lists with NO
+# stylesheet -- <ol><li> for senses, a nested <ul><li> for examples -- plus four
+# inline styles. A browser then supplies the numbers, the bullets and the indents
+# from its own default stylesheet, so the card is readable anywhere.
+#
+# Verified UA behaviour (real Chrome, no CSS):
+#     ol -> display:block, list-style-type:decimal, padding-left:40px
+#     li -> display:list-item
+#     ul -> display:block, list-style-type:disc, padding-left:40px
+#
+# Dual-mode trick that avoids DOUBLE numbering: our own sense-number chip
+# (ld-snum) is emitted with an inline `display:none`, and the stylesheet turns it
+# back on with !important while switching the native <ol> numbering off. So:
+#     with CSS    -> our green chip shows, native number hidden  (today's look)
+#     without CSS -> chip hidden, native <ol> number shows       (structure)
+# Verified in _listsem_probe.html: no-CSS ol=list-style decimal, snum=display none;
+# with-CSS ol=list-style none, snum=inline-block green.
+# ---------------------------------------------------------------------------
+SEMANTIC_INLINE_STYLES = {
+    "ld-gram":  {"color": "DodgerBlue"},
+    "ld-pos":   {"color": "DodgerBlue"},
+    "ld-defcn": {"color": "green"},
+    "ld-excn":  {"color": "green"},
+    "ld-field": {"color": "green", "fontWeight": "bold"},
+    "ld-act":   {"fontWeight": "bold"},
+    "ld-refhwd": {"fontWeight": "bold"},
+    "ld-colloin": {"fontWeight": "bold"},
+    "ld-collo": {"fontWeight": "bold"},
+    "ld-nodew": {"fontWeight": "bold"},
+    "ld-grouptitle": {"color": "green", "fontWeight": "bold"},
+    "ld-exagroup-title": {"color": "green", "fontWeight": "bold"},
+    "ld-wf-root": {"fontWeight": "bold"},
+    "ld-wf-pos": {"fontStyle": "italic"},
+}
+
+# the chip that the stylesheet hides from native numbering and reveals itself
+SENSE_NUM_CLASS = "ld-snum"
+# classes that are a list member at their level
+SENSE_ITEM_CLASSES = frozenset({"ld-sense", "ld-sense-cross", "ld-sense-merge",
+                                "ld-subsense"})
+EXAMPLE_ITEM_CLASSES = frozenset({"ld-ex", "ld-ex-good", "ld-ex-bad",
+                                  "ld-gramexa", "ld-colloexa"})
+
+
+def add_inline_semantics(node):
+    """Attach the no-CSS inline colour/weight styles (reference vocabulary)."""
+    if isinstance(node, list):
+        return [add_inline_semantics(x) for x in node]
+    if isinstance(node, dict):
+        d = dict(node)
+        if "content" in d:
+            d["content"] = add_inline_semantics(d["content"])
+        cls = (d.get("data") or {}).get("class")
+        if cls:
+            style = dict(d.get("style") or {})
+            for tok in cls.split():
+                for k, v in SEMANTIC_INLINE_STYLES.get(tok, {}).items():
+                    style.setdefault(k, v)
+            if style:
+                d["style"] = style
+        return d
+    return node
+
+
+def hide_native_numbering_conflict(node):
+    """Give the sense-number chip an inline display:none.
+
+    With no stylesheet the parent <ol> numbers the sense, so the chip must be
+    invisible or the user reads '1. 1'. The stylesheet re-enables it with
+    !important (see generate_css), which also turns the native numbering off, so
+    the styled rendering keeps today's appearance exactly.
+    """
+    if isinstance(node, list):
+        return [hide_native_numbering_conflict(x) for x in node]
+    if isinstance(node, dict):
+        d = dict(node)
+        if "content" in d:
+            d["content"] = hide_native_numbering_conflict(d["content"])
+        cls = (d.get("data") or {}).get("class")
+        if cls and SENSE_NUM_CLASS in cls.split():
+            style = dict(d.get("style") or {})
+            # font-size:0, NOT display:none -- the structured-content schema has
+            # no `display` property (additionalProperties:false), so the generator
+            # dropped it silently and the sense number appeared twice without CSS.
+            # font-size IS legal, collapses the chip's box to zero width, and is
+            # overridable by the stylesheet's `font-size:1em !important`.
+            style.setdefault("fontSize", "0")
+            d["style"] = style
+        return d
+    return node
+
+
+def group_into_list(nodes, member_classes, list_cls, list_tag="ol"):
+    """Wrap consecutive members into one <ol>/<ul>, each becoming an <li>."""
+    out = []
+    run = []
+
+    def flush():
+        nonlocal run
+        if not run:
+            return
+        items = []
+        for nd in run:
+            if isinstance(nd, dict) and nd.get("tag") == "li":
+                items.append(nd)
+            else:
+                items.append(sc("li", nd if isinstance(nd, list) else [nd]))
+        out.append(sc(list_tag, items, cls=list_cls))
+        run = []
+
+    for nd in nodes:
+        cls = ""
+        if isinstance(nd, dict):
+            cls = (nd.get("data") or {}).get("class", "")
+        if any(tok in member_classes for tok in cls.split()):
+            run.append(nd)
+        else:
+            flush()
+            out.append(nd)
+    flush()
+    return out
+
+
+def _add_block_spacing(node):
+    """Attach style.marginBottom to block nodes that need a no-CSS gap."""
+    if isinstance(node, list):
+        return [_add_block_spacing(x) for x in node]
+    if isinstance(node, dict):
+        d = dict(node)
+        if "content" in d:
+            d["content"] = _add_block_spacing(d["content"])
+        cls = (d.get("data") or {}).get("class")
+        if cls:
+            margin = None
+            for tok in cls.split():
+                if tok in BLOCK_BOTTOM_MARGIN:
+                    margin = BLOCK_BOTTOM_MARGIN[tok]
+                    break
+            if margin:
+                style = dict(d.get("style") or {})
+                style.setdefault("marginBottom", margin)
+                d["style"] = style
+        return d
+    return node
+
+
+def separate_inline_runs(node):
+    """Insert one space between touching inline siblings, recursively."""
+    if isinstance(node, list):
+        out = []
+        for i, item in enumerate(node):
+            out.append(separate_inline_runs(item))
+            if i + 1 >= len(node):
+                continue
+            nxt = node[i + 1]
+            if _is_inline(item) and _is_inline(nxt) and _seam_needs_space(item, nxt):
+                out.append(" ")
+        return out
+    if isinstance(node, dict):
+        d = dict(node)
+        if "content" in d:
+            d["content"] = separate_inline_runs(d["content"])
+        return d
+    return node
+
+
+def separate_head_atoms(nodes):
+    """Insert a space between adjacent independent ATOM siblings.
+
+    A space goes in only between two atoms, and never next to a GLUE element.
+    A plain-text node followed by an atom is separated as well; text immediately
+    followed by glue (the headword) is left alone.
+    """
+    def ends_with_space(n):
+        return isinstance(n, str) and n.endswith((" ", "\u00a0"))
+
+    def starts_with_space(n):
+        return isinstance(n, str) and n.startswith((" ", "\u00a0"))
+
+    out = []
+    for idx, node in enumerate(nodes):
+        out.append(node)
+        if idx + 1 >= len(nodes):
+            continue
+        nxt = nodes[idx + 1]
+        # an existing separator already provides the gap (' · ' between
+        # inflection forms, or a whitespace-only text node)
+        if ends_with_space(node) or starts_with_space(nxt):
+            continue
+        if isinstance(node, str):
+            # non-empty text followed by an atom needs a separator
+            if node.strip():
+                b_cls = _sc_classes(nxt)
+                if (b_cls & HEAD_ATOM_CLASSES) and not (b_cls & HEAD_GLUE_CLASSES):
+                    out.append(" ")
+            continue
+        a_cls, b_cls = _sc_classes(node), _sc_classes(nxt)
+        a_atom, b_atom = bool(a_cls & HEAD_ATOM_CLASSES), bool(b_cls & HEAD_ATOM_CLASSES)
+        glue = bool(a_cls & HEAD_GLUE_CLASSES) or bool(b_cls & HEAD_GLUE_CLASSES)
+        if a_atom and b_atom and not glue:
+            out.append(" ")
+    return out
+
+
 # OBSERVATION THRESHOLD, not a cap. pos_tags_rules() emits every tag (see the
 # comment there): real data peaks at 11 ('like' = 7 POS + 4 frequency codes), so
 # any truncation loses metadata. validate_package() reports rows above this
@@ -678,7 +1029,19 @@ class LdoceRenderer:
             if not isinstance(child, Tag):
                 continue
             nodes.extend(self.render_element(child))
-        return merge_adjacent_text(nodes)
+        nodes = merge_adjacent_text(nodes)
+        # Native list semantics: wrap runs of senses / examples into <ol>/<ul>.
+        #
+        # This is the ONE place that sees the direct children of every parent, so
+        # grouping here covers senses inside div.ld-entry as well as at the top
+        # level. Doing it at render_record() instead grouped nothing, because
+        # ld-entry is already a finished subtree by then (verified: "tag":"ol"
+        # count was 0 in the output).
+        nodes = group_into_list(nodes, SENSE_ITEM_CLASSES, "ld-senselist", "ol")
+        nodes = group_into_list(nodes, EXAMPLE_ITEM_CLASSES, "ld-exlist", "ul")
+        # colour/weight that must survive when no stylesheet is loaded
+        nodes = add_inline_semantics(nodes)
+        return nodes
 
     def render_element(self, el):
         cls = classes_of(el)
@@ -843,17 +1206,19 @@ class LdoceRenderer:
             node_cls = "ld-sense-cross"
         elif "merge_sense" in cls:
             node_cls = "ld-sense-merge"
-        if node_cls.startswith("ld-sense") and starts_with_sense_number(inner):
-            # Deliberately multi-token: the CSS matches the modifier with `~=`
-            # so the base rule keeps working. See generate_css.
-            node_cls += " ld-sense-n"
-        # Scheme B: several marker-carrying classes arrive through BLOCK_SCNAME
-        # (GramExa / ColloExa / GOODEXA / BADEXA), not through render_example(), so
-        # the marker has to be injected here as well. Doing it at this single exit
-        # covers every BLOCK_MAP-derived class, including ones added later.
+        is_sense = node_cls.startswith("ld-sense")
         marker = SCHEME_B_MARKERS.get(node_cls)
         if marker:
             inner = [sc("span", marker, cls="ld-mark")] + list(inner)
+        if is_sense:
+            # Native list semantics: a sense is an <li>, numbered by its parent
+            # <ol> (which _children_blocks wraps). The ld-snum chip stays, but
+            # carry an inline display:none so it cannot double the native number;
+            # the stylesheet re-enables it with !important and switches the native
+            # numbering off, reproducing today's look exactly.
+            if node_cls.startswith("ld-sense") and starts_with_sense_number(inner):
+                node_cls += " ld-sense-n"
+            return sc("li", hide_native_numbering_conflict(inner), cls=node_cls)
         return sc("div", inner, cls=node_cls)
 
     # -- semantic blocks ----------------------------------------------------
@@ -1028,6 +1393,17 @@ class LdoceRenderer:
                     flush_hwd()
                     out.append(text)
         flush_hwd()
+        # Portable separation between the head atoms.
+        #
+        # Everything that visually separates the chips of a head (pronunciation,
+        # the OOO level, S2/W1 codes, AWL, part of speech, grammar box) comes from
+        # CSS margins/backgrounds/borders, not from whitespace in the content. A
+        # host that drops the stylesheet therefore renders
+        #     'a·ban·don1/əˈbændən/●●○W3AWLverb[transitive]'
+        # (28,252 of 76,554 heads have no whitespace at all). One literal space
+        # per boundary costs a byte and is invisible while the stylesheet is
+        # present. GLUE classes are excluded so 'a·ban·don' keeps its dots.
+        out = separate_head_atoms(out)
         return sc("div", out, cls="ld-head")
 
     def _pick_landscape(self, el):
@@ -1347,7 +1723,10 @@ class LdoceRenderer:
         marker = SCHEME_B_MARKERS.get(flavor)
         if marker:
             out = [sc("span", marker, cls="ld-mark")] + out
-        return sc("div", out, cls=flavor)
+        # examples are list members: _children_blocks groups consecutive ones into
+        # a <ul>, so the browser supplies the bullet and the indent with no CSS
+        tag = "li" if flavor in EXAMPLE_ITEM_CLASSES else "div"
+        return sc(tag, out, cls=flavor)
 
     def render_box(self, el, panel_token):
         for junk in el.find_all(["script", "style", "input", "label", "img"]):
@@ -1873,7 +2252,15 @@ class LdoceRenderer:
                 or soup.find("span", class_="lm5ppbody")
                 or soup)
         nodes = self._children_blocks(root)
-        return merge_adjacent_text(nodes)
+        # Portable separation for EVERY inline run, not just the head: without
+        # the stylesheet there are no margins to keep chips apart, so
+        # '[uncountable]SHORT/NOT LONG' and 'Corpus examples语料库例句'
+        # read as one token.
+        nodes = separate_inline_runs(merge_adjacent_text(nodes))
+        # ...and a visible gap for block nodes, which whitespace cannot separate
+        # (see BLOCK_BOTTOM_MARGIN: values mirror the class rules exactly).
+        nodes = _add_block_spacing(nodes)
+        return nodes
 
 # ---------------------------------------------------------------------------
 # CSS (all hooks via data-sc-class; every emitted class gets a rule)
@@ -2030,6 +2417,33 @@ def generate_css():
 [data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
 [data-sc-class="ld-signpost"] { display:inline-block; text-indent:0; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
 
+/* ---- native list semantics (dual-mode) -----------------------------------
+   The document now uses <ol>/<li> for senses and <ul>/<li> for examples, so a
+   host with NO stylesheet gets browser-supplied numbers, bullets and indents
+   (that is the whole point -- see the reference package LDOCE5.zip).
+
+   Here we switch all of that OFF and reinstate the original design:
+     * list-style:none removes the markers, padding-left:0 removes the UA indent
+     * li is displayed as block so the previous div-based layout is reproduced
+     * the ld-snum chip is revealed with !important -- it is emitted with an
+       inline display:none precisely so it cannot double the native number
+   Net effect: the rendered look with CSS is byte-for-byte what it was before the
+   switch to native lists. */
+[data-sc-class="ld-senselist"], [data-sc-class="ld-exlist"],
+[data-sc-class="ld-corpulist"] {
+  list-style: none; padding-left: 0; margin: 0;
+}
+[data-sc-class="ld-senselist"] > li, [data-sc-class="ld-exlist"] > li,
+[data-sc-class="ld-corpulist"] > li {
+  display: block;
+}
+/* reveal the sense-number chip that was collapsed to zero width for the no-CSS
+   case (see hide_native_numbering_conflict); font-size is inheritable so a
+   normal !important declaration wins over the inline font-size:0 */
+[data-sc-class="ld-snum"] {
+  font-size: 1em !important;
+  display: inline-block !important;
+}
 /* ---- senses ------------------------------------------------------------
    ld-sense-n is emitted TOGETHER with ld-sense when the sense actually carries
    a number, so the 1.9em gutter (into which ld-snum hangs) is reserved only
@@ -2470,6 +2884,44 @@ def iter_sc_links(value):
                 yield from iter_sc_links(item)
 
 
+# Style properties the Yomitan structured-content schema permits. Taken from
+# definitions/structuredContentStyle in dictionary-term-bank-v3-schema.json, which
+# sets additionalProperties:false -- any other key is silently DROPPED by the
+# generator, so emitting one is always a bug.
+SC_STYLE_ALLOWED = frozenset({
+    "fontStyle", "fontWeight", "fontSize", "color", "background", "backgroundColor",
+    "textDecorationLine", "textDecorationStyle", "textDecorationColor",
+    "borderColor", "borderStyle", "borderRadius", "borderWidth", "clipPath",
+    "verticalAlign", "textAlign", "textEmphasis", "textShadow",
+    "margin", "marginTop", "marginLeft", "marginRight", "marginBottom",
+    "padding", "paddingTop", "paddingLeft", "paddingRight", "paddingBottom",
+    "wordBreak", "whiteSpace", "cursor", "listStyleType",
+})
+
+
+def collect_style_keys(node, bad, used):
+    """Walk an SC subtree, recording style property names and any illegal ones."""
+    if isinstance(node, list):
+        for x in node:
+            collect_style_keys(x, bad, used)
+    elif isinstance(node, dict):
+        st = node.get("style")
+        if isinstance(st, dict):
+            cls = (node.get("data") or {}).get("class")
+            for k, v in st.items():
+                used[k] += 1
+                if k not in SC_STYLE_ALLOWED:
+                    if len(bad) < 12:
+                        bad.append((k, v, cls))
+                elif v is None or (isinstance(v, str) and not v.strip()):
+                    if len(bad) < 12:
+                        bad.append((k + "=empty", v, cls))
+        for k, v in node.items():
+            if k != "style":
+                collect_style_keys(v, bad, used)
+    return bad, used
+
+
 def validate_package(zip_path, term_index, revision, mode, full_rows=True,
                      known_exprs=None):
     """Structural validation of the finished package.
@@ -2505,6 +2957,25 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
             errors.append("no term banks")
             return errors, stats
         stats["term_banks"] = len(banks)
+
+        # ---- illegal structured-content style properties --------------------
+        # additionalProperties:false means an unrecognised style key is silently
+        # discarded. That already caused a real bug: display:none on the
+        # sense-number chip vanished, so with no stylesheet BOTH the native <ol>
+        # number and our own chip showed ("1. 1 [countable]"). Nothing detected
+        # it, so assert it here.
+        style_used = Counter()
+        style_bad = []
+        for bank in banks:
+            for row in json.loads(zf.read(bank).decode("utf-8")):
+                if isinstance(row, list) and len(row) > 5 and row[4] > 0:
+                    collect_style_keys(row[5], style_bad, style_used)
+        if style_bad:
+            errors.append(
+                f"illegal/empty structured-content style propert(ies): "
+                + ", ".join(f"{k!r} on {c!r}" for k, _v, c in style_bad[:6]))
+        stats["style_keys"] = len(style_used)
+        stats["style_keys_used"] = ",".join(sorted(style_used))
 
         if known_exprs is None:
             all_terms = set()

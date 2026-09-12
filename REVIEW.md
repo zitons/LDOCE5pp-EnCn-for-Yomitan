@@ -1033,3 +1033,227 @@ div 永远到不了 `render_inline_node()`，直接落到 `render_div()` 的通�
 `converter/audit_2026_09_12/REPORT.md` 第一版是**真正的数据丢失，不是显示乱码**：8,026 字节、非 ASCII 字节 0、字面量 `?`(0x3F) 2,929 个。原因是生成报告的命令跑在 PowerShell 5.1 里，`$OutputEncoding` 为 `us-ascii` 且用替换式回退，中文 here-string **在进管道时就被换成 `?`**；之后即便 `write_atomic()` 用 UTF-8 写入也救不回。**只设 `PYTHONIOENCODING=utf-8` 不够**，必须在数据进管道之前设 `$OutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)`。现版本 16,212 字节、非 ASCII 10,555，已由对方从原内容重新生成。
 
 **教训**：任何写报告/日志的脚本必须显式 `encoding="utf-8"`，并在写入前后按字节比对；这份报告一度只存在于未跟踪目录里，靠人工比对才没丢。
+
+---
+
+# 第五轮：A3 的残留与无 CSS 环境可移植性（D29–D31）
+
+## D29【中】`pos_tags_rules()` 的三处硬上限仍在截断真实数据（A3 的残留尾巴）✅ 已修复
+
+A3 修的是**提取**（嵌套 span 被非贪婪正则截断），但 `pos_tags_rules()` 里的**上限**没动，仍在丢数据：
+
+| 上限 | 位置 | 后果 |
+|---|---|---|
+| `if len(tags) >= 4: break` | 收集循环 | 第 5+ 个词性不再收集 |
+| `rules[:4]` | 返回 | 第 5+ 条规则被截断 |
+| `TAG_LIMIT = 8` 扁平截断 | 返回 | 'like'（7 词性 + 4 频率码 = 11）仍被砍 |
+
+**数据**（`converter/_cap_choose.py`，全库 64,659 条）：词性最多 **7** 个（`like`: prep/verb/noun/conj/adv/adj/suffix）、频率码最多 **6** 个、最宽合计 **11**；规则最多 4 个（故 `rules[:4]` 当时尚未造成损失，但是同一个陷阱）。
+
+**影响 53 个词条**：`back` 丢 `adj`、`cross` 丢 `adv`+`prefix`、`after`/`arch` 丢 `prefix`、`close`/`clean`/`out`/`one`/`second` 等各丢 1–2 个。丢的 token 同时从 `definitionTags` 消失 —— 与 A2/A3 同类缺陷（`partsOfSpeechFilter` 会误伤去词形候选）。
+
+**修法**：三处上限**全部移除**，完整发射。`definitionTags` 是空格分隔字符串、规范无上限，故没有截断的理由。`TAG_LIMIT` 改为**漂移告警阈值**：校验时统计并提示超限行，但**不截断**（构建日志实测 `like`=11 被提示、校验照常通过）。阈值本身用 `_cap_choose.py` 从数据重新推导，不拍脑袋。
+
+**验证**：定向构建实测 `like` 11 个标签全在、`back` 恢复 `adj`、`cross` 恢复 `adv`+`prefix`、`after`/`arch` 恢复 `prefix`；**全库静态复算 `MISMATCH=0`**；门禁 `converter/regress_pos_cap.py` PASS（含 8 个历史受害词与"未截断"断言）。
+
+## D30【中】`color-mix()` 不被支持时全部配色退化为继承色 ✅ 已修复（方案 A）
+
+**背景**：本词典 CSS 在 `[data-sc-class="ld"]` 上用 `color-mix()` 定义 17 个自定义属性，另有 27 处声明直接使用 `color-mix()`；87 处声明通过 `var(--ld-*)` 消费。任何不支持 `color-mix()` 的宿主（Anki WebView、旧版阅读器）会整条丢弃这些声明。
+
+**先测机制，再写代码**（CDP 驱动真 Chrome 152，`_cssfallback_probe*.html`）——三条结论决定了修法：
+
+| 写法 | 实测结果 |
+|---|---|
+| `color: rgb(0,128,0); color: var(--未定义)` | **父色** —— 静态声明被丢弃 |
+| `color: var(--已定义但值非法, rgb(255,165,0))` | **父色** —— `var()` 回退也**不触发** |
+| 静态默认在 `@supports` **外** + 花式值在**内** | **静态值生效** ✅ 唯一可靠 |
+
+关键点：`color-mix()` 不被支持时，`--ld-zh: color-mix(...)` 仍是**已定义**的变量，所以任何回退机制都不触发 —— 这正是"卡片像裸 markdown"的机制。
+
+**修法**：
+1. 9 个色变量改为 `@supports (color: color-mix(...))` 双轨：外面静态默认、里面 `color-mix` 自适应
+2. 静态值由 `converter/_fallback_derive.py` **算出**（hue 与中灰按 86% 混合），逐个实测 **亮/暗双背景对比度 ≥ 3.0**（最低 `--ld-level` 3.38）
+3. 中性色改用 `rgba()`，脱离 `color-mix` 依赖
+4. 另外 15 种未受保护的 `color-mix` 声明（面板边框/背景、表格、提示框共 18 处）补静态前置值
+
+**真引擎双模式实测**：支持时 `ld-zh` = `color(srgb 0.472 0.351 0.664)`（自适应）；**不支持时 = `rgb(157,118,217)`（静态回退生效）**。
+
+**门禁**：`converter/regress_css_fallback.py` PASS —— 17 个变量都有 `@supports` 外静态默认、静态默认不含 `color-mix`、`@supports` 块存在、每条未保护声明都有静态前置。
+
+**局限（须如实记录）**：方案 A 只解决"CSS 已注入但 `color-mix` 解析失败"，**不解决 CSS 完全未注入**（`window.dictionaryStyles` 为空的情形未确证）。
+
+## D31【中】CSS `::before` 承载的语义在无样式表宿主中完全消失 ✅ 已修复（方案 B）
+
+5 条 `::before` 规则承载**真实信息**，无样式表时全部消失：
+
+| 内容 | 语义 | 影响节点数（全库） |
+|---|---|---|
+| `–` | 例句前缀 | `ld-ex` 162,897 + `ld-gramexa` 16,411 + `ld-colloexa` 7,270 |
+| `✓` | **正确用法** | `ld-ex-good` 66 |
+| `✗` | **错误用法** | `ld-ex-bad` 813 |
+| `•` | 语料库条目 | `ld-corpexa-*` 458,344 |
+| 三角 | 折叠指示（**装饰**，`<summary>` 原生自带） | 106,375，未处理 |
+
+合计 **645,801 个信息性标记**。`<details>/<summary>` 是唯一"无 CSS 也保留语义"的既有机制（106,375 个面板），其余 65.6% 元素是纯内联 `span`。
+
+**设计**：不是"删 `::before` + 只留内容"，而是**内容里带标记 + CSS 把它藏起来**：
+
+```html
+<div data-sc-class="ld-ex"><span data-sc-class="ld-mark">– </span>Business started…</div>
+```
+```css
+[data-sc-class="ld-mark"] { display:none; }        /* 有 CSS 时隐藏 */
+[data-sc-class="ld-ex"]::before { content:"\2013\00a0 "; }   /* 原规则不动 */
+```
+
+**为什么保留 `::before`**：`text-indent:-1.6em` 的悬挂缩进是按 `::before` 画的**首行前缀**校准的，删掉它会破坏缩进。保留 + 藏内联副本才能做到零视觉回归。
+
+**真 Chrome 实测**（`_scheme_b_mechanism.html` + CDP，真实 `advantage` 词条 86 个标记）：
+
+| | 有 CSS | 无 CSS |
+|---|---|---|
+| 标记隐藏 / 可见 | **86 / 0** | **0 / 86** |
+| `::before` 内容 | `"– "` | `none` |
+| 例句可见文本 | `– Her experience meant…` | `– Her experience meant…` |
+
+有 CSS 时**逐字相同**（零回归），无 CSS 时标记现身。
+
+**构建中门禁抓到真 bug**：`GramExa`/`ColloExa`/`GOODEXA`/`BADEXA` 走 `BLOCK_SCNAME` 分派（`render_block_by_token`），**不经过 `render_example()`**，第一版只在 `render_example` 注入导致 **63 个节点漏标记**。已在 `render_block_by_token` 的统一出口补上（一处覆盖全部 `BLOCK_MAP` 派生类），复测 **100% 覆盖**。
+
+**代价**：约 +2.46MB 原始 / ~380KB 压缩后。
+
+**门禁**：`converter/regress_scheme_b.py` PASS —— 双向断言（每个标记类必须有 `ld-mark` 子节点防丢；CSS 必须隐藏 `ld-mark` 防重复显示）。
+
+## D32【中】词头芯片的分隔完全依赖 CSS —— 无样式表时粘连成 `S2W2AWLadjective` ✅ 已修复
+
+**来源**：用户实测反馈 —— 「S2/W2/AWL/adjective 经过 Anki 制卡之后都没有分割了，抽掉样式之后基本没有什么改善」。后者直接说明 **D31（方案 B）没解决这个问题**：它只覆盖了 `::before` 画的 5 个字符，而词头芯片之间根本没有字符。
+
+**根因（全库实测，`converter/_chip_root_cause.py`）**：词头是一串**兄弟内联 span**：
+
+```html
+<div class="ld-head">
+  <span class="ld-hwd">…</span><span class="ld-pron">/əˈbændən/</span>
+  <span class="ld-level">●●○</span><span class="ld-freq">W3</span>
+  <span class="ld-gloss">AWL</span><span class="ld-pos">verb</span>
+  <span class="ld-gram">[transitive]</span>
+</div>
+```
+
+彼此的分隔**全部来自 CSS**（`margin-left`／背景／边框／内边距），内容里**没有空白字符**：
+
+| 指标 | 数值 |
+|---|---|
+| 扫描词头 | 76,554 |
+| **完全没有空白字符的词头** | **28,252** |
+| 常见无分隔相邻对 | `ld-pron→ld-pos` 16,622、`ld-hyp→ld-pron` 16,519、`ld-pos→ld-gram` 14,844 |
+
+于是无 CSS 时渲染成：
+
+```
+a·ban·don1/əˈbændən/●●○W3AWLverb[transitive]
+```
+
+**修法**：在 `render_head` 的统一出口插入**真实空格文本节点**，规则基于结构而非硬编码：
+
+* `HEAD_ATOM_CLASSES`（pron/level/freq/gloss/pos/gram/geo/register/field/act/synmark/sup/infl…）之间 → 加空格
+* `HEAD_GLUE_CLASSES`（`ld-hyp`/`ld-stress`/`ld-hwd`/`ld-en`/`ld-zh`）**绝不加** —— 它们是词头自身的音节点/重音符，加了会变成 `a · ban · don`
+
+修后：
+
+```
+a·ban·don1 /əˈbændən/ ●●○ W3 AWL verb [transitive]
+```
+
+**真引擎双验证**（真实 Yomitan 生成器 + 真 Chrome + CDP）：
+
+| 检查 | 结果 |
+|---|---|
+| 元素数量 | OLD 11 / NEW 11（只多了纯文本节点，无结构改动） |
+| **渲染宽度**（12/000/abandon/improve/the） | **全部 341.5 → 341.5，delta = 0.0** |
+| 无 CSS 文本 | `12 /twelv/ noun [singular, uncountable]`（可读） |
+| 音节点 | `a·ban·don` 保持紧凑，零误伤 |
+
+即：**有 CSS 时视觉逐像素不变，无 CSS 时芯片可分辨**。
+
+**门禁**：`converter/regress_head_separation.py` —— 断言「≥2 个原子的词头必须有分隔」且「音节点周围不得出现空格」（83/83 通过，0 粘连、0 误伤）。
+
+**局限（须记录）**：本修复覆盖**词头**。正文里其他纯 CSS 分隔（如 `ld-sense` 内芯片）未逐一处理；如需彻底解决，原则同上 —— 凡是「靠 margin/padding 分隔」的相邻内联元素，在无 CSS 时都会粘连。
+
+---
+
+## D33【高】无 CSS 时「只有换行、没有层级」—— 改用原生列表语义 ✅ 已修复
+
+**来源**：用户追问「释义和释义之间也应该有，你这只有换行太难看结构了，找哪个释义都费劲，看起来有结构框架」。D32 修了**行内芯片**的粘连，但那只解决了"字粘在一起"；**块级元素虽然换行，却没有任何层级感**，这才是"找义项费劲"的真因。
+
+**根因（真 Chrome 实测 gap）**：义项、释义、例句、译文都是块级元素，靠 CSS `margin` 分隔；抽掉样式表后 **margin 全部归零**：
+
+| 接缝 | 修前 gap | 后果 |
+|---|---|---|
+| `ld-def` → `ld-defcn` | **0** | 中文释义紧贴英文释义 |
+| `ld-excn` → `ld-act`（下一义项） | **0** | **义项之间完全分不开** |
+| `ld-ex` → `ld-ex`（连续例句） | **0** | 例句糊成一团 |
+
+**空格救不了**——块级元素之间的空白会被布局丢弃。这是与 D32 本质不同的第二类问题。
+
+**参照解法**：用户提供了 `LDOCE5.zip`（同一本 LDOCE5++ 的另一个转换版，作者 lng）。它**完全没有 styles.css**，却天然有结构：
+
+```
+div > ol > li              义项，浏览器自动编号 1. 2. 3.
+      li > ul > li         例句，自动 • 项目符号 + 二级缩进
+行内样式仅 4 种：fontWeight:bold 58,779 / color:green 22,496
+                 backgroundColor:#e0e0e0 19,004 / color:DodgerBlue 12,208
+```
+
+实测 UA 默认行为（真 Chrome，无 CSS）：`ol` → `display:block` + `list-style:decimal` + **`padding-left:40px`**；`li` → `list-item`；`ul` → `disc`。**编号、项目符号、缩进全部由浏览器默认样式提供，零 CSS 依赖。**
+
+**本项目改法**：
+
+| 原结构 | 新结构 |
+|---|---|
+| `div.ld-sense` | `ol.ld-senselist > li.ld-sense` |
+| `div.ld-ex` | `ul.ld-exlist > li.ld-ex` |
+| 分组位置 | `_children_blocks()` —— **唯一能看到每层直接子节点的地方** |
+
+**双模式技巧（核心）**：矛盾在于"无 CSS 要原生编号，有 CSS 要保留我们的绿色编号 chip"，两者同时出现会变成 `1. 1 [countable]`。解法是**行内样式负责无 CSS 时，`!important` 负责有 CSS 时**：
+
+- chip 发出行内 `font-size:0` → **无 CSS 时宽度归零**（让位原生编号）
+- CSS 加 `[data-sc-class="ld-snum"]{font-size:1em !important; display:inline-block !important}` → **有 CSS 时 chip 回来**；同时 `ol{list-style:none;padding-left:0}` 关掉原生编号与 40px 缩进
+
+原理：**`!important` 的作者声明压得过行内样式**（普通声明压不过）。
+
+**真 Chrome 双模式实测**：
+
+| 属性 | 有 CSS（Yomitan） | 无 CSS（Anki） |
+|---|---|---|
+| `ol` list-style | `none` | **`decimal`** |
+| `ol` padding-left | `0px` | **`40px`** |
+| `li` display | `block` | **`list-item`** |
+| `ul` list-style | `none` | **`circle`** |
+| chip 宽度 | **21.59px 绿色** | **0（隐藏）** |
+| 语法标签颜色 | 蓝 | **蓝（行内样式保留）** |
+
+**全量结果**：64,659 行 / 836,768 个 `<li>` / 99,131 个 `<ol>` / 212,149 个 `<ul>`；**孤儿 `<li>` = 0，列表内非法子元素 = 0**。
+
+**门禁**：`converter/regress_list_validity.py`。
+
+**过程中修的 3 个真 bug**：
+1. **`<ol>` 一个都没生成** —— 分组最初加在 `render_record` 出口，但义项的父级是 `div.ld-entry`，那时已是完成子树。改到 `_children_blocks()`。
+2. **`display:none` 是非法 SC 属性** —— schema 的 `additionalProperties:false` 且无 `display`，生成器**静默丢弃**，导致无 CSS 时**双重编号**。改用 `fontSize:0`。
+3. **校验器漏检非法样式** —— 上面那个 bug 构建时**校验通过**。已加 `SC_STYLE_ALLOWED` 白名单门禁。
+
+**弃用的自创方案**：最初自己设计了 `border-left` 竖线 + `padding` 的"视觉框架"。它能画出框，但**框只是装饰**，DOM 里仍无层级、编号与项目符号并不存在。**有现成同类成品时，先解剖它再设计。**
+
+---
+
+## 附：Hoshi-Reader-Android 的 Anki 导出结论（纠正前一轮的误判）
+
+前一轮曾判定"它不写 `data-sc-class`、所以我们的 CSS 全失效" —— **该结论是错的**。`popup.js:1307` 用模板动态拼接：`` setAttribute(`data-sc${isCJK?'':'-'}${toKebabCase(k)}`, v) ``，按字面搜字符串自然是 0 命中。用 jsdom 真实加载其 `popup.js` 渲染我们真实的词条：
+
+```
+renderStructuredContent 可用 : true    constructDictCss 可用 : true
+渲染出 data-sc-class        : 461 处 / 66 个不同值
+CSS 作用域化                 : 我们的规则 0 条丢失，::before 全保留
+我们 126 个 token → 该词条 DOM 中 66 个真实命中
+```
+
+**契约是通的**。因此"格式丢失"的成因指向 `window.dictionaryStyles` 可能为空（其取 CSS 用可选链，取不到就静默不注入），**未最终确证**；而 D30 的 `color-mix` 退化是另一条独立成因，已修。
