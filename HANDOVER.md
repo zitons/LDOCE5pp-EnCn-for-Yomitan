@@ -5,6 +5,18 @@
 
 ---
 
+## 当前工作区补充（2026-09-13 · D39–D41）
+
+源码已修复“渲染异常仍发布”、mono 四条漏网记录和缩写断词残留；14 组快速回归、9 项包检查和
+真实 Chrome 渲染契约回归全部通过。双语与 mono 全量包均已构建、校验成功，各 245,933 行，
+零渲染错误；mono 零 CJK。双语仅修正 70 条记录中的 74 个撇号空格，其它正文字符和行字段不变。
+详见 `converter/audit_2026_09_13_followup/FIXES.md`。真实扩展导入验收仍未执行。
+
+**不要把 `yomitan_full/` 当作这次修复的成品**：它仍保留 `f774b4e` 的 09.13 包，SHA-256
+`5edae5d9…53f8fc`。新验证包使用 `yomitan_fixed/verified/bilingual/` 与
+`yomitan_fixed/verified/mono/`，不覆盖旧包。此前被中断的 `yomitan_fixed/bilingual/`、
+`yomitan_fixed/mono/` 只留有中间文件，不能当成成功构建或用于导入。
+
 ## 0. 修订记录（2026-09-10 第二轮审查后）
 
 本文档以下章节描述的是**初版构建（v1.0.0，915.7 s）**。此后做了一轮独立审查（见 `REVIEW.md`）

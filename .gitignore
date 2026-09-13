@@ -94,6 +94,9 @@ yomitan_cap_test/
 converter/_*.py
 !converter/_apply_patch.py
 !converter/_restore_all.py
+# 提交信息草稿与临时 diff（曾误入暂存区一次）
+converter/_*.txt
+converter/_*.diff
 # 渲染契约门禁的临时件（页面 / payload / chrome profile，脚本可重建）
 converter/_rc/
 # 一次性的浏览器起子（结论已进 REVIEW.md）
@@ -122,3 +125,6 @@ _scheme_*.html
 
 # 构建中的临时包（校验通过后才会 rename 成正式名）
 yomitan_full/*.part
+
+# Full post-fix verification builds (do not overwrite yomitan_full).
+/yomitan_fixed/

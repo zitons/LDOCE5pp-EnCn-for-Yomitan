@@ -1,0 +1,6 @@
+*.json
+*.log
+*.html
+*.zip
+.chrome*/
+builds/

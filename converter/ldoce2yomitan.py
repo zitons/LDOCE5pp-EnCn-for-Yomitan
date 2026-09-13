@@ -52,6 +52,10 @@ CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 # drops these in mono mode; every *flattening* reader of a label must do the same
 # (see LdoceRenderer._label_text, audit A5).
 ZH_CLASSES = frozenset({"cn_txt", "cn_txt_ext"})
+# Remove only recognized Chinese translations of NOT in mono usage examples.
+# Leave other unmarked CJK for validation rather than silently deleting content.
+MONO_USAGE_NOTE_RE = re.compile(r"\bNOT\s*" + CJK_RE.pattern + r"+\s*")
+CONTRACTION_TAIL_RE = re.compile(r"^(?:[dstm]|ll|re|ve)(?:\b|$)", re.IGNORECASE)
 
 
 def strip_invisible(value):
@@ -534,7 +538,14 @@ def _seam_needs_space(left, right):
         return False
     if _is_pron_block(left):
         return rt[0] not in "./,;:"
-    # R1: the ONE place this heuristic must not fire -- a bare text run abutting an
+    # Word-internal apostrophes survive every source node shape: You’<a>re</a>,
+    # <a>Don</a>’<a>t</a>, and <a>don’</a><a>t</a>. Do not disable every prose
+    # seam: source NonDV links sometimes omit a real word space (model + kits),
+    # and the word-family renderer also relies on separation between members.
+    if (lt[-1] in "'’" and CONTRACTION_TAIL_RE.match(rt)
+            and not (_is_body_atom(left) or _is_body_atom(right))):
+        return False
+    # R1: another place this heuristic must not fire -- a bare text run abutting an
     # element on its right is a CONTINUATION of that element's word. The source
     # reads
     #     <a href="entry://terrorist">terrorist</a></span>s carrying
@@ -1062,6 +1073,26 @@ class LdoceRenderer:
 
     # -- child walking ------------------------------------------------------
 
+    def _drop_translation(self, el, cls):
+        """Recognize translation nodes, not language-switch click handlers.
+
+        switch_siblings also decorates ENGLISH source nodes (LM5Switch.js);
+        treating it as a Chinese marker would delete English definitions. A few
+        REGISTERLAB translations carry only Chinese text without a cn_txt class.
+        """
+        if self.mode != "mono":
+            return False
+        if cls & ZH_CLASSES:
+            return True
+        if "REGISTERLAB" in cls:
+            text = el.get_text(" ", strip=True)
+            return bool(CJK_RE.search(text)) and not re.search(r"[A-Za-z]", text)
+        return False
+
+    def _content_text(self, text):
+        text = sc_text(text)
+        return MONO_USAGE_NOTE_RE.sub("NOT ", text) if self.mode == "mono" else text
+
     def _children_blocks(self, el):
         nodes = []
         for child in el.children:
@@ -1069,7 +1100,7 @@ class LdoceRenderer:
                 if child.__class__.__name__ in ("Doctype", "Comment", "Declaration",
                                                 "ProcessingInstruction", "CData"):
                     continue
-                text = sc_text(str(child))
+                text = self._content_text(str(child))
                 if text:
                     nodes.append(text)
                 continue
@@ -1092,6 +1123,8 @@ class LdoceRenderer:
 
     def render_element(self, el):
         cls = classes_of(el)
+        if self._drop_translation(el, cls):
+            return []
         if is_dropped(cls) or el.name in DROP_TAGS:
             return []
         if "portrait" in cls:
@@ -1184,7 +1217,7 @@ class LdoceRenderer:
         # generic branch below and leaked Chinese into a package that declares
         # targetLanguage "en". Checked before every other branch and only in
         # mono, so bilingual output is bit-for-bit unchanged.
-        if self.mode == "mono" and cls & ZH_CLASSES:
+        if self._drop_translation(el, cls):
             return []
         if "asset" in cls:
             return self.render_asset(el, cls)
@@ -1346,6 +1379,8 @@ class LdoceRenderer:
             if not isinstance(child, Tag):
                 continue
             cls = classes_of(child)
+            if self._drop_translation(child, cls):
+                continue
             if is_dropped(cls):
                 continue
             if "HWD" in cls:
@@ -1728,7 +1763,7 @@ class LdoceRenderer:
             if isinstance(child, NavigableString):
                 if is_in_cn(child):
                     continue
-                text = sc_text(str(child))
+                text = self._content_text(str(child))
                 if text:
                     en_nodes.append(text)
                 continue
@@ -1832,12 +1867,17 @@ class LdoceRenderer:
             clone = BeautifulSoup(str(heading), "html.parser").find("span")
             for junk in clone.find_all("span", class_="foldsign"):
                 junk.extract()
-            cn_part = clone.find("span", class_="cn_txt")
             cn_text = None
-            if cn_part is not None:
-                cn_text = collapse_ws(cn_part.get_text(" ", strip=True))
-                cn_part.extract()
-            raw = collapse_ws(clone.get_text(" ", strip=True))
+            if self.mode == "mono":
+                # Skip ALL nested cn_txt/cn_txt_ext nodes, not just the first one.
+                raw = self._label_text(clone).strip()
+            else:
+                # Preserve the established bilingual title layout.
+                cn_part = clone.find("span", class_="cn_txt")
+                if cn_part is not None:
+                    cn_text = collapse_ws(cn_part.get_text(" ", strip=True))
+                    cn_part.extract()
+                raw = collapse_ws(clone.get_text(" ", strip=True))
             if cn_text:
                 key = raw.casefold().strip(" :：.。")
                 got = PANEL_TITLES_ZH.get(key)
@@ -2143,6 +2183,8 @@ class LdoceRenderer:
 
     def render_inline_node(self, el):
         cls = classes_of(el)
+        if self._drop_translation(el, cls):
+            return []
         if is_dropped(cls) or el.name in DROP_TAGS:
             return []
         if "Head" in cls:
@@ -3157,7 +3199,7 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
 
 
 class BuildValidationError(RuntimeError):
-    """The built package failed validation, so it was NOT published.
+    """Rendering or package validation failed; the ZIP was NOT published.
 
     Raised instead of printing a success line: before this existed a failing
     build still renamed its "*.part" over the real package, printed
@@ -3274,6 +3316,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     freq_meta = {}
     written_exprs = set()
     stats = Counter()
+    render_failures = []
 
     # Banks are streamed straight into the archive: previously each 65 MB bank
     # was written to a temp file and then read back by zf.write(), i.e. 475 MB
@@ -3281,6 +3324,18 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     # end so a crashed build never leaves a half-valid zip under the real name.
     zf = zipfile.ZipFile(zip_tmp, "w", zipfile.ZIP_DEFLATED,
                          compresslevel=COMPRESS_LEVEL)
+
+    def reject_package(errors):
+        # A rendering failure can leave flushed banks in an OPEN archive.
+        # Close before removing; close() is also safe after schema validation.
+        zf.close()
+        try:
+            os.remove(zip_tmp)
+        except OSError:
+            pass
+        gc.set_threshold(*gc_threshold)
+        print(f"[FAIL] Nothing published; any previous {zip_name} is untouched.")
+        raise BuildValidationError(errors)
 
     def save_bank(rows, idx):
         name = f"term_bank_{idx}.json"
@@ -3320,7 +3375,8 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         except Exception as exc:  # noqa: BLE001
             stats["render_errors"] += 1
             if stats["render_errors"] <= 8:
-                print(f"[WARN] render error {k!r}: {exc!r}")
+                render_failures.append(f"render error {k!r}: {exc!r}")
+                print(f"[WARN] {render_failures[-1]}")
             continue
         if not nodes or not sc_has_text(nodes):
             stats["empty_records"] += 1
@@ -3347,6 +3403,15 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         flush_if_full()
         if limit and len(rendered_keys) >= limit:
             break
+
+    # The schema only sees written rows, never a record skipped by the renderer.
+    # Abort before aliases/sidecars, even with --skip-validation: that option is
+    # not permission for best-effort rendering or publishing an incomplete ZIP.
+    if stats["render_errors"]:
+        error = (f"{stats['render_errors']} source record(s) failed rendering; "
+                 "refusing to publish an incomplete dictionary")
+        print(f"[FAIL] {error}")
+        reject_package([error] + render_failures)
 
     term_index.finalize_rendered(rendered_keys)
 
@@ -3489,15 +3554,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
             print(f"[FAIL] Validation failed with {len(errors)} error(s):")
             for err in errors[:60]:
                 print("   - " + err)
-            # Discard the unpublished archive and stop. The previous package
-            # keeps its name and stays installable.
-            try:
-                os.remove(zip_tmp)
-            except OSError:
-                pass
-            gc.set_threshold(*gc_threshold)
-            print(f"[FAIL] Nothing published; any previous {zip_name} is untouched.")
-            raise BuildValidationError(errors)
+            reject_package(errors)
         print("[OK] Validation passed.")
     else:
         print("[*] Validation skipped on request (--skip-validation).")
@@ -3533,7 +3590,8 @@ def main(argv=None):
                         help="Debug build restricted to these comma-separated headwords")
     parser.add_argument("--open-panels", action="store_true")
     parser.add_argument("--keep-json", action="store_true")
-    parser.add_argument("--skip-validation", action="store_true")
+    parser.add_argument("--skip-validation", action="store_true",
+                        help="Skip package checks; rendering failures still abort publication")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--limit", type=int, default=None,
                         help="Render at most N entries (smoke testing)")
