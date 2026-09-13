@@ -87,12 +87,31 @@ check("A2 alias rules == union of target rows (was 940)", not incomplete,
       f"{len(incomplete)} bad" + (f" e.g. {incomplete[:2]}" if incomplete else ""))
 
 # ------------------------------------------------------------------- A3 ----
+# The reference below was produced while the old hard caps were still in place,
+# so it is a SUBSET of what the uncapped extractor emits now: the 2026-09-13 audit
+# showed `after`/`down`/`last` legitimately GAINED tags and rules. Asserting exact
+# equality is what made this check report 12 false failures; assert no token was
+# lost instead, and report the additions so the drift stays visible.
 findings = json.loads((OUT / "source_findings.json").read_text(
     encoding="utf-8"))["pos"]
-bad = [f["word"] for f in findings
-       if not any([r[2], r[3]] == f["reference"] for r in entry_rows.get(f["word"], []))]
-check("A3 all 281 reference entries carry reference tags/rules (was 281)", not bad,
+bad = []
+gained_tokens = collections.Counter()
+for f in findings:
+    ref_t = set(f["reference"][0].split())
+    ref_r = set(f["reference"][1].split())
+    rows = entry_rows.get(f["word"], [])
+    if not any(ref_t <= set(r[2].split()) and ref_r <= set(r[3].split()) for r in rows):
+        bad.append(f["word"])
+        continue
+    got_t = set().union(*(set(r[2].split()) for r in rows)) if rows else set()
+    got_r = set().union(*(set(r[3].split()) for r in rows)) if rows else set()
+    for tok in (got_t - ref_t):
+        gained_tokens["tags " + tok] += 1
+    for tok in (got_r - ref_r):
+        gained_tokens["rules " + tok] += 1
+check("A3 no reference token was LOST (281 reference entries)", not bad,
       f"{len(bad)} bad" + (f" e.g. {bad[:6]}" if bad else ""))
+print(f"      tokens gained over the capped reference: {dict(gained_tokens.most_common(8))}")
 for w in ("above", "andante", "amen", "the", "A"):
     print(f"      {w!r:10} -> {[ (r[2], r[3]) for r in entry_rows.get(w, []) ]}")
 

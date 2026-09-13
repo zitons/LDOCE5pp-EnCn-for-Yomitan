@@ -10,6 +10,14 @@ Row-by-row comparison of the pre-fix package (2026.09.11) against the rebuilt on
   * index.json and tag_bank_1.json identical; styles.css differs by one rule
 
 Exit code is non-zero if any invariant is broken.
+
+DEPRECATED (2026-09-13) -- READ BEFORE RUNNING.
+    This compares the A1-A6 build of 2026.09.12 (sha256 d63a7ad9...) against
+    2026.09.11. That build no longer exists on disk: the next round rebuilt the
+    same file name from the 136b65d/f120dbb sources, so the 09.12 zip present
+    today is bc067411... and the glossary-invariance assertions below are
+    guaranteed to fail. This file is kept as the record of the A1-A6 verification,
+    not as a live gate; the numbers live in converter/audit_2026_09_12/FIXES.md.
 """
 import json
 import re

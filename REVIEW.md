@@ -1036,7 +1036,7 @@ div 永远到不了 `render_inline_node()`，直接落到 `render_div()` 的通�
 
 ---
 
-# 第五轮：A3 的残留与无 CSS 环境可移植性（D29–D31）
+# 第五轮：A3 的残留与无 CSS 环境可移植性（D29–D33，提交 136b65d + f120dbb，2026-09-12）
 
 ## D29【中】`pos_tags_rules()` 的三处硬上限仍在截断真实数据（A3 的残留尾巴）✅ 已修复
 
@@ -1232,16 +1232,103 @@ div > ol > li              义项，浏览器自动编号 1. 2. 3.
 | chip 宽度 | **21.59px 绿色** | **0（隐藏）** |
 | 语法标签颜色 | 蓝 | **蓝（行内样式保留）** |
 
+> **订正（2026-09-13，见 D35）**：上表描述的"chip 无 CSS 时宽度归零、让 UA 给 `<ol>` 编号"
+> **是错的**，已整体废弃。LDOCE 的义项号在整条词条里连续、并在交叉引用行处跳号，UA 只能按
+> 1..n 编号，于是 `act` 里源编号 `7,8,9,10` 的那个列表被显示成 `1,2,3,4` —— 全量 **531 个词条
+> / 572 个列表 / 2,436 处** 编号被改写。现在编号**始终**由我们自己的 chip 给出，UA 标记用
+> 合法的 `listStyleType:none`（`UA_MARKER_OFF`）关掉；`ol` 的 40px 缩进仍由 UA 提供。
+> 下表里 `ol list-style` 那一行的"有 CSS=none / 无 CSS=decimal"因此也变成 **两侧都是 none**。
+
 **全量结果**：64,659 行 / 836,768 个 `<li>` / 99,131 个 `<ol>` / 212,149 个 `<ul>`；**孤儿 `<li>` = 0，列表内非法子元素 = 0**。
 
 **门禁**：`converter/regress_list_validity.py`。
 
 **过程中修的 3 个真 bug**：
 1. **`<ol>` 一个都没生成** —— 分组最初加在 `render_record` 出口，但义项的父级是 `div.ld-entry`，那时已是完成子树。改到 `_children_blocks()`。
-2. **`display:none` 是非法 SC 属性** —— schema 的 `additionalProperties:false` 且无 `display`，生成器**静默丢弃**，导致无 CSS 时**双重编号**。改用 `fontSize:0`。
+2. **`display:none` 是非法 SC 属性** —— schema 的 `additionalProperties:false` 且无 `display`，生成器**静默丢弃**，导致无 CSS 时**双重编号**。改用 `fontSize:0`。（**该用途已于 2026-09-13 整体废弃，见本节开头的订正与 D35**；非法属性被静默丢弃这个坑本身不变。）
 3. **校验器漏检非法样式** —— 上面那个 bug 构建时**校验通过**。已加 `SC_STYLE_ALLOWED` 白名单门禁。
 
 **弃用的自创方案**：最初自己设计了 `border-left` 竖线 + `padding` 的"视觉框架"。它能画出框，但**框只是装饰**，DOM 里仍无层级、编号与项目符号并不存在。**有现成同类成品时，先解剖它再设计。**
+
+---
+
+# 第六轮：无 CSS 可读性复审（R1–R3）+ 上轮审查遗留（2026-09-13）
+
+来源：`converter/audit_2026_09_13/REPORT.md`（对 `136b65d → f120dbb` 的独立复审）。三条 P2 我逐条
+独立复算，数字全部吻合。本轮同时修掉我自己 09-12 复审开出的 7 条。**ACTIV 义项标签未加中文**
+（用户明确：源里查无对照就不加，见 D9）。
+
+## D34【高】分隔器把单词拆开（R1）—— 链接/强调后缀被断开，`SUM1` 变 `SUM 1` ✅ 已修复
+
+`separate_inline_runs()` 的"两侧都是词字符就插空格"无法区分两种接缝：源端 `<a>terrorist</a></span>s`
+里的 `s` 是**同一个词的复数后缀**，而 `</span><span class="AMEQUIV">` 之间的两个芯片**靠 CSS 边距**
+分隔。实测 09.12 有 15 个词条 / 16 处断词 + 584 处 / 560 个词条把上标义项号拆开（`SUM1`、`matter1(3)`）。
+
+**修法（两层，缺一不可）**：
+1. `merge_adjacent_text()` 保留源端分隔符。它原本会把"空白节点 + 紧随文本"直接丢掉
+   （`out[-1] = node`），于是源端的空格根本进不了 SC，下游只能靠启发式猜。现在空白被**折叠进
+   紧随的文本 run**——这是唯一可靠的信号（源端 `coal</a> <span>mines</span>` 必须渲染成
+   `coal mines`）。
+2. `_seam_needs_space()` 只保留**一处**压制：`(元素, 裸字符串)` 且左侧元素非原子类时不断开——
+   那正是 `terrorist</a>s`、`bank robber</span>s`、`SUM</a>1` 的形状。其余行为与 09.12 完全一致。
+
+**验证**（`converter/audit_2026_09_13/{diff_seams,check_glue}.py`，对全量 09.12 vs 09.13）：
+- 删除空格 **650 处**，逐处对照源端去标签文本：**0 处回归**。648 处拼回的形在源端本就粘连
+  （`MI5`/`G8`/`M25`/`V8`/`F1`/`p53`… 412 个不同形），2 处 checker 整记录搜索误报
+  （`relay3`、`4x100`）经源端标记核实本就粘连。
+- 新增空格 **2,173 处**：2,067 处源端确有空白（旧代码丢掉后没补回），106 处是芯片分隔
+  （`up` + `phrasal`），**0 处无据**（`check_split.py`）。
+- 审计六个实例 + `SUM1`/`matter1`/`lime1` 全部不再出现拆分形；`terrorists`/`rucksacks`/
+  `bank robbers`/`comedians`/`SUM1` 正常出现。
+
+## D35【高】无 CSS 时义项编号被 UA 重编（R2）—— 531 词条 / 572 列表 / 2,436 处 ✅ 已修复
+
+f120dbb 的"chip 行内 `font-size:0`、让 UA 给 `<ol>` 编号"是错的：LDOCE 的义项号在整条词条里
+连续并在交叉引用行处跳号，UA 只能按 1..n 编号（`act` 里源编号 `7,8,9,10` 显示成 `1,2,3,4`）。
+
+**修法**：编号**始终**由我们自己的 chip 给出；UA 标记用合法的 `listStyleType:none`（`UA_MARKER_OFF`）
+关掉，`<ol>` 的 40px 缩进仍由 UA 提供。三个列表生产者都要挂（`ld-corpulist` 的生产点在
+`render_exagroup()`，初版漏掉 → 无 CSS 时 `• • 例句` 双重符号）。
+
+## D36【高】内联兜底色在加载样式表后仍压过主题调色板（R3）✅ 已修复
+
+`SEMANTIC_INLINE_STYLES` 的 `green`/`DodgerBlue` 内联值赢了类规则。修法：给 9 条被覆盖的类规则加
+`!important`（颜色 7 条 + `ld-colloin`/`ld-nodew` 字重 2 条），并删掉毫无对应规则的 `ld-wf-root` 内联
+粗体。真 Chrome（`regress_render_contract`）：暗色 `ld-defcn` 对比度 **3.25 → 6.48**、亮色 `ld-pos`
+**3.24 → 6.97**、`ld-nodew`/`ld-colloin` 字重 700 → 600；无 CSS 时兜底色照常显示。
+
+## D37【中】中性色静态回退是"主题盲"固定灰，低于自设 ≥3.0 底线 ✅ 已修复
+
+`--ld-text2/-dim/-faint = rgba(120,120,120,α)` 实测白底 3.80/2.97/2.29、暗底 3.41/2.83/2.26。
+固定灰要同时在两种底色上过 3:1，有效色被钉死在 ~#696969..#949494 的窄带里，而层序对 α 单调 →
+**最淡的一档必然先跌破 3:1**，带内根本排不出三层。改为继承宿主文字色
+（`var(--text-color, currentColor)`，与 `--ld-head` 同式）：可读性由构造保证，层级放平——
+这只影响不支持 `color-mix()` 的旧引擎。门禁 `regress_inline_vs_css.py` 实测两组对比度。
+
+## D38【中】上轮审查的清理项 ✅ 已修复
+
+- 过时 docstring 两处（`display:none`/`font-size:0` 编号方案的描述）随 D35 一并订正；
+  `HANDOVER` §5.60/§5.61 补"订正"注记。
+- 死代码 `_is_block()` / `BLOCK_TAGS` 删除（引用 0）。
+- 文档编号/日期：HANDOVER §0 两套"第 N 轮"冲突（同一轮一边叫第四轮一边叫第五轮，且出现两个
+  "第四轮"、两个"第六轮"）→ 改为日期 + 提交号，编号唯一权威是 `REVIEW.md`；REVIEW 第五轮标题
+  D29–D31 → D29–D33；09-13/09-14 的日期订正为提交日期 09-12。
+- ~~`BLOCK_BOTTOM_MARGIN["ld-def"]="1px"` 与类规则不符~~ **撤回**：`margin:1px 0` 是两值简写，
+  下边距本来就是 1px（真 Chrome 实测），那条是我 09-12 复审的误报。
+- 我自己的过时工具：`audit_2026_09_12/diff_before_after.py`、`FIXES.md` 标注 DEPRECATED
+  （09.12 包已被 f120dbb 覆盖重建）；`regress_content.py` 的 A3 精确相等断言改为
+  "参考值 ⊆ 实际值"（D29 取消上限后 `after`/`down`/`last` 合法新增了标签）。
+- `.gitignore` 补 `converter/_rc/`、`yomitan_full/*.part`、`_smoke*/`、`_lim12k*/`，去掉重复的
+  `yomitan_cap_test/`。
+
+**交付包**：`yomitan_full/LDOCE5pp_Yomitan_2026.09.13.zip`，63,737,688 B，
+sha256 `5edae5d9…53f8fc`；构建 824 s。行数 245,933（64,659 内容 + 181,274 别名）、sequence 连续、
+查询链接 1,949,979 活 / 4,875 降级——与 09.12 完全一致。
+
+**门禁**：audit2/4/5/8/9 + regress_pos_cap/css_fallback/head_separation/list_validity/scheme_b/
+inline_vs_css/render_contract 全部 exit 0（`converter/audit_2026_09_13/gates.log`）。
+
+**残余**：真实扩展导入验收仍未做；mono 全量重建未跑（A5 修复只在该模式生效，候选集回归通过）。
 
 ---
 

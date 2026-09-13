@@ -74,6 +74,10 @@ yomitan_full/*.zip
 
 # 临时调试构建（与 yomitan_debug*/ 同类）
 yomitan_wf_test/
+_smoke*/
+_lim12k*/
+# 定向验证构建
+yomitan_cap_test/
 
 # ============================================================
 #  审计 / 构建日志：可重跑生成，不入库
@@ -90,6 +94,10 @@ yomitan_wf_test/
 converter/_*.py
 !converter/_apply_patch.py
 !converter/_restore_all.py
+# 渲染契约门禁的临时件（页面 / payload / chrome profile，脚本可重建）
+converter/_rc/
+# 一次性的浏览器起子（结论已进 REVIEW.md）
+_mgtest/
 
 # ============================================================
 #  第三方代码副本（Hoshi-Reader-Android，取回只读核对，不入库）
@@ -109,5 +117,8 @@ _sb*.html
 _cssfallback_probe*.html
 _scheme_*.html
 
-# 定向验证构建（与 yomitan_debug*/ 同类）
-yomitan_cap_test/
+# 定向验证构建（与 yomitan_debug*/ 同类）—— 同一个模式在上面已列过一次，
+# 这里曾经重复；保留单一来源。
+
+# 构建中的临时包（校验通过后才会 rename 成正式名）
+yomitan_full/*.part

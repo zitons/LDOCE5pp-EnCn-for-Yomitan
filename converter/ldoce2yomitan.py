@@ -133,16 +133,43 @@ def sc_has_text(value):
 
 
 def merge_adjacent_text(nodes):
-    """Coalesce neighbouring strings. A whitespace-only accumulator is dropped
-    rather than prefixed, and no separator is ever invented -- inter-word spaces
-    come from the source text nodes."""
+    """Coalesce neighbouring strings, and KEEP the source's own separators.
+
+    A whitespace-only run used to be dropped whenever a text run followed it, so
+    the renderer had to reinvent the separator downstream with a character
+    heuristic -- and that heuristic is what split words like `terrorist s` and
+    `SUM 1` (audit R1). The source reads
+
+        ...>coal</a> <span class="NonDV">mines</span> fell onto a school...
+
+    so the space between the two tags is real typography and must survive. It is
+    folded into the text run that follows (which is what makes it survive the
+    coalescing below); a run next to an element is kept as a standalone " ", and a
+    run between two block elements is harmless -- layout discards whitespace there.
+    """
     out = []
-    for node in nodes:
-        if isinstance(node, str) and out and isinstance(out[-1], str):
-            prev = out[-1]
-            out[-1] = prev + node if prev.strip() else node
-        else:
+    for i, node in enumerate(nodes):
+        if not isinstance(node, str):
             out.append(node)
+            continue
+        if not node:
+            continue
+        if not node.strip():
+            nxt = nodes[i + 1] if i + 1 < len(nodes) else None
+            if isinstance(nxt, str):
+                if not nxt.strip():
+                    continue                    # collapse consecutive runs
+                if not nxt[:1].isspace():
+                    nodes[i + 1] = " " + nxt    # fold into the following text run
+                    continue
+        if out and isinstance(out[-1], str):
+            prev = out[-1]
+            if prev.strip():
+                out[-1] = prev + node
+            elif node.strip():
+                out[-1] = prev + node           # a kept separator + the text
+            continue
+        out.append(node)
     return out
 
 
@@ -416,20 +443,12 @@ def _sc_classes(node):
 # ---------------------------------------------------------------------------
 INLINE_TAGS = frozenset({"span", "a", "b", "i", "em", "strong", "sup", "sub",
                "ruby", "rt", "rp", "code", "small", "mark", "u"})
-BLOCK_TAGS = frozenset({"div", "details", "summary", "ol", "ul", "li", "table",
-              "thead", "tbody", "tfoot", "tr", "td", "th", "p", "h1",
-              "h2", "h3", "blockquote", "section", "article", "br"})
 
 
 def _sc_tag(node):
     if isinstance(node, dict):
         return node.get("tag", "span")
     return None                      # bare string -> inline text
-
-
-def _is_block(node):
-    t = _sc_tag(node)
-    return t is not None and t in BLOCK_TAGS
 
 
 def _is_inline(node):
@@ -475,22 +494,59 @@ def _is_pron_block(node):
     return bool(cls) and bool(set(cls.split()) & _PRON_BLOCK_CLASSES)
 
 
+# Self-contained label/chip classes: they never continue into the text beside
+# them, so a seam that touches one always needs a separator. Prose-inline classes
+# are deliberately ABSENT -- ld-collo, ld-colloin, ld-hwd, ld-refhwd, ld-en,
+# ld-bad-word, ld-good-word, ld-exp, ld-nodew, ld-wf-word, ld-wf-opp, ld-sup,
+# ld-defref and friends: those can end mid-word and must keep the source seam.
+BODY_ATOM_CLASSES = frozenset({
+    "ld-pos", "ld-freq", "ld-gram", "ld-level", "ld-gloss", "ld-geo",
+    "ld-register", "ld-field", "ld-fieldxx", "ld-act", "ld-actcn",
+    "ld-synmark", "ld-homophone", "ld-signpost", "ld-propform", "ld-lexvar",
+    # the Chinese side of a bilingual label is always its own unit
+    "ld-zh",
+    # headings, and the annotations inside an inflection sequence
+    "ld-grouptitle", "ld-panel-title", "ld-panel-title-zh", "ld-exagroup-title",
+    "ld-infl-form", "ld-infl-lab", "ld-infl-region", "ld-infl-ann",
+    "ld-infl-pron",
+})
+
+
+def _is_body_atom(node):
+    return _is_pron_block(node) or bool(_sc_classes(node) & BODY_ATOM_CLASSES)
+
+
+def _is_sup_node(node):
+    cls = (node.get("data") or {}).get("class") if isinstance(node, dict) else None
+    return bool(cls) and "ld-sup" in cls.split()
+
+
 def _seam_needs_space(left, right):
     lt, rt = _plain_text(left), _plain_text(right)
     if not lt or not rt:
         return False
+    # the source already decided: whitespace on either side of the seam IS the
+    # separator (merge_adjacent_text now preserves it) and nothing may be added
+    if lt[-1].isspace() or rt[0].isspace():
+        return False
+    # never a space before/after a superscript homograph or inline number
+    if _is_sup_node(left) or _is_sup_node(right):
+        return False
     if _is_pron_block(left):
-        return not rt[0].isspace() and rt[0] not in "./,;:"
+        return rt[0] not in "./,;:"
+    # R1: the ONE place this heuristic must not fire -- a bare text run abutting an
+    # element on its right is a CONTINUATION of that element's word. The source
+    # reads
+    #     <a href="entry://terrorist">terrorist</a></span>s carrying
+    #     <span class="COLLOINEXA">bank robber</span>s in US history
+    #     <a ...>download</a>ed        <a ...>SUM</a>1 (= someone)
+    # so the trailing 's' / 'ed' / '1' must stay glued and `SUM1` must never become
+    # `SUM 1`. A chip/label element on the left (`ld-pos`, `ld-freq`, a heading, an
+    # inflection annotation) is a unit of its own, so those seams keep their
+    # separator. Everything else behaves exactly as before the R1 fix.
+    if isinstance(left, dict) and isinstance(right, str) and not _is_body_atom(left):
+        return False
     a, b = lt[-1], rt[0]
-    if a.isspace() or b.isspace():
-        return False
-    # never introduce a space before a superscript homograph/inline number
-    if isinstance(right, dict) and (right.get("data") or {}).get("class", "").split() and \
-            "ld-sup" in (right.get("data") or {}).get("class", "").split():
-        return False
-    if isinstance(left, dict) and (left.get("data") or {}).get("class", "").split() and \
-            "ld-sup" in (left.get("data") or {}).get("class", "").split():
-        return False
     if _is_wordish(a) and (_is_wordish(b) or b in _RIGHT_START):
         return True
     if a in _LEFT_END and _is_wordish(b):
@@ -502,9 +558,18 @@ def _seam_needs_space(left, right):
 # already declares for the same classes. Without a stylesheet every margin
 # collapses and consecutive blocks (english def / chinese def / example /
 # translation / next sense) read as one wall of text -- a space cannot fix that,
-# because whitespace between block elements is discarded by layout. Because the
-# value EQUALS the class rule, the styled rendering is unchanged; inline styles
-# win over class rules, so using the same number is what keeps it a no-op.
+# because whitespace between block elements is discarded by layout.
+#
+# An inline declaration beats an author rule, so a fallback may only be attached
+# where it is a NO-OP under CSS: either the value EQUALS the rule's bottom margin,
+# or that rule marks the property !important. Two traps this file has already
+# fallen into, both worth remembering:
+#   * `margin:1px 0` is a TWO-value shorthand -- top/bottom then left/right -- so
+#     its bottom margin is 1px, NOT 0. (Measured in Chrome; a misreading of it
+#     once sent me looking for a phantom extra 1px on 133k ld-def nodes.)
+#   * the 3-value form is top / left-right / bottom, so `margin:1px 0 3px` is 3px.
+# regress_inline_vs_css.py expands the shorthand and enforces the invariant for
+# every entry, in both directions.
 BLOCK_BOTTOM_MARGIN = {
     "ld-def": "1px",
     "ld-defcn": "3px",
@@ -528,14 +593,19 @@ BLOCK_BOTTOM_MARGIN = {
 #     li -> display:list-item
 #     ul -> display:block, list-style-type:disc, padding-left:40px
 #
-# Dual-mode trick that avoids DOUBLE numbering: our own sense-number chip
-# (ld-snum) is emitted with an inline `display:none`, and the stylesheet turns it
-# back on with !important while switching the native <ol> numbering off. So:
-#     with CSS    -> our green chip shows, native number hidden  (today's look)
-#     without CSS -> chip hidden, native <ol> number shows       (structure)
-# Verified in _listsem_probe.html: no-CSS ol=list-style decimal, snum=display none;
-# with-CSS ol=list-style none, snum=inline-block green.
+# Dual-mode numbering: the SOURCE number stays authoritative in both
+# environments. An earlier attempt hid our own number chip (inline font-size:0)
+# and let the UA number the list; that is wrong whenever the source numbering is
+# not a plain 1..n run -- LDOCE numbers senses continuously across an entry and
+# skips cross-reference rows, so 'act' showed 1,2,3,4 for source 7,8,9,10 and 531
+# entries were renumbered (audit R2). Instead the UA marker is switched off with
+# the legal SC style `listStyleType` (SC_STYLE_ALLOWED), so:
+#     with CSS    -> list-style:none from the stylesheet, our chip shows the number
+#     without CSS -> inline listStyleType:none suppresses the UA marker, the
+#                    browser still supplies ol's own `padding-left:40px` indent,
+#                    and our chip shows the SOURCE number
 # ---------------------------------------------------------------------------
+UA_MARKER_OFF = {"listStyleType": "none"}
 SEMANTIC_INLINE_STYLES = {
     "ld-gram":  {"color": "DodgerBlue"},
     "ld-pos":   {"color": "DodgerBlue"},
@@ -549,12 +619,17 @@ SEMANTIC_INLINE_STYLES = {
     "ld-nodew": {"fontWeight": "bold"},
     "ld-grouptitle": {"color": "green", "fontWeight": "bold"},
     "ld-exagroup-title": {"color": "green", "fontWeight": "bold"},
-    "ld-wf-root": {"fontWeight": "bold"},
+    # NOTE: every value below must either EQUAL its class rule in generate_css(),
+    # or have that rule marked !important -- an inline declaration beats an author
+    # rule, so a differing value silently overrides the theme palette. That is
+    # exactly what happened to green/DodgerBlue: with the stylesheet loaded, dark
+    # Chinese definitions fell from ~6.5:1 to 3.245:1 contrast (audit R3). Each
+    # entry here is paired with an !important counterpart in generate_css().
+    # ld-wf-root used to carry a bold fallback with no counterpart at all and was
+    # removed for the same reason.
     "ld-wf-pos": {"fontStyle": "italic"},
 }
 
-# the chip that the stylesheet hides from native numbering and reveals itself
-SENSE_NUM_CLASS = "ld-snum"
 # classes that are a list member at their level
 SENSE_ITEM_CLASSES = frozenset({"ld-sense", "ld-sense-cross", "ld-sense-merge",
                                 "ld-subsense"})
@@ -582,34 +657,6 @@ def add_inline_semantics(node):
     return node
 
 
-def hide_native_numbering_conflict(node):
-    """Give the sense-number chip an inline display:none.
-
-    With no stylesheet the parent <ol> numbers the sense, so the chip must be
-    invisible or the user reads '1. 1'. The stylesheet re-enables it with
-    !important (see generate_css), which also turns the native numbering off, so
-    the styled rendering keeps today's appearance exactly.
-    """
-    if isinstance(node, list):
-        return [hide_native_numbering_conflict(x) for x in node]
-    if isinstance(node, dict):
-        d = dict(node)
-        if "content" in d:
-            d["content"] = hide_native_numbering_conflict(d["content"])
-        cls = (d.get("data") or {}).get("class")
-        if cls and SENSE_NUM_CLASS in cls.split():
-            style = dict(d.get("style") or {})
-            # font-size:0, NOT display:none -- the structured-content schema has
-            # no `display` property (additionalProperties:false), so the generator
-            # dropped it silently and the sense number appeared twice without CSS.
-            # font-size IS legal, collapses the chip's box to zero width, and is
-            # overridable by the stylesheet's `font-size:1em !important`.
-            style.setdefault("fontSize", "0")
-            d["style"] = style
-        return d
-    return node
-
-
 def group_into_list(nodes, member_classes, list_cls, list_tag="ol"):
     """Wrap consecutive members into one <ol>/<ul>, each becoming an <li>."""
     out = []
@@ -625,7 +672,7 @@ def group_into_list(nodes, member_classes, list_cls, list_tag="ol"):
                 items.append(nd)
             else:
                 items.append(sc("li", nd if isinstance(nd, list) else [nd]))
-        out.append(sc(list_tag, items, cls=list_cls))
+        out.append(sc(list_tag, items, cls=list_cls, style=dict(UA_MARKER_OFF)))
         run = []
 
     for nd in nodes:
@@ -1211,14 +1258,14 @@ class LdoceRenderer:
         if marker:
             inner = [sc("span", marker, cls="ld-mark")] + list(inner)
         if is_sense:
-            # Native list semantics: a sense is an <li>, numbered by its parent
-            # <ol> (which _children_blocks wraps). The ld-snum chip stays, but
-            # carry an inline display:none so it cannot double the native number;
-            # the stylesheet re-enables it with !important and switches the native
-            # numbering off, reproducing today's look exactly.
+            # Native list semantics: a sense is an <li> inside the <ol> that
+            # _children_blocks wraps around it, and the UA marker is switched off
+            # on that <ol> (UA_MARKER_OFF). The number the reader sees is
+            # therefore always the SOURCE number carried by our own chip -- see
+            # the numbering note above SEMANTIC_INLINE_STYLES (audit R2).
             if node_cls.startswith("ld-sense") and starts_with_sense_number(inner):
                 node_cls += " ld-sense-n"
-            return sc("li", hide_native_numbering_conflict(inner), cls=node_cls)
+            return sc("li", inner, cls=node_cls)
         return sc("div", inner, cls=node_cls)
 
     # -- semantic blocks ----------------------------------------------------
@@ -1916,7 +1963,11 @@ class LdoceRenderer:
                 body = [sc("span", marker, cls="ld-mark")] + list(body)
             items.append(sc("li", body, cls=cls))
         if items:
-            nodes.append(sc("ul", items, cls="ld-corpulist"))
+            # UA_MARKER_OFF like every other list we emit: the bullet is carried by
+            # the ld-mark span above, so a host with no stylesheet must not ALSO get
+            # the UA's disc (it would read "• • example"). This producer was missed
+            # when the marker suppression was introduced.
+            nodes.append(sc("ul", items, cls="ld-corpulist", style=dict(UA_MARKER_OFF)))
         if not nodes:
             return None
         return sc("div", nodes, cls="ld-exagroup")
@@ -2323,13 +2374,20 @@ def generate_css():
   --ld-geo:   #8f67d8;
   --ld-warn:  #d35748;
   --ld-level: #b0851b;
-  /* neutrals: text at reduced alpha -- expressed with rgba() rather than
-     color-mix() so they work everywhere. --text-color is a Yomitan variable and
-     may be absent, in which case the element's own colour is inherited via the
-     color: declaration at the end of this rule. */
-  --ld-text2: rgba(120,120,120,.92);
-  --ld-dim:   rgba(120,120,120,.78);
-  --ld-faint: rgba(120,120,120,.62);
+  /* neutrals: the de-emphasised text tiers. With color-mix() available they are
+     derived from --text-color further down, so they track the theme. Without it
+     there is NO way to dim relative to the theme, and a fixed grey cannot stand
+     in: measured against the two host backgrounds it has to clear 3:1 on BOTH,
+     which pins the effective colour into the narrow mid band ~#696969..#949494 --
+     and inside that band a *ramp* is impossible, because the tier ordering is
+     monotone in alpha, so the faintest tier is exactly the one that drops below
+     3:1 (the old rgba(120,120,120,.62) measured 2.29 / 2.26). So the fallback
+     inherits the host's own text colour instead: readable by construction,
+     hierarchy flat, and the information -- all a no-CSS host needs -- survives.
+     Same expression as --ld-head, deliberately. */
+  --ld-text2: var(--text-color, currentColor);
+  --ld-dim:   var(--text-color, currentColor);
+  --ld-faint: var(--text-color, currentColor);
   /* headword is plain theme text -- never a fixed colour */
   --ld-head:  var(--text-color, currentColor);
   /* metrics */
@@ -2383,7 +2441,7 @@ def generate_css():
 [data-sc-class="ld-pron"], [data-sc-class="ld-pronblk"], [data-sc-class="ld-pron-amevar"] { font-size:.92em; color:var(--ld-text2); margin-left:.45em; }
 [data-sc-class="ld-pronblk"] { display:inline; }
 [data-sc-class="ld-pron-amevar"] { color:var(--ld-dim); }
-[data-sc-class="ld-pos"] { font-size:.88em; font-style:italic; color:var(--ld-pos); margin-left:.45em; font-weight:600; }
+[data-sc-class="ld-pos"] { font-size:.88em; font-style:italic; color:var(--ld-pos) !important; margin-left:.45em; font-weight:600; }
 [data-sc-class="ld-level"] { color:var(--ld-level); margin-left:.5em; font-size:.85em; letter-spacing:1px; }
 [data-sc-class="ld-sep"] { color:var(--ld-faint); margin:0 .35em; }
 [data-sc-class="ld-infl"] { font-size:.85em; color:var(--ld-text2); }
@@ -2408,27 +2466,31 @@ def generate_css():
   background:rgba(128,128,128,.10); background:color-mix(in srgb, currentColor 10%, transparent); /* static fallback, scheme A */;
 }
 [data-sc-class="ld-freq"] { font-size:.72em; color:var(--ld-pos); font-variant-numeric:tabular-nums; }
-[data-sc-class="ld-gram"] { color:var(--ld-pos); }
+[data-sc-class="ld-gram"] { color:var(--ld-pos) !important; }
 [data-sc-class="ld-geo"] { color:var(--ld-geo); }
 [data-sc-class="ld-register"] { color:var(--ld-reg); }
 [data-sc-class="ld-act"] { color:var(--ld-frame); font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
 [data-sc-class="ld-synmark"] { font-size:.72em; color:var(--ld-reg); font-weight:700; }
 [data-sc-class="ld-actcn"] { font-size:.8em; color:var(--ld-frame); margin-left:var(--ld-chip-gap); }
-[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field) !important; letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
 [data-sc-class="ld-signpost"] { display:inline-block; text-indent:0; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
 
 /* ---- native list semantics (dual-mode) -----------------------------------
-   The document now uses <ol>/<li> for senses and <ul>/<li> for examples, so a
-   host with NO stylesheet gets browser-supplied numbers, bullets and indents
-   (that is the whole point -- see the reference package LDOCE5.zip).
+   The document uses <ol>/<li> for senses and <ul>/<li> for examples, so a host
+   with NO stylesheet still gets real list structure (that is the whole point --
+   see the reference package LDOCE5.zip).
 
-   Here we switch all of that OFF and reinstate the original design:
+   Note the UA marker is switched off with the legal SC style listStyleType
+   (UA_MARKER_OFF) rather than by hiding anything of ours: an earlier version hid
+   the sense-number chip and let the UA number the list, which renumbered 531
+   entries whose source numbers are not a plain 1..n run (audit R2). With the
+   marker off, every visible number is the source number, in both environments.
+
+   Here we only reinstate the original design:
      * list-style:none removes the markers, padding-left:0 removes the UA indent
      * li is displayed as block so the previous div-based layout is reproduced
-     * the ld-snum chip is revealed with !important -- it is emitted with an
-       inline display:none precisely so it cannot double the native number
-   Net effect: the rendered look with CSS is byte-for-byte what it was before the
-   switch to native lists. */
+   Net effect: the rendered look with CSS is what it was before the switch to
+   native lists. */
 [data-sc-class="ld-senselist"], [data-sc-class="ld-exlist"],
 [data-sc-class="ld-corpulist"] {
   list-style: none; padding-left: 0; margin: 0;
@@ -2436,13 +2498,6 @@ def generate_css():
 [data-sc-class="ld-senselist"] > li, [data-sc-class="ld-exlist"] > li,
 [data-sc-class="ld-corpulist"] > li {
   display: block;
-}
-/* reveal the sense-number chip that was collapsed to zero width for the no-CSS
-   case (see hide_native_numbering_conflict); font-size is inheritable so a
-   normal !important declaration wins over the inline font-size:0 */
-[data-sc-class="ld-snum"] {
-  font-size: 1em !important;
-  display: inline-block !important;
 }
 /* ---- senses ------------------------------------------------------------
    ld-sense-n is emitted TOGETHER with ld-sense when the sense actually carries
@@ -2462,12 +2517,12 @@ def generate_css():
 [data-sc-class="ld-subsense"] [data-sc-class="ld-snum"] { margin-left:calc(-1 * var(--ld-gutter-sub)); }
 
 /* ---- definitions and translations -------------------------------------- */
-[data-sc-class="ld-def"] { display:block; margin:1px 0; font-size:1.02em; font-weight:500; }
-[data-sc-class="ld-defcn"] { display:block; margin:1px 0 3px; font-weight:600; color:var(--ld-zh); }
+[data-sc-class="ld-def"] { display:block; margin:1px 0 1px; font-size:1.02em; font-weight:500; }
+[data-sc-class="ld-defcn"] { display:block; margin:1px 0 3px; font-weight:600; color:var(--ld-zh) !important; }
 [data-sc-class="ld-zh"] { color:var(--ld-zh); }
 [data-sc-class="ld-en"] { color:inherit; font-weight:600; }
 [data-sc-class="ld-gloss"] { color:var(--ld-dim); font-size:.95em; }
-[data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame); }
+[data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame) !important; }
 /* Sense-group label inside a collocation/thesaurus box: "- Meaning 1: ...". It
    belongs to the box that follows it, so it sits at the top of the panel body. */
 [data-sc-class="ld-panel-sub"] { display:block; margin:0 0 4px; padding-bottom:2px; border-bottom:1px solid rgba(128,128,128,.18); border-bottom:1px solid color-mix(in srgb, currentColor 18%, transparent); /* static fallback, scheme A */; }
@@ -2482,7 +2537,7 @@ def generate_css():
 [data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; }
-[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh); font-size:.95em; margin-bottom:2px; }
+[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
 [data-sc-class="ld-hint-inline"] { color:var(--ld-level); font-style:italic; }
@@ -2509,8 +2564,8 @@ def generate_css():
 
 /* ---- collocations / thesaurus / grammar -------------------------------- */
 [data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { font-weight:700; color:var(--ld-head); }
-[data-sc-class="ld-colloin"] { font-weight:600; }
-[data-sc-class="ld-nodew"] { font-weight:600; color:var(--ld-pos); }
+[data-sc-class="ld-colloin"] { font-weight:600 !important; }
+[data-sc-class="ld-nodew"] { font-weight:600 !important; color:var(--ld-pos); }
 [data-sc-class="ld-b"] { font-weight:700; }
 [data-sc-class="ld-it"] { font-style:italic; }
 [data-sc-class="ld-collocate"] { display:block; margin:3px 0; padding-left:.4em; }
@@ -2557,7 +2612,7 @@ def generate_css():
 
 /* ---- corpus list ------------------------------------------------------- */
 [data-sc-class="ld-exagroup"] { display:block; margin:3px 0; }
-[data-sc-class="ld-exagroup-title"] { font-weight:700; color:var(--ld-frame); margin-bottom:2px; }
+[data-sc-class="ld-exagroup-title"] { font-weight:700; color:var(--ld-frame) !important; margin-bottom:2px; }
 [data-sc-class="ld-corpulist"] { list-style:none; margin:0 0 4px; padding:0; }
 [data-sc-class="ld-corpexa"], [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"], [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"], [data-sc-class="ld-corpexa-phrases"] { display:list-item; padding-left:1.2em; text-indent:-1.2em; margin:1px 0; font-size:.96em; color:var(--ld-text2); }
 [data-sc-class="ld-corpexa"]::before, [data-sc-class="ld-corpexa-corpus"]::before, [data-sc-class="ld-corpexa-dics"]::before, [data-sc-class="ld-corpexa-encyc"]::before, [data-sc-class="ld-corpexa-online"]::before, [data-sc-class="ld-corpexa-phrases"]::before { content:"\\2022\\00a0 "; color:var(--ld-faint); }
@@ -2960,10 +3015,13 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
 
         # ---- illegal structured-content style properties --------------------
         # additionalProperties:false means an unrecognised style key is silently
-        # discarded. That already caused a real bug: display:none on the
-        # sense-number chip vanished, so with no stylesheet BOTH the native <ol>
-        # number and our own chip showed ("1. 1 [countable]"). Nothing detected
-        # it, so assert it here.
+        # discarded. That already caused a real bug: the `display:none` meant to
+        # suppress double numbering on the sense-number chip vanished, so with no
+        # stylesheet BOTH the UA <ol> number and our own chip showed
+        # ("1. 1 [countable]"). Nothing detected it, so assert it here. The
+        # numbering mechanism has since been replaced (see UA_MARKER_OFF): the
+        # legal listStyleType is used instead, and this gate keeps any future
+        # illegal property from being dropped in silence.
         style_used = Counter()
         style_bad = []
         for bank in banks:

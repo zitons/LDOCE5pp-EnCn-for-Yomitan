@@ -3,8 +3,9 @@
 Asserts, against a REAL build of the affected words, that:
   * every POS tag present in the source .Head POS spans appears in definitionTags
   * every rule token likewise
-  * specific historical losses are gone ('back'=adj, 'cross'=adv+prefix,
-    'after'=prefix, 'arch'=prefix, 'like' reaches 7 POS)
+  * specific historical losses are gone (see MUST_HAVE: 'back'=adj, 'cross'=adv+prefix,
+    'after'=prefix, 'arch'=prefix, 'close'=adv, 'clean'=adv, 'out'=prefix,
+    'one'=det+num)
   * definitionTags counts are NOT clamped (rows may exceed TAG_LIMIT)
 
 Usage:

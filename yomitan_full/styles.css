@@ -53,13 +53,20 @@
   --ld-geo:   #8f67d8;
   --ld-warn:  #d35748;
   --ld-level: #b0851b;
-  /* neutrals: text at reduced alpha -- expressed with rgba() rather than
-     color-mix() so they work everywhere. --text-color is a Yomitan variable and
-     may be absent, in which case the element's own colour is inherited via the
-     color: declaration at the end of this rule. */
-  --ld-text2: rgba(120,120,120,.92);
-  --ld-dim:   rgba(120,120,120,.78);
-  --ld-faint: rgba(120,120,120,.62);
+  /* neutrals: the de-emphasised text tiers. With color-mix() available they are
+     derived from --text-color further down, so they track the theme. Without it
+     there is NO way to dim relative to the theme, and a fixed grey cannot stand
+     in: measured against the two host backgrounds it has to clear 3:1 on BOTH,
+     which pins the effective colour into the narrow mid band ~#696969..#949494 --
+     and inside that band a *ramp* is impossible, because the tier ordering is
+     monotone in alpha, so the faintest tier is exactly the one that drops below
+     3:1 (the old rgba(120,120,120,.62) measured 2.29 / 2.26). So the fallback
+     inherits the host's own text colour instead: readable by construction,
+     hierarchy flat, and the information -- all a no-CSS host needs -- survives.
+     Same expression as --ld-head, deliberately. */
+  --ld-text2: var(--text-color, currentColor);
+  --ld-dim:   var(--text-color, currentColor);
+  --ld-faint: var(--text-color, currentColor);
   /* headword is plain theme text -- never a fixed colour */
   --ld-head:  var(--text-color, currentColor);
   /* metrics */
@@ -113,7 +120,7 @@
 [data-sc-class="ld-pron"], [data-sc-class="ld-pronblk"], [data-sc-class="ld-pron-amevar"] { font-size:.92em; color:var(--ld-text2); margin-left:.45em; }
 [data-sc-class="ld-pronblk"] { display:inline; }
 [data-sc-class="ld-pron-amevar"] { color:var(--ld-dim); }
-[data-sc-class="ld-pos"] { font-size:.88em; font-style:italic; color:var(--ld-pos); margin-left:.45em; font-weight:600; }
+[data-sc-class="ld-pos"] { font-size:.88em; font-style:italic; color:var(--ld-pos) !important; margin-left:.45em; font-weight:600; }
 [data-sc-class="ld-level"] { color:var(--ld-level); margin-left:.5em; font-size:.85em; letter-spacing:1px; }
 [data-sc-class="ld-sep"] { color:var(--ld-faint); margin:0 .35em; }
 [data-sc-class="ld-infl"] { font-size:.85em; color:var(--ld-text2); }
@@ -138,27 +145,31 @@
   background:rgba(128,128,128,.10); background:color-mix(in srgb, currentColor 10%, transparent); /* static fallback, scheme A */;
 }
 [data-sc-class="ld-freq"] { font-size:.72em; color:var(--ld-pos); font-variant-numeric:tabular-nums; }
-[data-sc-class="ld-gram"] { color:var(--ld-pos); }
+[data-sc-class="ld-gram"] { color:var(--ld-pos) !important; }
 [data-sc-class="ld-geo"] { color:var(--ld-geo); }
 [data-sc-class="ld-register"] { color:var(--ld-reg); }
 [data-sc-class="ld-act"] { color:var(--ld-frame); font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
 [data-sc-class="ld-synmark"] { font-size:.72em; color:var(--ld-reg); font-weight:700; }
 [data-sc-class="ld-actcn"] { font-size:.8em; color:var(--ld-frame); margin-left:var(--ld-chip-gap); }
-[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field); letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
+[data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field) !important; letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
 [data-sc-class="ld-signpost"] { display:inline-block; text-indent:0; font-weight:700; color:var(--ld-text2); font-size:.94em; margin-right:var(--ld-chip-gap); }
 
 /* ---- native list semantics (dual-mode) -----------------------------------
-   The document now uses <ol>/<li> for senses and <ul>/<li> for examples, so a
-   host with NO stylesheet gets browser-supplied numbers, bullets and indents
-   (that is the whole point -- see the reference package LDOCE5.zip).
+   The document uses <ol>/<li> for senses and <ul>/<li> for examples, so a host
+   with NO stylesheet still gets real list structure (that is the whole point --
+   see the reference package LDOCE5.zip).
 
-   Here we switch all of that OFF and reinstate the original design:
+   Note the UA marker is switched off with the legal SC style listStyleType
+   (UA_MARKER_OFF) rather than by hiding anything of ours: an earlier version hid
+   the sense-number chip and let the UA number the list, which renumbered 531
+   entries whose source numbers are not a plain 1..n run (audit R2). With the
+   marker off, every visible number is the source number, in both environments.
+
+   Here we only reinstate the original design:
      * list-style:none removes the markers, padding-left:0 removes the UA indent
      * li is displayed as block so the previous div-based layout is reproduced
-     * the ld-snum chip is revealed with !important -- it is emitted with an
-       inline display:none precisely so it cannot double the native number
-   Net effect: the rendered look with CSS is byte-for-byte what it was before the
-   switch to native lists. */
+   Net effect: the rendered look with CSS is what it was before the switch to
+   native lists. */
 [data-sc-class="ld-senselist"], [data-sc-class="ld-exlist"],
 [data-sc-class="ld-corpulist"] {
   list-style: none; padding-left: 0; margin: 0;
@@ -166,13 +177,6 @@
 [data-sc-class="ld-senselist"] > li, [data-sc-class="ld-exlist"] > li,
 [data-sc-class="ld-corpulist"] > li {
   display: block;
-}
-/* reveal the sense-number chip that was collapsed to zero width for the no-CSS
-   case (see hide_native_numbering_conflict); font-size is inheritable so a
-   normal !important declaration wins over the inline font-size:0 */
-[data-sc-class="ld-snum"] {
-  font-size: 1em !important;
-  display: inline-block !important;
 }
 /* ---- senses ------------------------------------------------------------
    ld-sense-n is emitted TOGETHER with ld-sense when the sense actually carries
@@ -192,12 +196,12 @@
 [data-sc-class="ld-subsense"] [data-sc-class="ld-snum"] { margin-left:calc(-1 * var(--ld-gutter-sub)); }
 
 /* ---- definitions and translations -------------------------------------- */
-[data-sc-class="ld-def"] { display:block; margin:1px 0; font-size:1.02em; font-weight:500; }
-[data-sc-class="ld-defcn"] { display:block; margin:1px 0 3px; font-weight:600; color:var(--ld-zh); }
+[data-sc-class="ld-def"] { display:block; margin:1px 0 1px; font-size:1.02em; font-weight:500; }
+[data-sc-class="ld-defcn"] { display:block; margin:1px 0 3px; font-weight:600; color:var(--ld-zh) !important; }
 [data-sc-class="ld-zh"] { color:var(--ld-zh); }
 [data-sc-class="ld-en"] { color:inherit; font-weight:600; }
 [data-sc-class="ld-gloss"] { color:var(--ld-dim); font-size:.95em; }
-[data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame); }
+[data-sc-class="ld-grouptitle"] { font-weight:700; color:var(--ld-frame) !important; }
 /* Sense-group label inside a collocation/thesaurus box: "- Meaning 1: ...". It
    belongs to the box that follows it, so it sits at the top of the panel body. */
 [data-sc-class="ld-panel-sub"] { display:block; margin:0 0 4px; padding-bottom:2px; border-bottom:1px solid rgba(128,128,128,.18); border-bottom:1px solid color-mix(in srgb, currentColor 18%, transparent); /* static fallback, scheme A */; }
@@ -212,7 +216,7 @@
 [data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\2013\00a0 "; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-good"]::before { content:"\2713\00a0 "; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-bad"]::before { content:"\2717\00a0 "; color:var(--ld-warn); font-weight:700; }
-[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh); font-size:.95em; margin-bottom:2px; }
+[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
 [data-sc-class="ld-hint-inline"] { color:var(--ld-level); font-style:italic; }
@@ -239,8 +243,8 @@
 
 /* ---- collocations / thesaurus / grammar -------------------------------- */
 [data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { font-weight:700; color:var(--ld-head); }
-[data-sc-class="ld-colloin"] { font-weight:600; }
-[data-sc-class="ld-nodew"] { font-weight:600; color:var(--ld-pos); }
+[data-sc-class="ld-colloin"] { font-weight:600 !important; }
+[data-sc-class="ld-nodew"] { font-weight:600 !important; color:var(--ld-pos); }
 [data-sc-class="ld-b"] { font-weight:700; }
 [data-sc-class="ld-it"] { font-style:italic; }
 [data-sc-class="ld-collocate"] { display:block; margin:3px 0; padding-left:.4em; }
@@ -287,7 +291,7 @@
 
 /* ---- corpus list ------------------------------------------------------- */
 [data-sc-class="ld-exagroup"] { display:block; margin:3px 0; }
-[data-sc-class="ld-exagroup-title"] { font-weight:700; color:var(--ld-frame); margin-bottom:2px; }
+[data-sc-class="ld-exagroup-title"] { font-weight:700; color:var(--ld-frame) !important; margin-bottom:2px; }
 [data-sc-class="ld-corpulist"] { list-style:none; margin:0 0 4px; padding:0; }
 [data-sc-class="ld-corpexa"], [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"], [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"], [data-sc-class="ld-corpexa-phrases"] { display:list-item; padding-left:1.2em; text-indent:-1.2em; margin:1px 0; font-size:.96em; color:var(--ld-text2); }
 [data-sc-class="ld-corpexa"]::before, [data-sc-class="ld-corpexa-corpus"]::before, [data-sc-class="ld-corpexa-dics"]::before, [data-sc-class="ld-corpexa-encyc"]::before, [data-sc-class="ld-corpexa-online"]::before, [data-sc-class="ld-corpexa-phrases"]::before { content:"\2022\00a0 "; color:var(--ld-faint); }
