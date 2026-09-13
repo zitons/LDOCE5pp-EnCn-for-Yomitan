@@ -444,6 +444,19 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 
 64. **有现成同类成品时，先解剖它再设计**（2026-09-12，同 §59 的教训但更一般）：本轮在自创方案上花了两轮（`border-left` 框架 → 弃用），解剖 `LDOCE5.zip` 半小时就拿到了完整正解。解剖要量化到属性级：标签用量、行内样式键值与频次、UA 默认行为。**"别人怎么做的"是最高价值的情报，尤其当成品就在手边。**
 
+65. **本机 `git push` 会永久卡死，根因是凭据助手而不是网络**（2026-09-13）：症状是 push 无任何输出直到超时，`git ls-remote` 却能秒回、`curl -x http://127.0.0.1:7890 https://github.com/...` 返回 200/0.97s，容易误判为"大包被链路重置"（§35 记的是另一回事）。**决定性诊断**：跑 `echo "protocol=https\nhost=github.com\n" | git credential fill` —— 它**永不返回**，说明 git 卡在取凭据，一个字节都还没发。
+    - 凭据其实是**存在**的：`cmdkey /list` 能看到 `LegacyGeneric:target=git:https://github.com`、用户 `x-access-token`；但 GitHub Credential Manager（`credential.helper=manager`）不去读它，而是等一个不可见的口头交互。
+    - **绕过**：用 ctypes 的 `CredReadW` 直接从 Windows 凭据管理器取 blob（UTF-16LE，40 字符 `ghp_`），写一个一行的 `GIT_ASKPASS` 批处理回显它，然后
+      `git -c credential.helper= -c http.proxy=http://127.0.0.1:7890 push origin main`。
+      实测 `bb98431..b92f97a` 一次通过。脚本：`converter/_git_push.py`（`finally` 里删 shim，输出里把 token 替换成 `***`）。
+    - **注意**：`-c credential.helper=` 清空助手后，`https://user:tok@github.com/...` 形式的 token URL **反而不生效**（git 仍去问用户名）——必须用 `GIT_ASKPASS`。
+    - **通法**：push 卡住先分清是"取凭据卡"还是"传输被重置"——前者零输出且 `credential fill` 挂起，后者要传一会儿才断（§35）。两者修法完全不同。
+
+66. **Release 附件上传必须走 `uploads.github.com`，且要独立验证下载回来的字节**（2026-09-13）：`POST /repos/{owner}/{repo}/releases` 建 tag+release，附件用返回的 `upload_url`（去掉 `{?name,label}`）追加 `?name=<urlencoded>`，`Content-Type: application/zip`，body 直接是文件字节。60 MB + 52 MB 两个包一次通过（这与 §35 的"仓库 push 通路会被重置"是**不同端点**，别混）。
+    - **必须做的验证**：上传成功后**从 Release URL 重新下载**两个附件并核对 sha256（本项目实测 `8544ed4c…` / `73662eab…` 逐字节一致）。只看 API 返回的 `state=uploaded` 不算验证 —— 它只说明服务端收下了请求。
+    - 脚本：`converter/_make_release.py`（支持 `--dry-run`，同名附件先 DELETE 再传，最后重新 GET 打印实际下载链接）。
+    - **顺带**：仓库根直接 `git push` 60 MB 成品**永远别有这个念头**——成品放 Release，仓库只放源码/文档/脚本（`size-pack` 85 MiB 里绝大部分还是历史累积，与成品无关）。
+
 ## 6. Yomitan 契约速查（format-3）
 
 - **ZIP 成员**：`index.json`、`styles.css`、`tag_bank_1.json`、`term_meta_bank_1..N.json`（可选，频率元数据）、`term_bank_1..N.json`（文件名数字任意）。
