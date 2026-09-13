@@ -94,6 +94,11 @@ yomitan_cap_test/
 converter/_*.py
 !converter/_apply_patch.py
 !converter/_restore_all.py
+# 发布工具被 HANDOVER 坑65-66 引用并已入库，显式豁免（否则上一条会吞掉它们）
+!converter/_git_push.py
+!converter/_make_release.py
+# _git_push.py 的临时 askpass 垫片（内含明文 token，用完即删，绝不入库）
+converter/_askpass_tmp.bat
 # 提交信息草稿与临时 diff（曾误入暂存区一次）
 converter/_*.txt
 converter/_*.diff

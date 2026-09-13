@@ -1,5 +1,33 @@
 # 后续复审问题修复（D39–D41 / F1–F3）
 
+## 独立复核（2026-09-13 晚，另一会话）
+
+对 `b92f97a` 的三条修复做了不依赖原验证脚本的独立复验，全部通过：
+
+| 项 | 复核方式 | 结果 |
+|---|---|---|
+| F3 / D41 | 直接拆 `verified` 双语包：`You’re fired` / `didn’t go` / `ain’t over` / `I’m sorry` 四例完好，全包无 `You’ re` 类拆分 | ✅ |
+| F2 / D40 | 逐行扫 `verified` mono 包全部 245,933 行：**含 CJK 的行 = 0** | ✅ |
+| F1 / D39 | 用真实 CLI 自建两记录夹具（450 层嵌套 span）做负向测试：好构建 exit 0；坏构建 **exit 2、不发布、旧包字节不变**，日志出现 "refusing to publish an incomplete dictionary" | ✅ |
+| 9 项门禁 | audit2/4/5（指定 verified 包）+ head_separation/list_validity/scheme_b/pos_cap/css_fallback/inline_vs_css/render_contract 全部 exit 0（`gates.log`） | ✅ |
+| 成品哈希 | `verified` 两个包实测 `8544ed4c…` / `73662eab…`，与提交声明一致；`yomitan_full/` 现已同步为同一对包 | ✅ |
+
+复核中发现并已处理的小问题：
+
+1. **仓库卫生**：`converter/_git_push.py`、`_make_release.py` 已入库但与 `converter/_*.py`
+   的忽略策略矛盾 → 加显式豁免；`_git_push.py` 的临时 askpass 垫片（内含明文 token）此前
+   **不在忽略列表**，存在被 `git add -A` 误提交的风险 → 已加 `converter/_askpass_tmp.bat`。
+2. **`yomitan_full/index.json` 的 `revision` 落后**（`2026.09.13` vs 包内 `…followup-fix`）
+   → 已同步为与实际包一致。
+3. **README 行数等式不成立**：`245,933 = 64,390 词条 + 181,274 别名` 实为 245,664；差值 269
+   是"一个词头两条内容行"的表达式（如 `act up`）。准确说法：**64,659 条内容行（64,390 个
+   不同词头）**。
+4. 遗留待办：`_make_release.py` 依赖的 `_release_notes.md` 当前不存在（重跑会 FileNotFoundError）；
+   README 指向的 `v2026.09.13` Release 是否已发布无法在沙箱内验证（私有库，需登录后核对）；
+   **旧泄漏 token 是否已吊销仍未确认** —— 发布工具读的是凭据管理器里的 PAT，若仍是那枚
+   `ghp_MnbP…` 则必须先吊销重发。
+
+
 ## 已完成的修复
 
 - **F1 / D39**：渲染失败必定阻止发布，包括 `--skip-validation`；在生成别名/辅助元数据前拒绝，
