@@ -113,6 +113,24 @@ python converter/audit_audio_db.py --db yomitan_audio/android.db
 覆盖了：schema 列名、`integrity_check`、双向孤儿、Hoshi 的音源发现查询、
 blob 是否真是音频（ID3/MPEG 帧同步）、重复行、与词典包的覆盖率、查询延迟。
 
+> ### ⚠️ `build_audio_db.py` 的已知遗留（评估后决定暂不修，2026-09-15）
+>
+> 按 `merge_audio_db.py` 那轮审查（见 PR #1）的同一套判据自审，这个**更早写的**
+> 生成器仍有三个同类问题：
+>
+> 1. **校验晚于发布** —— `assert orphan == 0` 排在 `os.replace(tmp, out_path)` **之后**，
+>    坏库仍会先覆盖上一份 `android.db`。应与合并器一样：校验私有 `.part`，通过才 rename。
+> 2. **孤儿检查只有单向** —— 只查 `entries − android`，未查 `android − entries`
+>    （同用户审查第 3 条）。
+> 3. **无条件删除 `<out>.part`** —— 与合并器的 D2 同一写法。
+>
+> **为什么暂不修**：它的输入是 `.mdx`/`.mdd`，输出是 `.db`，**名字不可能与
+> 临时路径冲突**（D2 的实际风险不成立）；发布顺序问题只在下一次生成时才有意义，
+> 而当前产物已被独立审计（`audit_audio_db.py` exit 0）确认双向孤儿 0/0、完整性 ok。
+> 改动它会改变已记录的产物哈希（`45f1b310…`），收益小于重建与再验证的成本。
+>
+> **若将来要重新生成 `android.db`**，应先把这三点一并修掉。
+
 ## 合并多个音频库
 
 ```bash
