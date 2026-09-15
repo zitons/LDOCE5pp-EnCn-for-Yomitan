@@ -3240,9 +3240,18 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     source_revision = infer_source_revision(input_path)
 
     debug = bool(test_words)
+    # A build restricted with --limit is a PARTIAL dictionary too: without the
+    # marker it is written under the OFFICIAL file name and can silently replace a
+    # complete package (measured: `--limit 1` over a 2-row output shrank it to one
+    # row and still exited 0). The `_DEBUG` suffix also keeps audit2/audit3 from
+    # ever picking a partial build up as the package under test.
+    partial = debug or limit is not None
     test_set = None
     if debug:
         test_set = {w.strip().casefold() for w in re.split(r"[,;，、]", test_words) if w.strip()}
+    if partial:
+        print(f"[!] PARTIAL build ({'test-words' if debug else '--limit'}): the package "
+              f"is named _DEBUG and is not a deliverable.")
 
     # Bank rows are numerous and short-lived, so a higher GC threshold avoids
     # constant generation-0 scanning. NOTE: gc.disable() is NOT safe here --
@@ -3253,7 +3262,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
 
     ui_zh = mode == "bilingual"
     zip_name = (f"LDOCE5pp_Yomitan_{date.today().strftime('%Y.%m.%d')}"
-                + ("" if ui_zh else "_EN") + ("_DEBUG" if debug else "") + ".zip")
+                + ("" if ui_zh else "_EN") + ("_DEBUG" if partial else "") + ".zip")
     zip_path = os.path.join(output_dir, zip_name)
     zip_tmp = zip_path + ".part"
 

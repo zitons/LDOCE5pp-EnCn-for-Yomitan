@@ -122,6 +122,10 @@ scgen_test/_*.json
 scgen_test/_*.js
 scgen_test/cdp.mjs
 scgen_test/cssprobe*.mjs
+# 渲染契约门禁的工作目录（脚本按带后缀的名字创建，如 _rc_n3/）
+_rc*/
+# 一次性的 node 验证脚本（与 converter/_*.py 同类）
+converter/_*.mjs
 _sc*.html
 _sb*.html
 _cssfallback_probe*.html
