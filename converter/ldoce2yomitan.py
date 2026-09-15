@@ -3240,9 +3240,18 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     source_revision = infer_source_revision(input_path)
 
     debug = bool(test_words)
+    # A build restricted with --limit is a PARTIAL dictionary too: without the
+    # marker it is written under the OFFICIAL file name and can silently replace a
+    # complete package (measured: `--limit 1` over a 2-row output shrank it to one
+    # row and still exited 0). The `_DEBUG` suffix also keeps audit2/audit3 from
+    # ever picking a partial build up as the package under test.
+    partial = debug or limit is not None
     test_set = None
     if debug:
         test_set = {w.strip().casefold() for w in re.split(r"[,;，、]", test_words) if w.strip()}
+    if partial:
+        print(f"[!] PARTIAL build ({'test-words' if debug else '--limit'}): the package "
+              f"is named _DEBUG and is not a deliverable.")
 
     # Bank rows are numerous and short-lived, so a higher GC threshold avoids
     # constant generation-0 scanning. NOTE: gc.disable() is NOT safe here --
@@ -3253,7 +3262,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
 
     ui_zh = mode == "bilingual"
     zip_name = (f"LDOCE5pp_Yomitan_{date.today().strftime('%Y.%m.%d')}"
-                + ("" if ui_zh else "_EN") + ("_DEBUG" if debug else "") + ".zip")
+                + ("" if ui_zh else "_EN") + ("_DEBUG" if partial else "") + ".zip")
     zip_path = os.path.join(output_dir, zip_name)
     zip_tmp = zip_path + ".part"
 
@@ -3422,7 +3431,9 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         written_exprs.add(k)
         sequence += 1
         flush_if_full()
-        if limit and len(rendered_keys) >= limit:
+        # explicit, not truthiness: `limit` is validated > 0 at the CLI boundary
+        # above, and a None limit means "no limit"
+        if limit is not None and len(rendered_keys) >= limit:
             break
 
     # The schema only sees written rows, never a record skipped by the renderer.
@@ -3623,8 +3634,13 @@ def main(argv=None):
                         help="Skip package checks; rendering failures still abort publication")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--limit", type=int, default=None,
-                        help="Render at most N entries (smoke testing)")
+                        help="Render at most N entries (smoke testing); must be > 0")
     args = parser.parse_args(argv)
+    # Reject a non-positive limit here rather than letting it mean something else
+    # downstream: the render loop tests truthiness, so `--limit 0` used to render
+    # the WHOLE dictionary while still being named and warned as a partial build.
+    if args.limit is not None and args.limit <= 0:
+        parser.error(f"--limit must be a positive integer, got {args.limit}")
     input_path = prepare_input(args.input)
     try:
         build(

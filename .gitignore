@@ -44,6 +44,8 @@ _*.html
 _*.png
 # 发布说明草稿（内容已进 HANDOVER/README，不必入库）
 _release_notes*.md
+# PR 正文草稿（提交到 GitHub 后即无用）
+_pr_body*.md
 d_*.txt
 dump_*.txt
 tree_*.txt
@@ -122,6 +124,14 @@ scgen_test/_*.json
 scgen_test/_*.js
 scgen_test/cdp.mjs
 scgen_test/cssprobe*.mjs
+# 渲染契约门禁的工作目录（脚本按带后缀的名字创建，如 _rc_n3/）
+_rc*/
+# 一次性的 node 验证脚本（与 converter/_*.py 同类）
+converter/_*.mjs
+# 临时验证构建目录（--limit 冒烟、db 试验等，均可重建）
+_madbtest/
+_mdb*/
+_lim*/
 _sc*.html
 _sb*.html
 _cssfallback_probe*.html
