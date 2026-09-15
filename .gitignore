@@ -42,6 +42,8 @@ scgen_test/payload.json
 # ============================================================
 _*.html
 _*.png
+# 发布说明草稿（内容已进 HANDOVER/README，不必入库）
+_release_notes*.md
 d_*.txt
 dump_*.txt
 tree_*.txt
