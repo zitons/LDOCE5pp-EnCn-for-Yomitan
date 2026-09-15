@@ -3,7 +3,11 @@
 把《朗文当代高级英语辞典 5++（LDOCE5++ V2.15 En-Cn）》的 MDX/MDD 转成
 [Yomitan](https://github.com/yomitan/yomitan) format-3 词典包。
 
-**成品**（双语 ~61 MB / 纯英文 ~52 MB）——从 Release 下载，不入库
+> **开发修复版（2026-09-14）已验收**：空记录发布门禁、5 个词条的断词及 Anki 暗色继承已修复。
+> 本地新包在 `yomitan_fixed/2026-09-14-n1-n3/`，详见 [修复与完整验证](converter/audit_2026_09_14/FIXES.md)。
+> **尚未更新 Release**：下方 09.13 下载链接及 `yomitan_full/` 旧包不包含这三项新修复。
+
+**已发布成品**（双语 ~61 MB / 纯英文 ~52 MB）——从 Release 下载，不入库
 （GitHub 大包推送会在约 19 秒后被链路重置，实测非偶发）：
 
 > **[⬇ 双语 `LDOCE5pp_Yomitan_2026.09.13.zip`](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/download/v2026.09.13/LDOCE5pp_Yomitan_2026.09.13.zip)**
@@ -18,7 +22,7 @@
 | 词条内链接 | 1,949,979 条活链，**零悬挂**；4,875 条因源库缺目标而降级 |
 | 频率元数据 | `term_meta_bank`，可在 Yomitan 里**按词频排序** |
 | 排版 | 主题自适应（跟随 Yomitan 的明暗主题，不跟操作系统） |
-| **无样式表可用** | 义项用原生 `<ol><li>`、例句用嵌套 `<ul><li>` —— **Anki 制卡/纯 HTML 导出等没有 CSS 的环境下，编号、项目符号、缩进全部来自浏览器默认样式**，结构不丢 |
+| **无样式表可用** | 义项用原生 `<ol><li>`、例句用嵌套 `<ul><li>` —— **Anki 制卡/纯 HTML 导出等没有样式表的环境下仍有列表层级与缩进**；编号和例句标记以内文保留，不依赖 CSS |
 
 ## 安装
 
@@ -30,11 +34,12 @@ Yomitan → `Dictionaries` → `Load zip` → 选下载到的 zip。
 ## 无 CSS 环境（Anki 制卡等）
 
 导出的卡片若不带词典样式表，本包仍保有结构，这是**刻意设计**：义项是 `<ol><li>`、
-例句是嵌套 `<ul><li>`，浏览器自带的默认样式提供编号（`1.`）、项目符号（`•`）和
-缩进（40px）。色彩以行内样式兜底（中文绿、词性蓝、字段绿粗）。
+例句是嵌套 `<ul><li>`，浏览器保留列表层级和默认缩进；编号使用词典自身的**源编号**，
+例句标记以内文保留。两种模式都关闭 UA 自动编号，避免义项 `7、8、9、10` 被重编为 `1、2、3、4`。
+色彩以行内样式兜底（中文绿、词性蓝、字段绿粗）。
 
-装好样式表时则完全相反：`list-style:none` + `!important` 关掉原生标记、还原自绘的
-绿色编号芯片与悬挂缩进，视觉与设计稿一致。两种环境都有验证脚本：
+加载样式表后，CSS 提供绿色编号芯片、例句伪元素和紧凑的悬挂缩进；无样式表时，源编号和
+内嵌标记仍然可见。两种环境都有验证脚本：
 
 ```bash
 python converter/regress_render_contract.py <package.zip>   # 真 Chrome 双模式
@@ -55,12 +60,12 @@ python converter/regress_list_validity.py   <package.zip>   # 列表嵌套合法
 # 依赖：Python 3.11+、beautifulsoup4、lxml、tqdm、mdict-utils
 python converter/ldoce2yomitan.py \
   -i "extract/LDOCE5++ V 2-15.mdx.txt" \
-  -o yomitan_full -m bilingual --revision 2026.09.13
+  -o yomitan_full -m bilingual --revision 2026.09.14-review-fixes
 
 # 纯英文（源里 cn_txt 全剥；校验器强制全 bank 零 CJK）
 python converter/ldoce2yomitan.py \
   -i "extract/LDOCE5++ V 2-15.mdx.txt" \
-  -o yomitan_full -m mono --revision 2026.09.13
+  -o yomitan_full -m mono --revision 2026.09.14-review-fixes
 ```
 
 源数据（`.mdx` / `.mdd` / 解包文本）**不入库**：体积过大且受版权保护。
@@ -101,10 +106,12 @@ python converter/ldoce2yomitan.py -i "extract/LDOCE5++ V 2-15.mdx.txt" \
 | `regress_inline_vs_css.py` | 行内兜底在有 CSS 时必须是 no-op | 22 条声明全部等值 |
 | `regress_render_contract.py` | 真 Chrome 渲染契约（主题色 / 源编号 / 标记） | **PASS** |
 | `regress_review_followup.py` | 发布门禁与文本处理的 14 组单元回归 | **14/14 OK** |
+| `audit_2026_09_14/regress_new_findings.py` | 空记录门禁、词内接缝及正反例 | **14/14 OK** |
+| `audit_2026_09_14/official_schema.mjs` | 实际 Yomitan AJV 全量校验 | 新双语/mono 全部 **491,866 行通过** |
 | `audit_subsequence_loss.py` | 内容守恒：剥空白后旧文本须为新文本有序子序列 | **245,664 词条 0 损失** |
 
 内置校验器（每次构建自动跑）：`rows=245933 dangling=0 seq_ok=1`，且
-**渲染失败会中止发布**（连 `--skip-validation` 也拦）。
+**渲染异常或空记录都会中止发布**（连 `--skip-validation` 也拦）。
 
 ## 目录
 
@@ -119,4 +126,4 @@ scgen_test/                  Node+jsdom 里跑 Yomitan 真 structured-content �
 
 - 词典内容版权归 **Pearson Education Limited**；本仓库仅为**私有**的技术研究与个人使用，
   不分发源数据，也不主张内容权利。
-- **尚未做过真机导入验收** —— 这是当前最大的未覆盖风险，见 `HANDOVER.md` §9。
+- 已完成隔离 Chrome 中的实际 Yomitan 导入器/IndexedDB 全量导入；**完整扩展 UI、Anki 客户端仍未验收**，不把组件级验收等同于整个应用。

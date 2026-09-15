@@ -56,6 +56,8 @@ ZH_CLASSES = frozenset({"cn_txt", "cn_txt_ext"})
 # Leave other unmarked CJK for validation rather than silently deleting content.
 MONO_USAGE_NOTE_RE = re.compile(r"\bNOT\s*" + CJK_RE.pattern + r"+\s*")
 CONTRACTION_TAIL_RE = re.compile(r"^(?:[dstm]|ll|re|ve)(?:\b|$)", re.IGNORECASE)
+NEGATIVE_CONTRACTION_TAIL_RE = re.compile(r"^n['\u2019]t(?:\b|$)", re.IGNORECASE)
+E_STEM_RE = re.compile(r"[A-Za-z]+e$")
 
 
 def strip_invisible(value):
@@ -542,11 +544,24 @@ def _seam_needs_space(left, right):
     # <a>Don</a>’<a>t</a>, and <a>don’</a><a>t</a>. Do not disable every prose
     # seam: source NonDV links sometimes omit a real word space (model + kits),
     # and the word-family renderer also relies on separation between members.
-    if (lt[-1] in "'’" and CONTRACTION_TAIL_RE.match(rt)
-            and not (_is_body_atom(left) or _is_body_atom(right))):
-        return False
-    # R1: another place this heuristic must not fire -- a bare text run abutting an
-    # element on its right is a CONTINUATION of that element's word. The source
+    if not (_is_body_atom(left) or _is_body_atom(right)):
+        if lt[-1] in "'’" and CONTRACTION_TAIL_RE.match(rt):
+            return False
+        # The apostrophe can be INSIDE the following node: did<span>n't</span>.
+        # Explicit source whitespace was checked above; independent labels must
+        # still be separated. Match a whole n't clitic, not an arbitrary n-word.
+        if ("a" <= lt[-1].lower() <= "z"
+                and NEGATIVE_CONTRACTION_TAIL_RE.match(rt)):
+            return False
+        # The source also links an inflection fragment separately: relieve + d,
+        # fertilize + d. Both sides can be elements, so the text-tail guard below
+        # is insufficient. Restrict this to lowercase d after an English e-stem;
+        # do not glue arbitrary links (model + kits, games + console), numeric
+        # labels, or standalone uppercase letters such as vitamin + D.
+        if rt == "d" and E_STEM_RE.search(lt):
+            return False
+    # R1: another place this heuristic must not fire -- a bare text run on the
+    # right of an element can CONTINUE that element's word. The source
     # reads
     #     <a href="entry://terrorist">terrorist</a></span>s carrying
     #     <span class="COLLOINEXA">bank robber</span>s in US history
@@ -2430,11 +2445,13 @@ def generate_css():
   --ld-text2: var(--text-color, currentColor);
   --ld-dim:   var(--text-color, currentColor);
   --ld-faint: var(--text-color, currentColor);
+  /* Without Yomitan theme variables (e.g. Anki), the root must inherit
+     the host text colour too; a fixed dark fallback hides dark-card text. */
   /* headword is plain theme text -- never a fixed colour */
   --ld-head:  var(--text-color, currentColor);
   /* metrics */
   --ld-chip-gap:.3em; --ld-chip-size:.8em; --ld-gutter:1.9em; --ld-gutter-sub:1.6em;
-  display:block; line-height:1.5; font-size:1em; color:var(--text-color,#202124);
+  display:block; line-height:1.5; font-size:1em; color:var(--text-color,inherit);
 }
 
 /* Theme-adaptive palette: only parsed by engines that actually support
@@ -3317,6 +3334,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     written_exprs = set()
     stats = Counter()
     render_failures = []
+    empty_failures = []
 
     # Banks are streamed straight into the archive: previously each 65 MB bank
     # was written to a temp file and then read back by zf.write(), i.e. 475 MB
@@ -3380,6 +3398,9 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
             continue
         if not nodes or not sc_has_text(nodes):
             stats["empty_records"] += 1
+            if stats["empty_records"] <= 8:
+                empty_failures.append(f"empty render {k!r}: no visible content")
+                print(f"[WARN] {empty_failures[-1]}")
             continue
         pos_tokens, freq_tokens = extract_tags(content)
         tags, rules = pos_tags_rules(pos_tokens, freq_tokens)
@@ -3407,11 +3428,19 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     # The schema only sees written rows, never a record skipped by the renderer.
     # Abort before aliases/sidecars, even with --skip-validation: that option is
     # not permission for best-effort rendering or publishing an incomplete ZIP.
+    rendering_errors = []
     if stats["render_errors"]:
-        error = (f"{stats['render_errors']} source record(s) failed rendering; "
-                 "refusing to publish an incomplete dictionary")
-        print(f"[FAIL] {error}")
-        reject_package([error] + render_failures)
+        rendering_errors.append(
+            f"{stats['render_errors']} source record(s) failed rendering; "
+            "refusing to publish an incomplete dictionary")
+    if stats["empty_records"]:
+        rendering_errors.append(
+            f"{stats['empty_records']} source record(s) rendered empty content; "
+            "refusing to publish an incomplete dictionary")
+    if rendering_errors:
+        for error in rendering_errors:
+            print(f"[FAIL] {error}")
+        reject_package(rendering_errors + render_failures + empty_failures)
 
     term_index.finalize_rendered(rendered_keys)
 

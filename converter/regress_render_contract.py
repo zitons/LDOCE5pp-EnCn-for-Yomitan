@@ -62,8 +62,16 @@ def main():
     os.makedirs(os.path.dirname(payload_path), exist_ok=True)
     with open(payload_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False)
+    # Audit the stylesheet actually shipped with the supplied content. Using
+    # generate_css() here can make an old, broken ZIP pass after a source-only fix.
+    if src.endswith(".zip"):
+        with zipfile.ZipFile(src) as z:
+            css = z.read("styles.css").decode("utf-8")
+    else:
+        with open(os.path.join(src, "styles.css"), encoding="utf-8") as fh:
+            css = fh.read()
     with open(css_path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(C.generate_css())
+        fh.write(css)
 
     proc = subprocess.run([C.shutil.which("node") or "node",
                            os.path.join(HERE, "regress_render_contract.mjs"),
@@ -118,6 +126,19 @@ def main():
         check(rec["defMarginBottom"] == "1px", f"{mode} ld-def margin-bottom",
               f"={rec['defMarginBottom']}")
 
+    print("\n== with CSS, without Yomitan theme variables ==")
+    for mode in ("no-var-light", "no-var-dark"):
+        body = data["modes"][mode].get("plainText")
+        check(body is not None, f"{mode} plain definition present")
+        if body is not None:
+            check(body["themeVariable"] == "", f"{mode} has no --text-color")
+            check(body["rootColor"] == body["hostColor"]
+                  and body["definitionColor"] == body["hostColor"],
+                  f"{mode} root and definition inherit the host",
+                  f"root={body['rootColor']} host={body['hostColor']}")
+            check(body["contrast"] >= MIN_CONTRAST,
+                  f"{mode} plain definition remains readable", f"contrast={body['contrast']}")
+
     print("\n== without styles.css ==")
     rec = data["modes"]["no-css"]
     for ol in rec["lists"]:
@@ -152,7 +173,7 @@ def main():
         for f in fails:
             print("  -", f)
         return 1
-    print("RESULT: PASS -- palette wins with CSS; source numbering and markers survive without")
+    print("RESULT: PASS -- palette/host inheritance with CSS; source numbering and markers without")
     return 0
 
 

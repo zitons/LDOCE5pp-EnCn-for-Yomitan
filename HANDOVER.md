@@ -5,17 +5,29 @@
 
 ---
 
-## 当前工作区补充（2026-09-13 · D39–D41）
+## 当前工作区补充（2026-09-14 · N1–N3）
+
+三项修复及完整验收已完成：空渲染记录默认拒绝发布（含同 key、已刷 bank 和 `--skip-validation`），
+修复 `relieve d` / `fertilize d` / `did n’t`，无 Yomitan 主题变量时正文继承宿主颜色。
+28 组快速回归、11 个旧门禁调用、491,866 行官方 Schema、64,659 条源 DOM 核对及真实 Chrome
+导入器/IndexedDB 与导出样式检查均通过。每个包只在 5 条记录删除 5 个空格，其它正文节点与字段不变。
+
+**本轮新包：`yomitan_fixed/2026-09-14-n1-n3/{bilingual,mono}/`**；revision 为
+`2026.09.14-review-fixes`。`yomitan_full/` 及 Release 没有更新，不包含本轮修复。
+完整证据、哈希和复验命令见 `converter/audit_2026_09_14/FIXES.md`。
+完整扩展设置页/搜索 UI、Anki 客户端验收仍未执行；没有提交或推送。
+
+## 历史工作区补充（2026-09-13 · D39–D41）
 
 源码已修复“渲染异常仍发布”、mono 四条漏网记录和缩写断词残留；14 组快速回归、9 项包检查和
 真实 Chrome 渲染契约回归全部通过。双语与 mono 全量包均已构建、校验成功，各 245,933 行，
 零渲染错误；mono 零 CJK。双语仅修正 70 条记录中的 74 个撇号空格，其它正文字符和行字段不变。
 详见 `converter/audit_2026_09_13_followup/FIXES.md`。真实扩展导入验收仍未执行。
 
-**不要把 `yomitan_full/` 当作这次修复的成品**：它仍保留 `f774b4e` 的 09.13 包，SHA-256
-`5edae5d9…53f8fc`。新验证包使用 `yomitan_fixed/verified/bilingual/` 与
-`yomitan_fixed/verified/mono/`，不覆盖旧包。此前被中断的 `yomitan_fixed/bilingual/`、
-`yomitan_fixed/mono/` 只留有中间文件，不能当成成功构建或用于导入。
+09.13 当晚的独立复核已经把 `yomitan_full/` 同步为 D39–D41 验证包（双语 `8544ed4c…`、
+mono `73662eab…`），与 `yomitan_fixed/verified/` 相同；原“仍是 f774b4e 旧包”的说明已过期。
+它们与上方 **09.14 N1–N3** 的新验证包不是同一版本。此前被中断的
+`yomitan_fixed/bilingual/`、`yomitan_fixed/mono/` 中间文件仍不得当作成功成品。
 
 ## 0. 修订记录（2026-09-10 第二轮审查后）
 

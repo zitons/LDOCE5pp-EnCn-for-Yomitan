@@ -27,16 +27,17 @@ class Fake {
 const gen = new StructuredContentGenerator(new Fake(), win.document, win);
 
 // light + dark exercise the theme palette (the R3 regression); no-css exercises
-// what an Anki export / plain-HTML host actually sees.
-const modes = ['light', 'dark', 'no-css'];
+// what an Anki export / plain-HTML host actually sees. Also exercise styled
+// hosts WITHOUT Yomitan's --text-color; otherwise a fixed dark fallback is hidden.
+const modes = ['light', 'dark', 'no-css', 'no-var-light', 'no-var-dark'];
 for (const mode of modes) {
     const section = win.document.createElement('section');
     section.dataset.mode = mode;
-    const light = (mode === 'light' || mode === 'no-css');
+    const light = (mode === 'light' || mode === 'no-css' || mode === 'no-var-light');
     if (mode !== 'no-css') section.className = 'styled';
     section.style.cssText =
-        `--text-color:${light ? '#000000' : '#d4d4d4'};` +
-        `background:${light ? '#ffffff' : '#1e1e1e'};color:var(--text-color);padding:16px`;
+        `background:${light ? '#ffffff' : '#1e1e1e'};color:${light ? '#000000' : '#d4d4d4'};padding:16px`;
+    if (!mode.startsWith('no-var-')) section.style.setProperty('--text-color', light ? '#000000' : '#d4d4d4');
     for (const [word, sc] of Object.entries(payload)) {
         const holder = win.document.createElement('div');
         holder.dataset.word = word;
@@ -104,6 +105,13 @@ for (const section of document.querySelectorAll('section[data-mode]')) {
   }
   const d = host.querySelector('[data-sc-class="ld-def"]');
   if (d) rec.defMarginBottom = getComputedStyle(d).marginBottom;
+  const root = host.querySelector('[data-sc-class="ld"]');
+  if (root && d) {
+    rec.plainText = {hostColor:getComputedStyle(section).color,
+      rootColor:getComputedStyle(root).color, definitionColor:getComputedStyle(d).color,
+      themeVariable:getComputedStyle(root).getPropertyValue('--text-color').trim(),
+      contrast:contrast(rgb(getComputedStyle(d).color),bg)};
+  }
   out.modes[section.dataset.mode] = rec;
 }
 const pre = document.createElement('pre');
