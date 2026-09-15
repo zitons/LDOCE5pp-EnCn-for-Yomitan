@@ -21,14 +21,15 @@ import urllib.request
 
 REPO = r"C:\workspace\ldoce"
 OWNER_REPO = "zitons/LDOCE5pp-EnCn-for-Yomitan"
-TAG = "v2026.09.13"
-NAME = "LDOCE5pp En-Cn for Yomitan — 2026.09.13"
+TAG = os.environ.get("REL_TAG", "v2026.09.13")
+NAME = os.environ.get("REL_NAME", "LDOCE5pp En-Cn for Yomitan — 2026.09.13")
 PROXY = "http://127.0.0.1:7890"
-NOTES = os.path.join(REPO, "_release_notes.md")
-ASSETS = [
+NOTES = os.environ.get("REL_NOTES", os.path.join(REPO, "_release_notes.md"))
+_assets_env = os.environ.get("REL_ASSETS")
+ASSETS = ([p for p in _assets_env.split(";") if p] if _assets_env else [
     os.path.join(REPO, r"yomitan_fixed\verified\bilingual\LDOCE5pp_Yomitan_2026.09.13.zip"),
     os.path.join(REPO, r"yomitan_fixed\verified\mono\LDOCE5pp_Yomitan_2026.09.13_EN.zip"),
-]
+])
 
 
 class CREDENTIAL(ctypes.Structure):

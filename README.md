@@ -31,6 +31,26 @@ Yomitan → `Dictionaries` → `Load zip` → 选下载到的 zip。
 > ⚠️ **尚未做真机导入验收**（见下文「说明」）。所有验证是"结构合法 + 能被 Yomitan
 > 真生成器渲染成 DOM"，不等于扩展 UI 内交互全部正确。
 
+## 词头发音（Hoshi Reader，另一件成品）
+
+Yomitan 的 structured-content **没有 audio 标签**，音频无法塞进词典包。
+[**Hoshi Reader**](https://github.com/HuangAntimony/Hoshi-Reader-Android)（Android/iOS）
+有自己的**本地音频数据库**机制，因此发音以**独立成品**交付：
+
+| 文件 | 大小 | 内容 |
+|---|---:|---|
+| `android.db` | 436.4 MiB | 91,559 条音频 / 92,544 行索引 |
+
+- **音源**：`ldoce_ame`（美音）、`ldoce_bre`（英音）—— 每个词条英美发音各一份
+- **覆盖率**：64,390 个词条中 **46,841 个有发音（72.75%）**；常用词抽验 **25/25 命中**
+- 未覆盖的是 `$100/50 cents etc a clip` 这类**模式化短语**，原版词典本身没有录音
+
+安装：Hoshi Reader → `Settings` → `Advanced` → `Audio` → `Local Audio: Enable` →
+`Import` → 选 `android.db`。
+
+生成与验证脚本在 `converter/`（`build_audio_db.py` / `audit_audio_db.py` /
+`validate_audio_db.py`），细节见 [`AUDIO.md`](AUDIO.md)。
+
 ## 无 CSS 环境（Anki 制卡等）
 
 导出的卡片若不带词典样式表，本包仍保有结构，这是**刻意设计**：义项是 `<ol><li>`、
@@ -83,8 +103,9 @@ python converter/ldoce2yomitan.py -i "extract/LDOCE5++ V 2-15.mdx.txt" \
 
 | 文件 | 内容 |
 |---|---|
-| [`HANDOVER.md`](HANDOVER.md) | **接手先读这个**。项目全景、Yomitan format-3 契约速查、64 条踩坑清单（多数跳过必返工）、内容守恒验证方法 |
-| [`REVIEW.md`](REVIEW.md) | 独立审查报告：D0–D41 逐条缺陷、影响面量化、复现命令、已排除的怀疑 |
+| [`HANDOVER.md`](HANDOVER.md) | **接手先读这个**。项目全景、Yomitan format-3 契约速查、70 条踩坑清单（多数跳过必返工）、内容守恒验证方法、Hoshi 音频库附录 |
+| [`REVIEW.md`](REVIEW.md) | 独立审查报告：D0–D41 + N1–N3 逐条缺陷、影响面量化、复现命令、已排除的怀疑 |
+| [`AUDIO.md`](AUDIO.md) | **Hoshi 本地音频库**：使用、db 格式（读源码所得的三条硬约束）、重建、边界 |
 | [`TYPOGRAPHY.md`](TYPOGRAPHY.md) | 排版/CSS 层审查（T1–T8），含"原版 CSS 用不了"的原因 |
 | [`IMPROVEMENTS.md`](IMPROVEMENTS.md) | 性能改进清单与实测数据 |
 | [`README-yomitan.md`](README-yomitan.md) | 成品说明与审计链 |
@@ -109,6 +130,9 @@ python converter/ldoce2yomitan.py -i "extract/LDOCE5++ V 2-15.mdx.txt" \
 | `audit_2026_09_14/regress_new_findings.py` | 空记录门禁、词内接缝及正反例 | **14/14 OK** |
 | `audit_2026_09_14/official_schema.mjs` | 实际 Yomitan AJV 全量校验 | 新双语/mono 全部 **491,866 行通过** |
 | `audit_subsequence_loss.py` | 内容守恒：剥空白后旧文本须为新文本有序子序列 | **245,664 词条 0 损失** |
+| `build_audio_db.py` | Hoshi 音频库生成（扫源 HTML → 建两表 → 从 mdd 抽 blob） | 92,544 行 / 91,559 条音频 |
+| `audit_audio_db.py` | 音频库独立审计（schema、integrity、双向孤儿、blob 真伪、覆盖率、延迟） | **exit 0**，孤儿 **0/0** |
+| `validate_audio_db.py` | 复现 Hoshi 的 SQL 与排序 rank 逐词验证 | **25/25 词命中** |
 
 内置校验器（每次构建自动跑）：`rows=245933 dangling=0 seq_ok=1`，且
 **渲染异常或空记录都会中止发布**（连 `--skip-validation` 也拦）。
@@ -118,6 +142,8 @@ python converter/ldoce2yomitan.py -i "extract/LDOCE5++ V 2-15.mdx.txt" \
 ```
 converter/                   转换器与全部审计脚本（唯一事实来源：ldoce2yomitan.py）
 yomitan_full/                构建输出（入库的只有 index/styles/tag_bank；zip 见 Release）
+yomitan_fixed/               各轮修复的验证包（按日期分目录）
+yomitan_audio/               Hoshi 音频库输出（android.db，不入库，走 Release）
 mdd_assets/                  从 .mdd 取出的原版 LM5style.css 等（用于排版核对）
 scgen_test/                  Node+jsdom 里跑 Yomitan 真 structured-content 生成器的测试台
 ```

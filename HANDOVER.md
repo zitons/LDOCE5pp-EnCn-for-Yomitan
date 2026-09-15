@@ -29,6 +29,106 @@ mono `73662eab…`），与 `yomitan_fixed/verified/` 相同；原“仍是 f774
 它们与上方 **09.14 N1–N3** 的新验证包不是同一版本。此前被中断的
 `yomitan_fixed/bilingual/`、`yomitan_fixed/mono/` 中间文件仍不得当作成功成品。
 
+## 附：本地音频数据库（Hoshi Reader）· 2026-09-15
+
+**独立于词典包的第二件成品。** 起因：Yomitan 的 structured-content 没有 audio tag
+（§9.9 已论证），音频塞不进词典包；而 Hoshi Reader 有**自己的**本地音频数据库机制，
+导入一个 `android.db` 后按词条查表取 blob，正好绕开该限制。
+
+### 成品与数据
+
+| 项 | 值 |
+|---|---|
+| 文件 | `yomitan_audio/android.db`（**不入库**，436.4 MiB） |
+| 表 | `entries` 92,544 行 / `android` 91,559 条音频 |
+| 音源 | `ldoce_ame`（美音 46,135 文件）、`ldoce_bre`（英音 45,424 文件） |
+| 覆盖率 | **46,841 / 64,390 = 72.75%** |
+| 常用词抽验 | **25/25 命中**（improve/abandon/child/run/the/water/money/world…） |
+| 查询延迟 | 0.063 ms（Hoshi 每次查词的耗时） |
+
+**未覆盖的 27.25%** 是 `$100/50 cents etc a clip`、`a bad/difficult patch` 这类
+**模式化短语与词族变体**——原版 LDOCE5++ 本身没为它们录音，不是提取遗漏。
+证据：源侧口径统计有词头发音的记录是 48,744 / 66,765 = 73.01%，与词典侧的
+72.75% 吻合（差值来自词典不含部分源记录）。
+
+### 格式（全部读源码得来，非推测）
+
+来源：Hoshi `features/audio/LocalAudioRepository.kt`、`LocalAudioResolver.kt`、
+`AudioSettings.kt`；以及 `yomidevs/local-audio-yomichan` 的 `plugin/db_utils.py`。
+
+```sql
+CREATE TABLE entries (id, expression, reading, source, speaker, display, file);
+CREATE TABLE android (id, file, source, data);   -- data = 原始音频字节
+```
+
+Hoshi 实际执行的语句：
+
+```sql
+-- findAudio(term, reading)：reading 为空时走这一支
+SELECT source, expression, reading, file FROM entries WHERE expression = ?;
+-- audioSourcesFromDatabase()：音源发现
+SELECT DISTINCT source FROM entries
+ WHERE lower(file) LIKE '%.mp3' OR lower(file) LIKE '%.opus' OR lower(file) LIKE '%.ogg';
+-- loadAudio(file)
+SELECT data FROM android WHERE source = ? AND file = ? LIMIT 1;
+```
+
+**三条必须遵守的硬约束**（违反任一条都会静默失效）：
+
+1. **文件名必须是 `android.db`** —— `AudioSettings.LocalAudioPath = "Audio/android.db"`，
+   且导入校验只认 `.db` 扩展名（`ImportFileType.LocalAudioDatabase`）。
+2. **`file` 只能以 `.mp3` / `.opus` / `.ogg` 结尾** —— 音源发现靠上面的 LIKE；
+   扩展名不在其中，整个源都不会出现在 Hoshi 里。本库因此跳过 1,842 个 `.spx`。
+3. **`reading` 故意留 NULL** —— Hoshi 在 reading 为空时走 `WHERE expression = ?`
+   精确匹配分支，正是我们要的。填假读音会把它引到 `(expression = ? OR reading = ?)`
+   分支，反而引入错误匹配。
+
+### 音频在源里的位置（踩过的两个坑）
+
+**坑一：词头音频有两个载体，只认一个会丢 16 个百分点。**
+
+```html
+<a class="speaker amefile fa fa-volume-up" href="sound://media/english/ameProns/improve.mp3">
+<a class="speaker brefile fa fa-volume-up" href="sound://media/english/breProns/improve0205.mp3">
+<a class="PronCodes"                      href="sound://media/english/ameProns/ld5_12.mp3">
+```
+
+`12` 的发音只挂在 `PronCodes` 上。第一版只匹配 `speaker (amefile|brefile)`，
+覆盖率被算成 48.8%。
+
+**坑二：词头块不能用 `class="Head"` 精确匹配。**
+
+源里有 `class="Head suppressedLEXVAR"`（例：`A1, the`），音频**就在该块内**，
+精确匹配把它整条漏掉。改成"class 属性 token 中含 `Head`"后覆盖率
+56.96% → **73.01%**。
+
+### 生成与审计
+
+```bash
+python converter/build_audio_db.py --out yomitan_audio/android.db
+python converter/audit_audio_db.py --db yomitan_audio/android.db   # 独立审计，不 import 生成器
+python converter/validate_audio_db.py --db yomitan_audio/android.db  # 复现 Hoshi 查询逻辑
+```
+
+审计结果（exit 0）：`integrity_check=ok`、双向孤儿 **0/0**、
+blob 抽样 4,000 个 **0 损坏**（全是 ID3 或 MPEG 帧同步）、重复行 0、
+db 内 expression 全部属于词典、查询 0.063 ms。
+
+**生成器带硬断言**：`entries` 每行都必须能在 `android` 取到 blob（`assert orphan == 0`）。
+源里 4 个词（Rt Rev / YMCA / bulgur wheat / snowboard cross）的音频确实不在 mdd 中，
+直接丢弃而不是留下"能匹配却播不出声"的死行。
+
+### 边界
+
+- **未做真机 Hoshi 导入验收** —— 格式依据是源码 + 本地 SQL 复现其查询逻辑，
+  尚未在 Android 设备上实际导入播放。这是当前最大缺口。
+- 未含例句音频（`exaProns`，86,450 个）—— 按需求只做词头发音。
+- 未含 `.spx`（1,842 个）—— Hoshi 不支持，转码收益 <1%。
+- `v2026.09.13-audio` Release 已建但**附件为空**（上传被主动中断），
+  本地 `android.db` 完整，随时可补传。
+
+---
+
 ## 0. 修订记录（2026-09-10 第二轮审查后）
 
 本文档以下章节描述的是**初版构建（v1.0.0，915.7 s）**。此后做了一轮独立审查（见 `REVIEW.md`）
@@ -161,17 +261,20 @@ CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/�
 
 ### 交付物清单
 
+**最新一轮修复（2026-09-14 · N1–N3）的成品在 `yomitan_fixed/2026-09-14-n1-n3/`，
+尚未搬进 `yomitan_full/`、也未发布 Release。** 已发布到 GitHub Release 的是 09.13。
+
 | 路径 | 说明 | 状态 |
 |---|---|---|
-| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip` | **主交付物**，双语版，63,649,164 B（60.7 MB；25 个 term bank + index + tag_bank + styles.css）。sha256 `bc0674113e9a991da633ab8ac844ac8c44e31ae92a34e572672f5e0ae2bef71f` | ✅ 最终版（原生列表语义 + 词头分隔 + 块间距） |
-| `C:\workspace\ldoce\LDOCE5.zip` | **参照成品**（同一本 LDOCE5++ 的另一个转换版，作者 lng）。**无 styles.css 却有结构** —— 靠原生 `<ol>/<li>` + 嵌套 `<ul><li>` + 4 种行内样式。本轮列表语义改造的正解来源，留作对照 | 📖 只读参照 |
+| `yomitan_fixed\2026-09-14-n1-n3\bilingual\LDOCE5pp_Yomitan_2026.09.14.zip` | **最新双语成品**（N1–N3 修复，63,737,646 B；491,866 行官方 Schema 全通过 + 真导入器验收） | ✅ 最新 |
+| `yomitan_fixed\2026-09-14-n1-n3\mono\LDOCE5pp_Yomitan_2026.09.14_EN.zip` | **最新纯英文成品**（零 CJK） | ✅ 最新 |
+| `C:\workspace\ldoce\yomitan_audio\android.db` | **Hoshi Reader 本地音频库**（436.4 MiB，92,544 行索引 / 91,559 条音频，覆盖 72.75%）。**不入库**；`v2026.09.13-audio` Release 已建但附件为空，本地完整 | ✅ 待发布 |
+| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.13.zip` + `_EN.zip` | **已发布**的双语/纯英文包（Release `v2026.09.13`，sha256 `8544ed4c…` / `73662eab…`） | 📦 已发布 |
+| `C:\workspace\ldoce\LDOCE5.zip` | **参照成品**（同一本 LDOCE5++ 的另一个转换版，作者 lng）。**无 styles.css 却有结构** —— 靠原生 `<ol>/<li>` + 嵌套 `<ul><li>` + 4 种行内样式。列表语义改造的正解来源 | 📖 只读参照 |
 | `C:\workspace\ldoce\_MODE_COMPARE.html` | **双模式对比页**：左栏 Yomitan（样式表作用域 `.y`）、右栏 Anki（无样式），同词条并排。浏览器直接打开即可验收 | ✅ 验收工具 |
-| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip` | 上一版交付物，保留用于逐行比对（`converter/audit_2026_09_12/diff_before_after.py`） | 📦 归档 |
-| `C:\workspace\ldoce\converter\ldoce2yomitan.py` | **转换器，唯一事实来源**（单文件 ~3350 行，无包依赖结构） | ✅ 最终版 |
-| `C:\workspace\ldoce\yomitan_debug\..._DEBUG.zip` + `term_bank_1.json` | 13 个测试词条的调试包（JSON 带缩进，可 diff） | ✅ 与主版同步 |
-| `C:\workspace\ldoce\yomitan_mono_smoke\..._EN.zip` | 纯英文模式冒烟包（--limit 300，非全量） | ⚠️ 演示用 |
-| `C:\workspace\ldoce\preview.html` | SC→HTML 本地预览（镜像 Yomitan 生成器语义），浏览器直接打开 | ✅ |
-| `C:\workspace\ldoce\README-yomitan.md` | 面向**使用者**的安装/特性说明 | ✅ |
+| `C:\workspace\ldoce\converter\ldoce2yomitan.py` | **转换器，唯一事实来源**（单文件，无包依赖结构） | ✅ 最终版 |
+| `C:\workspace\ldoce\converter\build_audio_db.py` + `audit_audio_db.py` + `validate_audio_db.py` | 音频库生成器 / 独立审计 / Hoshi 查询复现 | ✅ |
+| `AUDIO.md` | 音频库的使用、格式、重建、边界 | ✅ |
 | 本文档 | 面向**维护者**的交接 | — |
 
 ### 最终数字（全量构建，840.0 s）
@@ -266,6 +369,11 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | **`_verify_listsem_real.py`** | 列表语义双模式验证（有/无 CSS 的 `list-style`/`display`/chip 宽度） | 见 §5.60 |
 | **`_make_mode_page.py`** | 生成 `_MODE_COMPARE.html` 双模式对比页（CSS 作用域到左栏 `.y`） | 验收工具 |
 | **`_find_hide_prop.py`** | 探测"合法的隐藏属性"（`display` 非法，`fontSize:0` 合法） | 见 §5.61 |
+| **`build_audio_db.py`** | **Hoshi 音频库生成器**：扫源 HTML 取词头音频 → 建 `entries`/`android` 两表 → 从 mdd 抽 blob 写入 | 见「附：本地音频数据库」 |
+| **`audit_audio_db.py`** | 音频库**独立审计**（刻意不 import 生成器）：schema、`integrity_check`、双向孤儿、音源发现、blob 是否真是音频、覆盖率、查询延迟 | exit 0 才算通过 |
+| **`validate_audio_db.py`** | 用 SQL **复现 Hoshi 的查询与排序逻辑**，逐词验证命中 | 验证格式契约 |
+| **`_git_push.py`** | 绕过 GCM 卡死推送（CredRead 直取 PAT + GIT_ASKPASS） | 见 §5.65 |
+| **`_make_release.py`** | 建 tag/release 并上传附件；支持 `--dry-run` 与 `REL_*` 环境变量参数化 | 见 §5.66 |
 | **`bench_parse.py`** | 解析/渲染基准，含样本缓存 `_bench_sample.pkl` | 避免重复扫 877 MB |
 | `extract_payload.py` | 从 zip 抽 405 条分层样本喂 node 真生成器 | |
 | `..\scgen_test\run_scgen.mjs` | Node+jsdom 加载 Yomitan 真 `structured-content-generator.js`（3 个 stub 模块）渲染样本 | `npm i jsdom` 已装 |
@@ -469,6 +577,25 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
     - 脚本：`converter/_make_release.py`（支持 `--dry-run`，同名附件先 DELETE 再传，最后重新 GET 打印实际下载链接）。
     - **顺带**：仓库根直接 `git push` 60 MB 成品**永远别有这个念头**——成品放 Release，仓库只放源码/文档/脚本（`size-pack` 85 MiB 里绝大部分还是历史累积，与成品无关）。
 
+67. **"某个东西做不了"要先分清"做不了"和"不该放进这个容器"**（2026-09-15）：本项目 §9.9 曾把音频结论写成"放弃"，理由是 Yomitan 的 structured-content 没有 audio tag。**这个论据本身完全正确**（已用生成器白名单逐条核对），但结论下早了 —— Hoshi Reader 有自己的**本地音频数据库**机制，导入一个 `android.db` 后按词条查表取 blob，**完全不经过 Yomitan 的 SC**。最终做出 72.75% 覆盖、常用词 25/25 命中的成品。
+    - **通法**：判定"做不到"之前，先问是**格式不支持**，还是**只是不该塞进当前这个产物**。前者是硬约束，后者是打包策略。把结论写成"X 进不了 Y"而不是"X 做不到"。
+    - 附带：`speaker`/`brefile`/`amefile` 这些 class 在词典包里**仍然应该丢弃**（喇叭图标在 Yomitan 里点不动），音频走独立产物。两件事不矛盾。
+
+68. **统计覆盖率时，先确认"产出路径"和"匹配口径"都齐了**（2026-09-15）：词头音频的覆盖率我连错两次，从 48.8% → 56.96% → **73.01%**，两次都是**我的正则/作用域写窄了**，不是数据问题：
+    - **路径漏了一条**：音频挂在两种元素上 —— `<a class="speaker amefile|brefile">` **和** `<a class="PronCodes">`。只认前者，`12`（音频在 `PronCodes` 上）这类整片被算成"无音频"。
+    - **作用域写成精确匹配**：找词头块用 `class="Head"` 精确匹配，而源里有 `class="Head suppressedLEXVAR"`（如 `A1, the`），**音频就在该块内**却被漏掉。改成"class token 含 `Head`"后涨了 16 个百分点。
+    - **通法**：算覆盖率之前，先**手工挑几个"必然有"的样本**验证检测器命中（我用 `improve`/`abandon`/`child`/`the`/`run`，全部有音频）。如果检测器对必然样本报缺失，就是检测器的问题，不是数据的问题。这一步能省掉后面所有的返工。
+    - 最终数字要与**另一条独立路径**对得上才可信：源侧记录口径 48,744/66,765 = 73.01%，词典侧词条口径 46,841/64,390 = 72.75%，两者吻合。
+
+69. **给外部 App 造数据时，格式必须从它的源码里读出来，不能凭同名项目推断**（2026-09-15）：音频库的表结构、文件名、扩展名限制，全部来自 Hoshi 的 Kotlin 源码（`LocalAudioRepository.kt` 的 SELECT、`AudioSettings.kt` 的路径常量、`ImportFileType.kt` 的扩展名校验）与 `local-audio-yomichan` 的 `plugin/db_utils.py`。三条否则会静默失效的约束：
+    - **文件名必须是 `android.db`**（`AudioSettings.LocalAudioPath`）
+    - **`file` 只能以 `.mp3`/`.opus`/`.ogg` 结尾** —— 音源发现靠 `lower(file) LIKE '%.mp3' OR ...`，不在其中则整个源不出现（本库因此跳过 1,842 个 `.spx`）
+    - **`reading` 留 NULL 是有意的** —— 空 reading 让 Hoshi 走 `WHERE expression = ?` 精确匹配分支；填个假读音反而把它引到 OR 分支并引入错误匹配
+    - **通法**：这类"外部消费者"的契约要写成可执行的门禁。本项目用 `validate_audio_db.py` **复现 Hoshi 的 SQL**（含它的排序 rank 规则）逐词验证，而不是只看自己写的表对不对。
+
+70. **"索引有行但取不到数据"必须在生成时就断言掉**（2026-09-15）：源 HTML 引用了 4 个词的音频（`bulgur wheat`/`Rt Rev`/`snowboard cross`/`YMCA`），而这些文件**确实不在 mdd 里**。若照原样写库，Hoshi 会匹配成功、然后取不到 blob —— 用户看到"有音频源但播不出声"，且没有任何报错。修法：写入前按实际抽到的 blob 过滤，并 **`assert orphan == 0`**（92,544 行 entries 与 91,559 条 blob 双向对称，孤儿 0/0）。
+    - **通法**：凡是"索引/清单 + 实际载荷"分两张表存的结构，都要断言双向可达。缺哪边都是运行期静默失败。
+
 ## 6. Yomitan 契约速查（format-3）
 
 - **ZIP 成员**：`index.json`、`styles.css`、`tag_bank_1.json`、`term_meta_bank_1..N.json`（可选，频率元数据）、`term_bank_1..N.json`（文件名数字任意）。
@@ -569,12 +696,17 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | `.jpg` | 15 | 图片 |
 | `.css` / `.js` | 2 + 2 | `LM5style.css`(54 KB) / `LM5style_show.css` / `LM5Switch.js` / `jquery-3.2.1.min.js` |
 
-**① 音频：接不进弹窗，结论是"放弃"。**
+**① 音频：接不进 Yomitan 弹窗；但 Hoshi Reader 有另一条路，已实现。**
 - Yomitan 的 structured-content **没有 audio tag**：`structured-content-generator.js` 的 `_createStructuredContentGenericElement` 是白名单 switch，只有 `br / ruby / rt / rp / table / thead / tbody / tfoot / tr / th / td / div / span / ol / ul / li / details / summary / img / a`。**没有 audio，也没有 video。**
 - 词典内媒体确实有通用通道（`display-content-manager.js:95 openMediaInTab(path, dictionary)` → `api.getMedia` → `_getNormalizedDictionaryDatabaseMedia`），但它**只被 `img` 消费**；`term_meta_bank` 的合法枚举也只有 `freq / pitch / ipa`，没有 audio。
 - 外部音频源（`media/audio-system.js`）走的是 **URL 模板**（jpod101 / custom URL / TTS），读不到 zip 内部。
-- 代价对比：182 k 个 mp3 会把包从 **60 MB 撑到 1.2 GB 以上**，而弹窗里放不出来。⇒ 不做。
+- 代价对比：182 k 个 mp3 会把包从 **60 MB 撑到 1.2 GB 以上**，而弹窗里放不出来。⇒ **词典包不做音频，这个结论不变。**
 - 现状已正确：`speaker / brefile / amefile / fa / fa-volume-up` 全在 `DROP_CLASSES` 里，喇叭图标被丢弃（不留死按钮）。
+- **出路**：Hoshi Reader（Android/iOS）有自己的**本地音频数据库**机制——导入一个
+  `android.db`，它按词条查表取音频 blob，完全不经过 Yomitan 的 SC。
+  已于 2026-09-15 用它做出成品：**72.75% 词条覆盖、常用词 25/25 命中**，
+  详见本文档前面的「附：本地音频数据库（Hoshi Reader）」章节与 `AUDIO.md`。
+  即：**音频不是"做不了"，而是"不该进词典包"**——两件成品分开交付。
 
 **② 原版 CSS：已取出，用于终结 T8。** 见 §7 的 T8 / `TYPOGRAPHY.md`。三条硬证据：词头区域无 `order:`/绝对定位（视觉顺序=DOM 顺序）；`.HOMNUM{vertical-align:super}`（编号原地渲染，证实 `append` 修复正确）；`.HYPHENATION{display:none}`（是隐藏的音节切分副本，证实丢弃正确）。
 **注意配色取向不同**：原版是亮色专用（词头红 `#ff0000`、词性/语法绿 `#008000`、语域紫 `#800080`、地域 `#364395`、AWL 黄底白字 `#f1d600`、FREQ 红框）。本项目坚持主题自适应，**不采用**。

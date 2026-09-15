@@ -15,7 +15,12 @@ Yomitan 的 structured-content **没有 audio tag**，所以音频塞不进词�
 |---|---:|---|
 | `android.db` | 436.4 MiB | 91,559 条音频、92,544 行索引 |
 
-- **音源**：`ldoce_ame`（美音 46,139 个文件）、`ldoce_bre`（英音 45,428 个）
+```
+sha256  45f1b31062eb7c929cd33abe7e24ace40e6f2b802bb2d822498e31eb69da8ca1
+bytes   457,568,256
+```
+
+- **音源**：`ldoce_ame`（美音 46,135 个文件）、`ldoce_bre`（英音 45,424 个）
 - **覆盖率**：64,390 个词条中 **46,841 个有发音 = 72.75%**
 - **常用词实测**：25/25 全部命中（improve / abandon / child / run / the / water / happy / computer / money / world / year / life / man / woman …）
 - 未覆盖的是 `$100/50 cents etc a clip`、`a bad/difficult patch` 这类**模式化短语/词族变体**，原版词典本身没有录音

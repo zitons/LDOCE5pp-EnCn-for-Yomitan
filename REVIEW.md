@@ -1402,3 +1402,94 @@ CSS 作用域化                 : 我们的规则 0 条丢失，::before 全保
 其余 SC 节点、字段和别名目标不变；Anki 暗色正文对比度 1.036 → 11.247。
 新包在 `yomitan_fixed/2026-09-14-n1-n3/`，正式 09.13 包与 Release 均未覆盖。
 完整扩展 UI 和 Anki 客户端端到端验收仍是验证边界。
+
+---
+
+## 2026-09-15 Hoshi Reader 本地音频库：新增成品 + 三个自查错误
+
+**这是一项新增能力，不是对既有缺陷的修复**，因此不占用 D 编号。记录在此是因为
+过程中有三次**我方统计错误**值得留档（两次把覆盖率算低、一次差点漏掉数据完整性断言）。
+
+### 背景
+
+`HANDOVER.md` §9.9 当时的结论是"音频接不进弹窗 ⇒ 放弃"。该论据经复核**仍然成立**
+（Yomitan structured-content 的 tag 白名单确实没有 audio，`term_meta_bank` 的合法
+枚举也没有 audio）。但结论写早了：**Hoshi Reader 有独立的本地音频数据库机制**，
+导入 `android.db` 后按词条查表返回 blob，不经 Yomitan 的 SC。于是音频从"做不了"
+变成"不该进词典包，另出一件成品"。
+
+### 成品
+
+| 项 | 值 |
+|---|---|
+| 文件 | `yomitan_audio/android.db`，436.4 MiB（**不入库**，走 Release 附件） |
+| 表 | `entries` 92,544 行 / `android` 91,559 条音频 |
+| 音源 | `ldoce_ame`（美音 46,135 文件）、`ldoce_bre`（英音 45,424 文件） |
+| 覆盖率 | 46,841 / 64,390 = **72.75%** |
+| 常用词抽验 | **25/25 命中** |
+| 查询延迟 | 0.063 ms |
+
+### 自查错误 1：漏了一条音频产出路径（48.8% → 56.96%）
+
+词头音频挂在**两种**元素上，第一版只匹配了 `speaker`：
+
+```html
+<a class="speaker amefile fa fa-volume-up" href="sound://media/english/ameProns/improve.mp3">
+<a class="PronCodes"                      href="sound://media/english/ameProns/ld5_12.mp3">
+```
+
+`12` 的发音只在 `PronCodes` 上，被整片算作"无音频"。**只认 `speaker` 会低估约 8 个百分点。**
+
+### 自查错误 2：词头块用了精确匹配（56.96% → 73.01%）
+
+找词头块写的是 `class="Head"`，但源里存在 `class="Head suppressedLEXVAR"`
+（例：`A1, the`），其音频**就在该块内**，精确匹配整条漏掉。
+改成"class 属性 token 中含 `Head`"后覆盖率涨 16 个百分点。
+
+**两次错误都是检测器写窄了，不是数据缺失。** 教训：算覆盖率前先用
+"必然有"的样本（`improve`/`abandon`/`child`/`the`/`run`，实测 5/5 都有音频）
+验证检测器本身，能省掉后续全部返工。最终数字还与**另一条独立口径**对上了：
+源侧记录 48,744/66,765 = 73.01%，词典侧词条 46,841/64,390 = 72.75%。
+
+### 自查错误 3：差点写出"能匹配却播不出声"的行
+
+源 HTML 引用了 4 个词的音频（`bulgur wheat` / `Rt Rev` / `snowboard cross` / `YMCA`），
+这 8 个文件（4 词 × 2 音源）**确实不在 mdd 里**。若照原样写库，Hoshi 会匹配成功、
+再取不到 blob，用户只看到"播不出声"而没有任何报错。
+修法：写入前按实际抽到的 blob 过滤，并断言 **`orphan == 0`**（双向对称：92,544 行
+索引 / 91,559 条音频，孤儿 0/0）。
+
+### 格式依据（读源码，非推测）
+
+- Hoshi：`features/audio/LocalAudioRepository.kt`（SELECT 语句）、
+  `LocalAudioResolver.kt`（排序 rank、支持的扩展名）、
+  `AudioSettings.kt`（`LocalAudioPath = "Audio/android.db"`）、
+  `ImportFileType.kt`（只认 `.db`）
+- 参考实现：`yomidevs/local-audio-yomichan` 的 `plugin/db_utils.py`（同款两表结构）
+
+三条否则会**静默失效**的硬约束：文件名必须是 `android.db`；`file` 只能以
+`.mp3`/`.opus`/`.ogg` 结尾（否则整个音源不被发现）；`reading` 留 NULL
+（让 Hoshi 走 `WHERE expression = ?` 精确分支）。
+
+### 验证
+
+```
+audit_audio_db.py（独立审计，不 import 生成器）  exit 0
+  integrity_check  ok
+  双向孤儿         0 / 0
+  blob 抽样 4,000  0 损坏（ID3 或 MPEG 帧同步）
+  重复行           0
+  覆盖率           46,841 / 64,390 = 72.75%
+  查询延迟         0.063 ms
+
+validate_audio_db.py（复现 Hoshi 的 SQL 与排序规则）  25/25 词命中
+```
+
+### 边界
+
+- **未做真机 Hoshi 导入验收** —— 格式依据是源码 + 本地 SQL 复现，尚未在
+  Android 设备上实际导入播放。这是本项最大缺口。
+- 未含例句音频（`exaProns` 86,450 个）、未含 `.spx`（1,842 个，Hoshi 不支持）。
+- `v2026.09.13-audio` Release 已创建但**附件为空**（上传被主动中断），
+  本地 `android.db` 完整可补传。
+
