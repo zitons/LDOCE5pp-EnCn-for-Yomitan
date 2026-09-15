@@ -126,6 +126,10 @@ scgen_test/cssprobe*.mjs
 _rc*/
 # 一次性的 node 验证脚本（与 converter/_*.py 同类）
 converter/_*.mjs
+# 临时验证构建目录（--limit 冒烟、db 试验等，均可重建）
+_madbtest/
+_mdb*/
+_lim*/
 _sc*.html
 _sb*.html
 _cssfallback_probe*.html
