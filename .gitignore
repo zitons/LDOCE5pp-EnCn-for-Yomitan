@@ -131,5 +131,16 @@ _scheme_*.html
 # 构建中的临时包（校验通过后才会 rename 成正式名）
 yomitan_full/*.part
 
+# ============================================================
+#  本地音频数据库（Hoshi Reader 用）
+#  android.db 约 436 MB，走 GitHub Release 附件，不入库。
+#  生成器与审计脚本在 converter/，可重建。
+# ============================================================
+yomitan_audio/
+build/
+*.db
+*.db-shm
+*.db-wal
+
 # Full post-fix verification builds (do not overwrite yomitan_full).
 /yomitan_fixed/
