@@ -25,10 +25,14 @@ import sqlite3
 import subprocess
 import sys
 
-HERE = r"C:\workspace\ldoce"
-MERGED = os.path.join(HERE, "converter", "merge_audio_db.py")
+# Derived from this file, not hard-coded: the documented command is
+# `python converter/regress_merge_gates.py` and it must work from any checkout.
+CONVERTER = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(CONVERTER)
+MERGED = os.path.join(CONVERTER, "merge_audio_db.py")
 SCRATCH = os.path.join(HERE, "_madbtest", "neg")
 PY = sys.executable
+sys.path.insert(0, CONVERTER)
 
 SCHEMA = """
 CREATE TABLE entries (id integer PRIMARY KEY NOT NULL, expression text NOT NULL,
@@ -117,12 +121,27 @@ def main():
                 rc != 0 and before == after, f"exit={rc} bytes_equal={before == after}")
     ok &= check("T4 the .part was cleaned up", not os.path.exists(victim + ".part"))
 
-    # ---------- T2: ent-blob still asserted ----------------------------------
-    # Hard to trigger through the CLI because step 4 deletes orphans first; verify
-    # the assertion text exists in the source so the gate is present at all.
-    src = open(MERGED, encoding="utf-8").read()
-    ok &= check("T2 ent-blob gate exists in the final check",
-                "entry pair(s) with no blob" in src)
+    # ---------- T2: the ent-blob invariant must actually FAIL when violated ----
+    # The previous version grepped the source text for the error string, which
+    # would still pass if the runtime check were deleted -- a guard that is never
+    # exercised is not tested. Call the real invariant function with a synthetic
+    # unmatched pair instead.
+    import importlib
+    mod = importlib.import_module("merge_audio_db")
+    inv = getattr(mod, "check_invariants", None)
+    ok &= check("T2 check_invariants() is importable", callable(inv))
+    if callable(inv):
+        clean = inv(ic="ok", orphan_ent=0, orphan_blob=0, dup_sf=0)
+        ok &= check("T2 a clean set yields no problems", clean == [])
+        bad = inv(ic="ok", orphan_ent=3, orphan_blob=0, dup_sf=0)
+        ok &= check("T2 an unmatched entry pair IS reported",
+                    len(bad) == 1 and "no blob" in bad[0], f"{bad}")
+        bad2 = inv(ic="ok", orphan_ent=0, orphan_blob=5, dup_sf=0)
+        ok &= check("T2 an unreferenced blob IS reported",
+                    len(bad2) == 1 and "no entry" in bad2[0], f"{bad2}")
+        bad3 = inv(ic="not ok", orphan_ent=0, orphan_blob=0, dup_sf=0)
+        ok &= check("T2 a failed integrity_check IS reported",
+                    len(bad3) == 1 and "integrity_check" in bad3[0], f"{bad3}")
 
     print()
     print("ALL NEGATIVE TESTS PASS" if ok else "SOME TESTS FAILED")

@@ -163,6 +163,25 @@ def preflight(paths):
     return indexed
 
 
+def check_invariants(ic, orphan_ent, orphan_blob, dup_sf):
+    """Return a list of violated invariants (empty == all good).
+
+    Factored out so the regression gate can call it with synthetic values and
+    prove the check FAILS when violated. Grepping the source text for an error
+    message (the previous "test") would still pass with this function deleted.
+    """
+    problems = []
+    if ic != "ok":
+        problems.append(f"integrity_check={ic!r}")
+    if orphan_ent:
+        problems.append(f"{orphan_ent} entry pair(s) with no blob")
+    if orphan_blob:
+        problems.append(f"{orphan_blob} blob pair(s) referenced by no entry")
+    if dup_sf:
+        problems.append(f"{dup_sf} duplicate (source, file) pair(s)")
+    return problems
+
+
 def merge(paths, out_path):
     indexed = preflight(paths)
     out_path = os.path.abspath(out_path)
@@ -172,15 +191,42 @@ def merge(paths, out_path):
     # into the 1.6 GB merged one. Reject HERE, before the temporary database
     # exists -- validating before the rename cannot help, because the merge is
     # perfectly valid and would still overwrite the file it just read from.
+    #
+    # Compare with samefile(), not abspath(): on Windows the same file can be
+    # spelled `Src.DB` and `src.db`, and samefile() also resolves symlinks and
+    # hard links. Reproduced bypass: `--db Src.DB --out src.db` was NOT rejected
+    # and the input became its own merge (12,288 -> 36,864 B).
+    def same_file(a, b):
+        try:
+            return os.path.samefile(a, b)
+        except OSError:
+            # one of them does not exist yet: fall back to a normalised compare
+            return os.path.normcase(os.path.abspath(a)) == os.path.normcase(
+                os.path.abspath(b))
+
     for p in paths:
-        if os.path.abspath(p) == out_path:
+        if same_file(p, out_path):
             raise SystemExit(
                 f"output {out_path} is also an input; refusing to overwrite a "
                 f"source database with its own merge (use a different --out)")
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     tmp = out_path + ".part"
-    for f in (tmp, tmp + "-journal", tmp + "-wal", tmp + "-shm"):
+    sidecars = (tmp, tmp + "-journal", tmp + "-wal", tmp + "-shm")
+
+    # The cleanup below DELETES the temp path and its sidecars, so an input that
+    # happens to occupy one of those names would be destroyed before it is ever
+    # attached. Reproduced: an input named `target.db.part` came back as a
+    # same-size file with an EMPTY table -- silent data loss that looks fine.
+    for p in paths:
+        for t in sidecars:
+            if same_file(p, t):
+                raise SystemExit(
+                    f"input {p} collides with the merger's temporary file "
+                    f"{t}; it would be deleted before being read "
+                    f"(use a different --out name)")
+
+    for f in sidecars:
         if os.path.exists(f):
             os.remove(f)
 
@@ -267,15 +313,7 @@ def merge(paths, out_path):
     # converter already follows.
     # Note orphan_ent is guaranteed 0 by step 4; the load-bearing checks here are
     # integrity_check, orphan_blob and dup.
-    problems = []
-    if ic != "ok":
-        problems.append(f"integrity_check={ic!r}")
-    if orphan_ent:
-        problems.append(f"{orphan_ent} entry pair(s) with no blob")
-    if orphan_blob:
-        problems.append(f"{orphan_blob} blob pair(s) referenced by no entry")
-    if dup:
-        problems.append(f"{dup} duplicate (source, file) pair(s)")
+    problems = check_invariants(ic, orphan_ent, orphan_blob, dup)
     if problems:
         try:
             os.remove(tmp)
@@ -301,7 +339,8 @@ def merge(paths, out_path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", action="append", required=True,
-                    help="input db, repeatable; the first one seeds the output")
+                    help="input db, repeatable; EVERY input is appended to the "
+                         "fixed output schema (no input seeds it)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     merge(args.db, args.out)
