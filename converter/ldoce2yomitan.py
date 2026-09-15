@@ -3431,7 +3431,9 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         written_exprs.add(k)
         sequence += 1
         flush_if_full()
-        if limit and len(rendered_keys) >= limit:
+        # explicit, not truthiness: `limit` is validated > 0 at the CLI boundary
+        # above, and a None limit means "no limit"
+        if limit is not None and len(rendered_keys) >= limit:
             break
 
     # The schema only sees written rows, never a record skipped by the renderer.
@@ -3632,8 +3634,13 @@ def main(argv=None):
                         help="Skip package checks; rendering failures still abort publication")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--limit", type=int, default=None,
-                        help="Render at most N entries (smoke testing)")
+                        help="Render at most N entries (smoke testing); must be > 0")
     args = parser.parse_args(argv)
+    # Reject a non-positive limit here rather than letting it mean something else
+    # downstream: the render loop tests truthiness, so `--limit 0` used to render
+    # the WHOLE dictionary while still being named and warned as a partial build.
+    if args.limit is not None and args.limit <= 0:
+        parser.error(f"--limit must be a positive integer, got {args.limit}")
     input_path = prepare_input(args.input)
     try:
         build(

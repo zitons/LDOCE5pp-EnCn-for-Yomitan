@@ -44,6 +44,8 @@ _*.html
 _*.png
 # 发布说明草稿（内容已进 HANDOVER/README，不必入库）
 _release_notes*.md
+# PR 正文草稿（提交到 GitHub 后即无用）
+_pr_body*.md
 d_*.txt
 dump_*.txt
 tree_*.txt
