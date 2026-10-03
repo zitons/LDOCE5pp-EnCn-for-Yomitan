@@ -115,6 +115,9 @@ _mgtest/
 #  第三方代码副本（Hoshi-Reader-Android，取回只读核对，不入库）
 # ============================================================
 _hoshi/
+# 从 mdd / 用户提供的完整版抽出的原版样式表（第三方资源，不入库）。
+# 来源、字节数与 sha256 记在 HANDOVER §9.9 与 REVIEW D42/D43。
+_origcss/
 
 # CDP 探针与临时渲染产物（结论已进 REVIEW.md）
 scgen_test/_expr*.js

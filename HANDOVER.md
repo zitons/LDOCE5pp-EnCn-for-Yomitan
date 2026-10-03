@@ -596,6 +596,29 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 70. **"索引有行但取不到数据"必须在生成时就断言掉**（2026-09-15）：源 HTML 引用了 4 个词的音频（`bulgur wheat`/`Rt Rev`/`snowboard cross`/`YMCA`），而这些文件**确实不在 mdd 里**。若照原样写库，Hoshi 会匹配成功、然后取不到 blob —— 用户看到"有音频源但播不出声"，且没有任何报错。修法：写入前按实际抽到的 blob 过滤，并 **`assert orphan == 0`**（92,544 行 entries 与 91,559 条 blob 双向对称，孤儿 0/0）。
     - **通法**：凡是"索引/清单 + 实际载荷"分两张表存的结构，都要断言双向可达。缺哪边都是运行期静默失败。
 
+71. **修"提取类"bug 时，探针必须对比完整输出（哪个输入拿到哪个值），只比较匹配/不匹配集合会放走劫持**（2026-09-15）：给 `build_audio_db.py` 修 HWD 嵌套 span 截断时，第一版深度感知提取把"切到匹配闭合"写成了"从最后一个内层闭合之后切"，产出词头**后缀**（`car·rot`→`rot`、`CompactFlash`→`Flash`）。这些后缀形式抢占 `variants` 后，**2,091 个表达式被配到别的词条的音频**（`Dutch`→`double-dutch.mp3`、`England`→`amateur_athl1.mp3`）——而探针只报"匹配数 46,845 → 46,886"，看起来是纯收益。最后靠**重建旧代码产物并逐表达式对比文件分配**才抓出（`changed=2091`），修正后产物与旧版**逐字节相同**（`45f1b310…` 不变，见 AUDIO.md）。
+    - **通法**：改任何"从 A 提取后给 B 赋值"的逻辑，回归判据是**逐键对比赋值结果**，不是"命中数变了多少"——命中数差异对**错配**完全不敏感。另一个红旗信号：产物的 blob 数/共享结构突然大幅变化（91,559 → 87,615）时别急着解释成"修复的自然结果"。
+
+72. **`text-indent` 的继承会打到"块级"后代，不只是 `inline-block`**（2026-09-15）：T9 的修法是"给所有 `display:inline-block` 规则加 `text-indent:0`"，**只覆盖了机制的一半**。`ld-colloexa` 用 `padding-left:23.28px; text-indent:-23.28px` 做悬挂缩进，而 `ld-defcn` 是 **`display:block`** —— 块级同样会开新的块容器、同样把继承来的负 `text-indent` 用到自己首行。实测：`ld-defcn` 左边缘 **46.5** vs 它上一行的 `ld-collo` **58.6**，中文搭配释义整体左出 **23px**，与用户截图完全一致。
+    - **修法**：给负 `text-indent` 载体的**所有后代**重置（`[data-sc-class="ld-colloexa"] * { text-indent:0 }` 等 11 个载体）。载体自己的首行缩进不受影响（`*` 不含自身）。
+    - **更重要的背景**：拿到**完整**原版样式表（684 条规则）后核对，**负 `text-indent` 出现 0 次** —— 原版所有缩进都用 `margin-left`（`.Sense{margin-left:20px}`、`.COLLO{margin-left:20px}`、`.Sense .exaGroup .exa{margin-left:15px}`）。**悬挂缩进是我们自己发明的**，整个"错位"缺陷类都源于此。若将来重做排版，优先考虑回到 `margin-left` 方案，而不是继续给自造机制打补丁。
+73. **完整原版样式表解决了 D9 悬案：原版是「显示」ACTIV 的**（2026-09-15）：`LM5style.css` 里先有 `.ldoceEntry .ACTIV{display:none}`，**后面又有一条同优先级的规则覆盖它**：
+    ```css
+    .ldoceEntry .ACTIV { font-weight:bold; font-style:normal; font-size:80%;
+        border:1.5px solid #E08080; color:#E08080; padding:0px 3px;
+        margin:0 0.5em; display:inline-block; line-height:1.2em; }
+    ```
+    同优先级、后者胜 ⇒ **原版把 ACTIV 显示为一个粉红描边的 inline-block 芯片**，D9 当初"隐藏/显示无法判定"的结论可以收敛了。两个直接后果：
+    - 原版 ACTIV **没有 `text-transform`、没有 `letter-spacing`** —— 我们两条都加了，导致标签的**字宽与大小写不是原版的**。
+    - 原版 ACTIV 是 `font-size:80%; line-height:1.2em; padding:0 3px`，共享底座当时是 `1.35` + `0 5px`；芯片高度会参与行盒计算，所以这几个值直接影响对齐。
+    - 附带核对：`LM5style_show.css` 只有 36 字节（`.pagetitle{border-top-style:double;}`），`LM5Switch.js` 里**没有任何**显示 ACTIV 的分支 —— 所以"显示"完全由那条覆盖规则决定，与 JS 开关无关。
+74. **变体实验必须给每个变体唯一的 `[data-dictionary]` 作用域**（2026-09-15）：把 N 个候选 CSS 放进同一页、又都用 `[data-dictionary="同一个名字"]` 时，**每条规则都会命中所有对照片**，同优先级下文档里最后一条全局胜出。表现是"所有变体结果完全相同"——本轮因此**作废了两次实验**（一次"6 个变体都是 19 处、连重叠量都一模一样"，一次"shipped（不改）那行也显示 `position:absolute`"）。**判据**：对照组必须出现**不同**的数字，否则实验无效。
+    - 同一轮还踩了两个**测量**陷阱，都造成过假阳性：
+      - **元素盒"重叠"判据对内联兄弟必然误报**：同一行上 A 占 1 行、B 换行占 2 行时，`A.bottom > B.top` 恒成立，看着像重叠 18px，其实只是行数不同。要判"真的压字"必须用 `Range.getClientRects()` 取**文本行矩形**再求交。
+      - **收起的 `<details>` 内容保留布局但不绘制**（Chrome 131+ 的 `::details-content{content-visibility:hidden}`）。`getBoundingClientRect()` 照样返回非零矩形，于是 `item` 报出 599 处"重叠"，实际**全部**是收起面板里的隐形内容。必须用 `el.checkVisibility({checkVisibilityCSS:true, contentVisibilityAuto:true})` 过滤。
+75. **动手前先搜既有文档**（2026-09-15）：我花了十几轮把"词典 CSS 被包进 `[data-dictionary]{…}`"当成 Hoshi 的 bug 去复现，而**本文件坑 25 + TYPOGRAPHY T1 早就写明**那是 Yomitan `addScopeToCss()` 的行为，且是**合法的 CSS Nesting**（隐式后代组合符）。用户一句"这不是已知的吗，你看接手文档啊"点破。教训：这类"外部消费者行为"的疑问，**先 grep 本目录的 md**，再开新调查。
+76. **取证工具本身也有坑：`Select-Object -First N` 会掐断上游管道**（2026-09-15）：`python … | Tee-Object log | Select-Object -First 70` 会在第 70 行**终止上游进程**，于是 **log 文件也残缺**（我据此判定"AFTER 段缺失"，白跑一轮）。要看全量日志就重定向到文件、再分段读。另外 PowerShell 的 `> file` 默认写 **UTF-16**，用 `Out-File -Encoding utf8` 或让脚本自己写文件，否则读回来是每个字符带空格的乱码。
+
 ## 6. Yomitan 契约速查（format-3）
 
 - **ZIP 成员**：`index.json`、`styles.css`、`tag_bank_1.json`、`term_meta_bank_1..N.json`（可选，频率元数据）、`term_bank_1..N.json`（文件名数字任意）。
@@ -711,7 +734,11 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 **② 原版 CSS：已取出，用于终结 T8。** 见 §7 的 T8 / `TYPOGRAPHY.md`。三条硬证据：词头区域无 `order:`/绝对定位（视觉顺序=DOM 顺序）；`.HOMNUM{vertical-align:super}`（编号原地渲染，证实 `append` 修复正确）；`.HYPHENATION{display:none}`（是隐藏的音节切分副本，证实丢弃正确）。
 **注意配色取向不同**：原版是亮色专用（词头红 `#ff0000`、词性/语法绿 `#008000`、语域紫 `#800080`、地域 `#364395`、AWL 黄底白字 `#f1d600`、FREQ 红框）。本项目坚持主题自适应，**不采用**。
 
-> ⚠ **但 `LM5style.css` 不是完整的排版基准**：源记录引用 **3 个**样式表（`LM5style.css` + `LM5style_switch.css` + `LM5style_show.css`），mdd 里**只有 2 个** —— **`LM5style_switch.css` 缺失**，而它正是 `LM5Switch.js` 用来切换的那一套。所以"原版把某类设成 `display:none` ⇒ 我们该丢弃"的推断**不可靠**（可能被缺失文件重新显示）；反之"原版给了正向样式 ⇒ 可见"相对可靠。详见 REVIEW.md 的 D9（义项标签 `ACTIV` 就卡在这个歧义上，结论是**维持现状显示**）。
+> ⚠ **mdd 里的 `LM5style.css` 不是完整的排版基准**：源记录引用 **3 个**样式表（`LM5style.css` + `LM5style_switch.css` + `LM5style_show.css`），mdd 里**只有 2 个** —— **`LM5style_switch.css` 缺失**，而它正是 `LM5Switch.js` 用来切换的那一套。所以"原版把某类设成 `display:none` ⇒ 我们该丢弃"的推断**不可靠**（可能被缺失文件重新显示）；反之"原版给了正向样式 ⇒ 可见"相对可靠。详见 REVIEW.md 的 D9（义项标签 `ACTIV` 就卡在这个歧义上）。
+>
+> ✅ **2026-09-15 更新：完整原版样式表已取得，上述歧义对 ACTIV 已消解。** 用户提供的完整 `LM5style.css`（**108,562 字节 / 684 条规则**，mdd 内那份是 54,085 字节 —— 只有一半；sha256 `0CBE7EE7725879C7941A2A797DD734679BE16561D7F33EF45D2732D28779C41D`，第三方资源不入库，抽取副本在 `_origcss/`）里，`.ldoceEntry .ACTIV{display:none}` **被同一文件后面一条同优先级规则覆盖**，最终形态是粉红描边的 `inline-block` 芯片。**结论：原版是显示 ACTIV 的**，`LM5style_switch.css` 是否参与已不影响这个判断（`LM5style_show.css` 只有 36 字节，`LM5Switch.js` 无显示分支）。完整版还带来两个可用事实：
+> - **负 `text-indent` 全表 0 次** —— 原版缩进一律用 `margin-left`。我们的悬挂缩进是自造的，见坑 72。
+> - **原版 ACTIV 没有 `text-transform` / `letter-spacing`**，且是 `font-size:80%; line-height:1.2em; padding:0 3px` —— 这几项都影响芯片高度与行盒，见坑 73。
 
 **③ 图片：不值得做。** 仅 15 张 jpg，且对应的图片页记录本来就在 `skip`（2,106 条里 184 条图片页）。
 
