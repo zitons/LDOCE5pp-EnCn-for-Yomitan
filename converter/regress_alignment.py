@@ -220,7 +220,7 @@ EXPR_JS = r"""
     const L = (e) => Math.round(e.getBoundingClientRect().left*100)/100;
     const cls = (e) => e.getAttribute('data-sc-class') || '';
     const painted = (e) => { try { return e.checkVisibility({checkOpacity:true, checkVisibilityCSS:true, contentVisibilityAuto:true}); } catch(_) { return true; } };
-    const rec = {id, first: [], gutter: [], indent: [], style: null};
+    const rec = {id, senses: 0, first: [], gutter: [], indent: [], style: null};
 
     // A. Nothing except the sense number may start LEFT of the sense's own content
     //    column. That is the exact signature of the hung in-flow number: its
@@ -246,6 +246,7 @@ EXPR_JS = r"""
       const sr = sense.getBoundingClientRect();
       const column = Math.round((sr.left + parseFloat(cs.paddingLeft)
                                  + parseFloat(cs.borderLeftWidth)) * 100) / 100;
+      rec.senses++;   // sample size for check A: a numbered sense really examined
       for (const k of sense.children) {
         if (!k.hasAttribute || !k.hasAttribute('data-sc-class')) continue;
         if (cls(k) === 'ld-snum' || !painted(k)) continue;
@@ -405,26 +406,43 @@ def main():
         return 2
 
     recs = _parse_cdp(r.stdout)
-    firsts = [c for rec in recs for c in rec.get("first", [])]
     gutters = [c for rec in recs for c in rec.get("gutter", [])]
     indents = [i for rec in recs for i in rec.get("indent", [])]
     styles = [rec["style"] for rec in recs if rec.get("style")]
+    senses_checked = sum(rec.get("senses", 0) for rec in recs)
     bad_gutter = list(gutters)
     bad_gutter_act = [c for c in gutters if c.get("is_act")]
     bad_indent = [i for i in indents if i["textIndent"] != "0px"]
     bad_style = [s for s in styles
                  if s["textTransform"] != "none" or s["letterSpacing"] not in ("normal", "0px")]
 
+    # Check B is about CHINESE glosses, so it only applies to a package that carries
+    # Chinese. The mono build strips it by design, and failing mono for having no
+    # `ld-defcn` was a bug in this gate: index.json's targetLanguage is the
+    # authoritative signal, not the sample happening to be empty.
+    try:
+        target = json.loads(zipfile.ZipFile(args.zip).read("index.json")).get("targetLanguage")
+    except Exception:
+        target = None
+    b_applicable = "zh" in str(target)
+    print(f"\npackage language: targetLanguage={target!r}  -> check B (Chinese glosses) "
+          f"is {'applicable' if b_applicable else 'NOT APPLICABLE for this package'}")
+
     print(f"\nA. nothing but the number may start LEFT of the sense content column")
-    print(f"   {len(gutters)} child node(s) intrude ({len(bad_gutter_act)} of them ld-act chips)")
+    print(f"   {senses_checked} numbered sense(s) examined, {len(gutters)} child node(s) "
+          f"intrude ({len(bad_gutter_act)} of them ld-act chips)")
     for c in bad_gutter[:10]:
         flag = "ld-act" if c.get("is_act") else c.get("cls")
         print(f"     {flag:12} left={c['left']} column={c['column']} "
               f"delta={c['delta']}px  {c['text']!r}")
     print(f"\nB. ld-defcn under any reset carrier: computed text-indent must be 0")
-    print(f"   {len(indents)} node(s) checked, {len(bad_indent)} still inheriting")
-    for i in bad_indent[:8]:
-        print(f"     text-indent={i['textIndent']}  {i['text']!r}")
+    if b_applicable:
+        print(f"   {len(indents)} node(s) checked, {len(bad_indent)} still inheriting")
+        for i in bad_indent[:8]:
+            print(f"     text-indent={i['textIndent']}  {i['text']!r}")
+    else:
+        print(f"   not applicable: this package has no Chinese (targetLanguage={target!r}),")
+        print(f"   so it contains no ld-defcn. Check B is skipped, not failed.")
     print(f"\nC. ld-act chip: no uppercase, no letter-spacing")
     print(f"   {len(styles)} chip(s) checked, {len(bad_style)} wrong")
     for s in bad_style[:4]:
@@ -437,8 +455,11 @@ def main():
     problems = []
     if uncovered:
         problems.append(f"{len(uncovered)} carrier(s) not reset in the CSS")
-    if not indents:
-        problems.append("sample too small to be meaningful -- widen it")
+    if not senses_checked:
+        problems.append("no numbered sense was examined -- sample too small, widen it")
+    if b_applicable and not indents:
+        problems.append("the package carries Chinese but no ld-defcn was sampled -- "
+                        "sample too small, or the class vanished")
     if bad_gutter:
         problems.append(f"{len(bad_gutter)} node(s) start left of the sense content column "
                         f"({len(bad_gutter_act)} ld-act)")

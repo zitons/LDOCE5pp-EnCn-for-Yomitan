@@ -50,5 +50,27 @@ await new Promise((r) => setTimeout(r, 700));
 
 const expr = (await import("node:fs")).readFileSync(process.argv[3], "utf8");
 const res = await send('Runtime.evaluate', {expression: expr, returnByValue: true});
-console.log(JSON.stringify(res.result?.result?.value ?? res.result, null, 1));
+const ex = res.result?.exceptionDetails;
+if (ex) {
+    // Runtime.evaluate reports a thrown expression here rather than failing the
+    // protocol call. Without this check the helper printed the fallback response
+    // and still exited 0, so a malformed probe looked like a successful invocation
+    // -- which is how a gate ended up dying later with a baffling TypeError instead
+    // of pointing at its own broken expression.
+    const desc = ex.exception?.description || ex.exception?.value || ex.text || '';
+    console.error('the evaluated expression threw:\n' + desc);
+    if (ex.lineNumber !== undefined) console.error(`  at expression line ${ex.lineNumber + 1}`);
+    ws.close();
+    process.exit(1);
+}
+const value = res.result?.result?.value;
+if (value === undefined) {
+    // not an exception, but no value either. Every gate's expression returns JSON,
+    // so this means the probe itself is broken -- it must not look successful.
+    console.error('the evaluated expression produced no value; raw result:\n' +
+                  JSON.stringify(res.result, null, 1));
+    ws.close();
+    process.exit(1);
+}
+console.log(JSON.stringify(value, null, 1));
 ws.close();
