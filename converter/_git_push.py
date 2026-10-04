@@ -68,7 +68,13 @@ def main():
         env["GIT_ASKPASS"] = SHIM
         env["GIT_TERMINAL_PROMPT"] = "0"
         cmd = ["git", "-c", "credential.helper=", "-c", f"http.proxy={PROXY}",
-               "push", "--progress", "origin", branch]
+               "push", "--progress"]
+        # --force-with-lease is needed after a rebase onto a moved base. Use the
+        # lease form, never a bare --force: it refuses if the remote branch moved
+        # since our last fetch, so it cannot clobber someone else's commits.
+        if "--force-with-lease" in args:
+            cmd.append("--force-with-lease")
+        cmd += ["origin", branch]
         if "--tags" in args:
             cmd.append("--tags")
         r = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True,
