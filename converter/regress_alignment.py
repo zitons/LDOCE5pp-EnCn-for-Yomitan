@@ -34,14 +34,53 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 import zipfile
 
 TOL = 0.6           # px; sub-pixel rounding is not a defect
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+
+CDP_TARGET = os.environ.get("CDP_TARGET", "http://127.0.0.1:9333")
+
+
+def check_harness(scgen):
+    """Report what is missing before rendering anything.
+
+    This gate needs a real browser: Yomitan's own structured-content generator runs
+    under jsdom (to build the DOM), and the measurements come from headless Chrome
+    over the DevTools protocol. Those are genuine external prerequisites, so say so
+    precisely instead of letting node die with a bare ECONNREFUSED halfway through.
+
+    Returns a list of (problem, remedy) pairs; empty means everything is present.
+    """
+    problems = []
+    if shutil.which("node") is None:
+        problems.append(("node not found on PATH", "install Node.js (v20+)"))
+    for rel, remedy in (
+        ("js/display/structured-content-generator.js",
+         "scgen_test is incomplete -- it is tracked in git, so `git checkout` it"),
+        ("node_modules/jsdom", "run: npm ci --prefix scgen_test"),
+        ("cdp.mjs", "scgen_test/cdp.mjs is tracked in git -- `git checkout` it"),
+    ):
+        if not os.path.exists(os.path.join(scgen, rel)):
+            problems.append((f"missing {rel} in {scgen}", remedy))
+    if not problems:
+        try:
+            urllib.request.urlopen(f"{CDP_TARGET}/json/version", timeout=5).read()
+        except Exception as e:
+            problems.append((
+                f"no DevTools endpoint at {CDP_TARGET} ({type(e).__name__})",
+                "start a headless Chrome, e.g.\n"
+                "      chrome --headless=new --disable-gpu --no-sandbox \\\n"
+                "             --remote-debugging-port=9333 --user-data-dir=<tmp> about:blank\n"
+                "      (or point CDP_TARGET at one that is already running)"))
+    return problems
 
 
 # --------------------------------------------------------------------------- css
@@ -298,6 +337,16 @@ def main():
         or os.path.join(root, "_hoshi", "popup.css")
     if not os.path.isdir(scgen):
         raise SystemExit(f"jsdom generator dir not found: {scgen}\n  pass --scgen or set SCGEN_DIR")
+    missing = check_harness(scgen)
+    if missing:
+        print("HARNESS: cannot run this gate -- prerequisites are missing.\n")
+        for what, remedy in missing:
+            print(f"  * {what}")
+            print(f"      -> {remedy}")
+        print("\nThis gate needs a real browser because Yomitan's structured-content")
+        print("generator produces the DOM (under jsdom) and the measurements come from")
+        print("headless Chrome over the DevTools protocol. Nothing was checked.")
+        return 2
     popup_used = popup if os.path.isfile(popup) else None
 
     print(f"package    : {os.path.basename(args.zip)}")
@@ -349,7 +398,8 @@ def main():
         f.write(EXPR_JS.replace("__CARRIERS__",
                                 json.dumps(sorted(check_carriers), ensure_ascii=False)))
     r = subprocess.run(["node", "cdp.mjs", "file:///" + out_html.replace("\\", "/"), "_ra_expr.js"],
-                       capture_output=True, text=True, encoding="utf-8", cwd=scgen)
+                       capture_output=True, text=True, encoding="utf-8", cwd=scgen,
+                       env={**os.environ, "CDP_TARGET": CDP_TARGET})
     if r.returncode != 0:
         print("render failed:", r.stderr[:800])
         return 2

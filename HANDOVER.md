@@ -361,6 +361,7 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | **`audit7_parser_equiv.py`** | 解析器等价性（lxml vs html.parser 逐字节） | 换解析器必跑 |
 | **`regress_head_separation.py`** | 词头/内联芯片分隔门禁：真生成器 + 真 Chrome，断言无粘连 token | 见 §5.58 |
 | **`regress_list_validity.py`** | 列表结构合法性：孤儿 `<li>` = 0、`<ol>/<ul>` 内无非法子元素 | 见 §5.59，改列表语义必跑 |
+| **`regress_alignment.py`** | **水平对齐门禁**（REVIEW D42/D43）：编号义项的正文列不得被悬挂编号扰动；悬挂载体内的 `ld-defcn` 计算 `text-indent` 必须为 0；`ld-act` 芯片不得带 uppercase/letter-spacing。载体清单**从被测 CSS 反解**并断言「凡引入负 `text-indent` 的载体都被重置」 | 见 §5.72–73。**需 jsdom + 无头 Chrome**，缺前置时 exit 2 并打印修法；已接入 `audit_2026_09_14/regression_suite.py`（两模式），跳过会使套件失败而非静默通过 |
 | **`regress_scheme_b.py`** / **`regress_css_fallback.py`** / **`regress_pos_cap.py`** | 方案 B 标记完整性 / 方案 A 颜色兜底 / POS 上限 | 见 §5.55–57 |
 | **`glue_detect.py`** | **粘连检测器（带正负例自证）**。⚠️ 必须先用已知正/负例单测，否则会误报：`announcement` 含 `noun`、`proverbial` 含 `verb` 都是假阳性 | 见 §5.63 |
 | **`audit_nocss_final.py`** | 无 CSS 渲染审计：真生成器 → 真 Chrome（无样式表）→ `innerText` → token 检测 | **不要用 `textContent`**，见 §5.58 |
@@ -380,6 +381,24 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 | `..\yomitan-ext\` | Yomitan release（契约核对源：`js/display/structured-content-generator.js`、`data/schemas/*.json`、`js/language/en/english-transforms.js`） | |
 | `..\OALD10-Yomitan-Converter\` | 参考项目（重定向行形状等实证来源） | |
 | `..\REVIEW.md` / `..\IMPROVEMENTS.md` | 第二轮审查报告 / 性能改进清单 | |
+
+### 附：需真浏览器的门禁 · 前置条件
+
+`regress_head_separation.py` / `regress_list_validity.py`（部分层）/ `audit_nocss_final.py` /
+`audit_def_ex_geometry.py` / **`regress_alignment.py`** 这几支**不能只靠 Python**：Yomitan 的
+真 `structured-content-generator.js` 要在 **jsdom** 里产出 DOM，而几何量测要经 **CDP** 打到
+**无头 Chrome**。三样前置：
+
+| 前置 | 怎么来 |
+|---|---|
+| `scgen_test/js/**`（Yomitan 真生成器 + 3 个 stub） | **已入库**，`git checkout` 即有 |
+| `scgen_test/node_modules`（jsdom） | `npm ci --prefix scgen_test`（`package-lock.json` 已入库） |
+| `scgen_test/cdp.mjs`（CDP 探针） | **已入库**（2026-10-04 起）。⚠️ 它原先在 `.gitignore` 里，导致上面整族门禁**在干净检出下根本跑不起来** —— PR #2 审查提出后解除忽略 |
+| 无头 Chrome | `chrome --headless=new --disable-gpu --no-sandbox --remote-debugging-port=9333 --user-data-dir=<tmp> about:blank`（端口可用 `CDP_TARGET` 覆盖） |
+
+`regress_alignment.py` 在缺前置时**不崩**：打印缺什么、怎么修，并 **exit 2**（不是 exit 1，
+以便与「断言失败」区分）。`audit_2026_09_14/regression_suite.py` 把 exit 2 记为
+`skipped`，**跳过的检查仍会让套件以非 0 退出** —— 跑不了的检查绝不允许被当成通过。
 | 根目录 `*.log`、`dump_*.txt`、`d_*.txt`、`questions*.txt`、`tree_*.txt`、`corpus_profile.json` | 侦察/审计存档 | 可删 |
 
 ---

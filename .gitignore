@@ -125,7 +125,9 @@ scgen_test/_*.mjs
 scgen_test/_*.css
 scgen_test/_*.json
 scgen_test/_*.js
-scgen_test/cdp.mjs
+# cdp.mjs 不再忽略：它是自写的 CDP 探针，20+ 个门禁依赖它，忽略掉会让整个门禁
+# 家族在干净检出下跑不起来（PR #2 审查提出）。见 HANDOVER §5 的前置条件。
+!scgen_test/cdp.mjs
 scgen_test/cssprobe*.mjs
 # 渲染契约门禁的工作目录（脚本按带后缀的名字创建，如 _rc_n3/）
 _rc*/
