@@ -269,6 +269,47 @@ def collect_needed_files(rows):
     return need
 
 
+def _same_file(a, b):
+    """True when two paths denote the same file.
+
+    `os.path.abspath` string comparison is NOT enough: on Windows the same file can
+    be spelled `Src.DB` and `src.db`, and samefile() also resolves symlinks and hard
+    links. Falls back to a normalised comparison when a side does not exist yet,
+    because samefile() requires both to exist.
+    """
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _guard_paths(out_path, tmp, inputs):
+    """Refuse path layouts that would destroy an input.
+
+    Two distinct hazards, both learned in merge_audio_db.py (D1/D2):
+
+      * `--out` that IS an input: `os.replace(tmp, out_path)` at the end of the build
+        overwrites that input with the database built from it. Every read has already
+        completed, so nothing fails -- the source is simply gone afterwards.
+      * `tmp` (`<out>.part`) that IS an input: it is removed unconditionally before
+        anything is read from it.
+
+    Both checks are same-file, not string, so case aliases, symlinks and hard links
+    are caught on every supported path spelling.
+    """
+    inputs = [p for p in inputs if p]
+    for p in inputs:
+        if _same_file(p, out_path):
+            raise SystemExit(
+                f"output {out_path} is also an input ({p}); refusing to overwrite a "
+                f"source file with the database built from it (use a different --out)")
+    for p in inputs:
+        if _same_file(p, tmp):
+            raise SystemExit(
+                f"temporary path {tmp} collides with input {p}; it would be deleted "
+                f"before being read (use a different --out name)")
+
+
 def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
     print(f"[1/5] scanning source records for headword audio ...", flush=True)
     variants = scan_source(src)
@@ -307,11 +348,12 @@ def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
     print(f"[4/5] extracting audio from mdd ...", flush=True)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     tmp = out_path + ".part"
-    # the inputs are .mdd/.mdx.txt/.zip, so a name clash with <out>.part cannot
-    # happen in practice -- assert it anyway, deleting an input would be silent
-    # data loss (merge_audio_db.py's D2)
-    if os.path.abspath(tmp) in {os.path.abspath(p) for p in (mdd_path, src, zip_path)}:
-        raise SystemExit(f"output temp path {tmp} collides with an input; refusing")
+    # Refuse `out_path` == input and `tmp` == input outright, by same-file identity.
+    # The previous version compared abspath STRINGS against `tmp` only, so a case
+    # alias (Windows `Src.DB` vs `src.db`) slipped through, and an `--out` pointing
+    # at an input was never checked at all -- the os.replace below would then destroy
+    # that input after the read had completed, silently.
+    _guard_paths(out_path, tmp, (mdd_path, src, zip_path))
     if os.path.exists(tmp):
         os.remove(tmp)
     conn = sqlite3.connect(tmp)

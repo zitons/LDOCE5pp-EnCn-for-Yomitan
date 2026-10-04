@@ -109,6 +109,15 @@ def main():
     for name, head, ln in db.execute(
             "SELECT file, substr(data, 1, 16), length(data) FROM android"):
         checked += 1
+        # NULL data is possible in a perfectly readable database: this audit checks
+        # column NAMES, not the NOT NULL constraint. Then substr() and length() both
+        # return NULL, `ln >= 100` raised TypeError, and the whole audit CRASHED
+        # instead of recording a bad blob and returning AUDIT: FAIL.
+        if head is None or ln is None:
+            bad += 1
+            if len(samples) < 5:
+                samples.append((name, None, ln))
+            continue
         if not (ln >= 100 and
                 (head[:3] == b"ID3" or head[0] == 0xFF or head[:4] == b"OggS")):
             bad += 1
