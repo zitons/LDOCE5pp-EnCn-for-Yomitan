@@ -1,24 +1,34 @@
 """Regression gate: horizontal alignment of labels and glosses.
 
-Locks in the two fixes from REVIEW D42/D43 so this class of defect cannot come
-back silently. Renders real entries from a built package in Hoshi's real context
-(its popup.css + the real wrapper + the real nested scoping of our stylesheet) and
-asserts, for every sampled entry:
+Locks in the fixes from REVIEW D42/D43 so this class of defect cannot come back
+silently. Renders real rows from a built package in Hoshi's real context (its
+popup.css, the real wrapper, the real NESTED scoping of our stylesheet) and
+asserts:
 
-  A. every `ld-act` (ACTIV) chip starts at the same left edge as the `ld-def` of
-     the sense it labels.  Before D43 this was off by 4.1px (and up to 24px on
-     `break`), because the chip followed the in-flow hung sense number while the
-     definition started at the content column.
-  B. every `ld-defcn` inside an `ld-colloexa` starts at the same left edge as the
-     English gloss / collocation line it translates.  Before D42 this was off by
-     23.3px, because `text-indent` is inherited and a BLOCK descendant applies it
-     to its own first line (T9 had only covered inline-block descendants).
+  A. every ACTIV chip inside a numbered sense starts at the same left edge as the
+     `ld-def` that sense introduces.  Before D43 the chip followed the in-flow hung
+     sense number while the definition started at the content column: 4.1px off on
+     the reported case, up to 24px elsewhere.
+  B. every `ld-defcn` inside a hanging-indent carrier computes `text-indent: 0`.
+     Before D42 it inherited the carrier's negative value and its first line was
+     pulled ~23px left.
   C. the ACTIV chip carries no `text-transform` and no `letter-spacing`, matching
      the original stylesheet.
 
+Nothing is hard-coded:
+  * repository root comes from this file's location (override --root)
+  * the jsdom generator dir is <root>/scgen_test (override --scgen / SCGEN_DIR)
+  * Hoshi's popup.css is OPTIONAL -- if absent the gate says so and still runs,
+    because these invariants are about OUR stylesheet; point --popup-css at a copy
+    for a fully faithful render.
+  * the hanging-indent carriers are parsed OUT of the stylesheet under test, so a
+    carrier added to the CSS is covered here automatically -- and the gate also
+    asserts that EVERY carrier introducing a negative text-indent appears in the
+    reset rule, i.e. that the CSS itself is complete.
+
 Usage:
     python converter/regress_alignment.py <package.zip> [--sample N] [--width W]
-Exit code 0 only if every sampled pair is aligned within TOL.
+Exit code 0 only if every check passes.
 """
 import argparse
 import json
@@ -28,170 +38,200 @@ import subprocess
 import sys
 import zipfile
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
-import ldoce2yomitan as C  # noqa: E402
-
-SCGEN = r"C:\workspace\ldoce\scgen_test"
 TOL = 0.6           # px; sub-pixel rounding is not a defect
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 
-def pick_entries(zip_path, sample):
-    """Entries that exercise both shapes, spread across banks."""
-    want_act, want_cn = [], []
+
+# --------------------------------------------------------------------------- css
+def _rules(css):
+    flat = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    return [(re.sub(r"\s+", " ", a).strip(), b)
+            for a, b in re.findall(r"([^{}]+)\{([^{}]*)\}", flat)]
+
+
+def carriers_reset_in_css(css):
+    """Carrier classes reset through a `carrier * { text-indent:0 }` rule."""
+    out = set()
+    for sel, body in _rules(css):
+        if not re.search(r"text-indent\s*:\s*0", body):
+            continue
+        for part in sel.split(","):
+            m = re.match(r'\s*\[data-sc-class="([^"]+)"\]\s*\*\s*$', part.strip())
+            if m:
+                out.add(m.group(1))
+    return out
+
+
+def carriers_with_negative_indent(css):
+    """Carrier classes that set a negative text-indent -- the ones that must be reset."""
+    out = set()
+    for sel, body in _rules(css):
+        if re.search(r"text-indent\s*:\s*-", body):
+            out |= set(re.findall(r'data-sc-class="([^"]+)"', sel))
+    return out
+
+
+# ------------------------------------------------------------------- sampling
+def _row_id(row, bank, idx):
+    """A row identity, not just an expression.
+
+    The dictionary has duplicate expression rows (the same headword appearing more
+    than once), so an expression is not a row identity: appending it twice would
+    inflate the working set while extract() kept only the first row, making the
+    sample smaller than requested and possibly validating a different homograph
+    than the one that triggered the match. `sequence` (field 7) is unique
+    dictionary-wide; fall back to bank:index when it is absent.
+    """
+    return (row[0], row[6] if len(row) > 6 else f"{bank}:{idx}")
+
+
+def pick_rows(zip_path, sample):
+    want_act, want_cn, seen_act, seen_cn = [], [], set(), set()
     z = zipfile.ZipFile(zip_path)
     banks = sorted(n for n in z.namelist() if re.fullmatch(r"term_bank_\d+\.json", n))
     step = max(1, len(banks) // 12)
     for b in banks[::step]:
-        for r in json.loads(z.read(b)):
+        for idx, r in enumerate(json.loads(z.read(b))):
             if r[4] <= 0:
                 continue
+            rid = _row_id(r, b, idx)
             body = json.dumps(r[5], ensure_ascii=False)
-            # A needs a NUMBERED sense that also carries a label chip; B needs a
-            # Chinese gloss inside a hanging-indent carrier.
-            if "ld-snum" in body and "ld-act" in body and len(want_act) < sample:
-                want_act.append(r[0])
-            if "ld-colloexa" in body and "ld-defcn" in body and len(want_cn) < sample:
-                want_cn.append(r[0])
+            if "ld-snum" in body and "ld-act" in body and rid not in seen_act \
+                    and len(want_act) < sample:
+                seen_act.add(rid)
+                want_act.append(rid)
+            if "ld-colloexa" in body and "ld-defcn" in body and rid not in seen_cn \
+                    and len(want_cn) < sample:
+                seen_cn.add(rid)
+                want_cn.append(rid)
         if len(want_act) >= sample and len(want_cn) >= sample:
             break
     return want_act, want_cn
 
 
-def extract(zip_path, words):
-    sc = {}
+def extract(zip_path, row_ids):
+    wanted = set(row_ids)
+    out = {}
     z = zipfile.ZipFile(zip_path)
     for n in z.namelist():
         if not re.fullmatch(r"term_bank_\d+\.json", n):
             continue
-        for r in json.loads(z.read(n)):
-            if r[4] > 0 and r[0] in words and r[0] not in sc:
+        for idx, r in enumerate(json.loads(z.read(n))):
+            if r[4] <= 0:
+                continue
+            rid = _row_id(r, n, idx)
+            if rid in wanted and rid not in out:
                 for it in r[5]:
                     if isinstance(it, dict) and it.get("type") == "structured-content":
-                        sc[r[0]] = it["content"]
-    return sc
+                        out[rid] = it["content"]
+    return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("zip")
-    ap.add_argument("--sample", type=int, default=25)
-    ap.add_argument("--width", type=int, default=390)
-    ap.add_argument("--css", choices=("package", "generator"), default="package",
-                    help="which stylesheet to test: the one IN the package (default, "
-                         "tests what actually ships) or the current generator output")
-    args = ap.parse_args()
-
-    act_words, cn_words = pick_entries(args.zip, args.sample)
-    words = act_words + [w for w in cn_words if w not in act_words]
-    print(f"package: {os.path.basename(args.zip)}")
-    print(f"sample : {len(act_words)} entries with ld-act, "
-          f"{len(cn_words)} with ld-colloexa+ld-defcn -> {len(words)} unique")
-    if not words:
-        print("nothing to check (no matching entries)"); return 0
-
-    sc = extract(args.zip, set(words))
-    if args.css == "package":
-        css = zipfile.ZipFile(args.zip).read("styles.css").decode("utf-8")
-        src = "the package's own styles.css"
-    else:
-        css = C.generate_css()
-        src = "generate_css() (current source)"
-    print(f"stylesheet: {src} ({len(css):,} chars)")
-    open(os.path.join(SCGEN, "_ra_sc.json"), "w", encoding="utf-8").write(
-        json.dumps(sc, ensure_ascii=False))
-    open(os.path.join(SCGEN, "_ra.css"), "w", encoding="utf-8").write(css)
-
-    open(os.path.join(SCGEN, "_ra_page.mjs"), "w", encoding="utf-8").write("""
+# ---------------------------------------------------------------------- render
+PAGE_MJS = r"""
 import fs from 'node:fs';
 import {JSDOM} from 'jsdom';
-const scByWord = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const cases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const dictCss = fs.readFileSync(process.argv[3], 'utf8');
 const width = parseInt(process.argv[4], 10);
+const popupHref = process.argv[6];
 const genMod = await import('./js/display/structured-content-generator.js');
-const NAME = 'LDOCE5pp (LM5pp)';
 let body = '';
-for (const [w, s] of Object.entries(scByWord)) {
+for (const c of cases) {
     const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>');
     const win = dom.window;
     globalThis.location = win.location;
     class F { prepareLink(n,h){n.setAttribute('href',h);} prepareScripts(){} prepareHTML(){} loadMedia(){} openMediaInTab(){} }
     const gen = new genMod.StructuredContentGenerator(new F(), win.document, win);
-    const el = gen.createStructuredContent(s, NAME);
-    el.setAttribute('data-dictionary', NAME);
+    const el = gen.createStructuredContent(c.sc, c.dict);
+    el.setAttribute('data-dictionary', c.dict);
+    // one unique data-dictionary per case: sharing a scope would let one case's
+    // stylesheet apply to every other case and silently invalidate the comparison
     body += '<div class="yomitan-glossary"><details class="glossary-group" open>'
-         +  '<summary class="dict-label"><span class="dict-name">' + NAME + '</span></summary>'
-         +  '<div data-dictionary="' + NAME + '" data-word="' + w + '">'
-         +  '<style>[data-dictionary="' + NAME + '"] {\\n' + dictCss
-         +  '\\ncolor: var(--text-color) !important;\\n}</style>'
+         +  '<summary class="dict-label"><span class="dict-name">' + c.dict + '</span></summary>'
+         +  '<div data-dictionary="' + c.dict + '" data-case="' + c.id.replace(/"/g, '') + '">'
+         +  '<style>[data-dictionary="' + c.dict + '"] {\n' + dictCss
+         +  '\ncolor: var(--text-color) !important;\n}</style>'
          +  '<div class="glossary-content">' + el.outerHTML + '</div>'
          +  '</div></details></div>';
 }
+const link = popupHref ? '<link rel="stylesheet" href="' + popupHref + '">' : '';
 fs.writeFileSync(process.argv[5],
-  '<!doctype html><html><head><meta charset="utf-8">'
-+ '<link rel="stylesheet" href="file:///C:/workspace/ldoce/_hoshi/popup.css">'
+  '<!doctype html><html><head><meta charset="utf-8">' + link
 + '<style>html,body{margin:0;background:#1e1e1e;color:#e8e8e8;font-family:system-ui,sans-serif}'
-+ `[data-word]{width:${width}px}` + '</style></head><body>' + body + '</body></html>');
++ `[data-case]{width:${width}px}` + '</style></head><body>' + body + '</body></html>');
 console.log('page ok');
-""")
+"""
 
-    open(os.path.join(SCGEN, "_ra_expr.js"), "w", encoding="utf-8").write(r"""
+EXPR_JS = r"""
 (() => {
+  const CARRIERS = __CARRIERS__;
+  // An empty selector list would make closest('') throw a SyntaxError, which
+  // cdp.mjs reports by falling back to a result OBJECT -- and iterating that
+  // yields its key strings, so the gate died with "str has no attribute get"
+  // instead of reporting the real verdict. That case is exactly a package whose
+  // stylesheet has no reset rule at all, i.e. the one this gate must fail.
+  const carrierSel = CARRIERS.length
+      ? CARRIERS.map(c => '[data-sc-class="' + c + '"]').join(',') : null;
   const out = [];
-  for (const holder of document.querySelectorAll('[data-word]')) {
-    const word = holder.dataset.word;
+  for (const holder of document.querySelectorAll('[data-case]')) {
+    const id = holder.dataset.case;
     const L = (e) => Math.round(e.getBoundingClientRect().left*100)/100;
+    const cls = (e) => e.getAttribute('data-sc-class') || '';
     const painted = (e) => { try { return e.checkVisibility({checkOpacity:true, checkVisibilityCSS:true, contentVisibilityAuto:true}); } catch(_) { return true; } };
-    const rec = {word, col: [], indent: [], style: null};
+    const rec = {id, first: [], gutter: [], indent: [], style: null};
 
-    // A. the content column must not be disturbed by the sense number.
-    //    For a sense carrying ld-snum, the first painted content child must start
-    //    exactly at that sense's own content column (left + padding-left + border).
-    //    While the number was an in-flow inline-block with a negative margin, the
-    //    first content started at the number's right edge instead (measured 70.9
-    //    vs a 75.0 column), which is the D43 defect.
+    // A. Nothing except the sense number may start LEFT of the sense's own content
+    //    column. That is the exact signature of the hung in-flow number: its
+    //    negative margin drags the whole first line left, so the content on that
+    //    line begins before the column (measured 42.42 vs 46.5 on the broken
+    //    package).
+    //    Two earlier formulations were tried and discarded:
+    //      * "the first classed child must equal the column" -- a sense whose first
+    //        node carries no data-sc-class (a plain wrapper/text) pushed the first
+    //        CLASSED child right, giving 54-170px false positives on the FIXED
+    //        package;
+    //      * "every ld-act chip must equal the ld-def column" -- several labels
+    //        flow inline side by side, so the 2nd/3rd on a line are legitimately
+    //        offset (59-233px false positives).
+    //    A chip pushed RIGHT is ordinary inline flow; only leftward intrusion is
+    //    the defect, and this formulation cannot confuse the two.
     for (const sense of holder.querySelectorAll(
              '[data-sc-class~="ld-sense"], [data-sc-class~="ld-sense-cross"], '
            + '[data-sc-class~="ld-sense-merge"], [data-sc-class~="ld-subsense"], '
            + '[data-sc-class="ld-runon"]')) {
-      const snum = sense.querySelector(':scope > [data-sc-class="ld-snum"]');
-      if (!snum) continue;
+      if (!sense.querySelector(':scope > [data-sc-class="ld-snum"]')) continue;
       const cs = getComputedStyle(sense);
-      const r = sense.getBoundingClientRect();
-      const column = Math.round((r.left + parseFloat(cs.paddingLeft)
+      const sr = sense.getBoundingClientRect();
+      const column = Math.round((sr.left + parseFloat(cs.paddingLeft)
                                  + parseFloat(cs.borderLeftWidth)) * 100) / 100;
-      // first painted child element carrying a dictionary class, not inside a
-      // nested sense (those have their own column)
-      let first = null;
-      for (const child of sense.children) {
-        if (!child.hasAttribute || !child.hasAttribute('data-sc-class')) continue;
-        if (child.getAttribute('data-sc-class') === 'ld-snum') continue;
-        if (!painted(child)) continue;
-        if (child.querySelector('[data-sc-class~="ld-sense"], [data-sc-class~="ld-subsense"]')) continue;
-        first = child; break;
+      for (const k of sense.children) {
+        if (!k.hasAttribute || !k.hasAttribute('data-sc-class')) continue;
+        if (cls(k) === 'ld-snum' || !painted(k)) continue;
+        const l = k.getBoundingClientRect().left;
+        if (l < column - 0.6) {
+          rec.gutter.push({
+            column, left: Math.round(l*100)/100,
+            delta: Math.round((l - column)*100)/100,
+            is_act: cls(k).split(/\s+/).includes('ld-act'),
+            cls: cls(k),
+            text: (k.textContent||'').trim().slice(0,24)
+          });
+        }
       }
-      if (!first) continue;
-      rec.col.push({
-        word, column, first: L(first), delta: Math.round((L(first) - column)*100)/100,
-        snum_left: L(snum), snum_position: getComputedStyle(snum).position,
-        cls: first.getAttribute('data-sc-class')
-      });
     }
 
-    // B. inherited text-indent must be dead for every descendant of a carrier.
-    //    Computing it directly avoids the "compare against which sibling?"
-    //    question, and is exactly the D42 fix.
+    // B. every ld-defcn under ANY carrier the stylesheet resets (parsed from the CSS)
     for (const defcn of holder.querySelectorAll('[data-sc-class="ld-defcn"]')) {
       if (!painted(defcn)) continue;
-      const box = defcn.closest('[data-sc-class="ld-colloexa"], [data-sc-class="ld-corpexa"], '
-                              + '[data-sc-class="ld-ex"], [data-sc-class="ld-gramexa"]');
-      if (!box) continue;
-      rec.indent.push({
-        word, textIndent: getComputedStyle(defcn).textIndent,
-        text: (defcn.textContent||'').trim().slice(0,20)
-      });
+      if (carrierSel && !defcn.closest(carrierSel)) continue;
+      rec.indent.push({textIndent: getComputedStyle(defcn).textIndent,
+                       text: (defcn.textContent||'').trim().slice(0,20)});
     }
 
-    // C. chip must not be uppercased or letter-spaced any more (original has neither)
+    // C. chip must not be uppercased or letter-spaced any more
     const anyChip = [...holder.querySelectorAll('[data-sc-class~="ld-act"]')].find(painted);
     if (anyChip) {
       const cs = getComputedStyle(anyChip);
@@ -202,57 +242,168 @@ console.log('page ok');
   }
   return JSON.stringify(out, null, 1);
 })()
-""")
+"""
 
-    page = r"C:\workspace\ldoce\_ra.html"
-    r = subprocess.run(["node", "_ra_page.mjs", "_ra_sc.json", "_ra.css", str(args.width), page],
-                       capture_output=True, text=True, encoding="utf-8", cwd=SCGEN)
+
+def build_page(rows, css, scgen, width, popup_css, out_html):
+    cases = [{"id": f"{e}||{s}", "dict": f"LDOCE5pp #{i+1}", "sc": sc}
+             for i, ((e, s), sc) in enumerate(rows.items())]
+    with open(os.path.join(scgen, "_ra_cases.json"), "w", encoding="utf-8") as f:
+        json.dump(cases, f, ensure_ascii=False)
+    with open(os.path.join(scgen, "_ra.css"), "w", encoding="utf-8") as f:
+        f.write(css)
+    with open(os.path.join(scgen, "_ra_page.mjs"), "w", encoding="utf-8") as f:
+        f.write(PAGE_MJS)
+    href = "file:///" + os.path.abspath(popup_css).replace("\\", "/") if popup_css else ""
+    r = subprocess.run(["node", "_ra_page.mjs", "_ra_cases.json", "_ra.css", str(width),
+                        out_html, href],
+                       capture_output=True, text=True, encoding="utf-8", cwd=scgen)
     if r.returncode != 0:
-        print("build failed:", r.stderr[:800]); return 2
-    r = subprocess.run(["node", "cdp.mjs", "file:///C:/workspace/ldoce/_ra.html", "_ra_expr.js"],
-                       capture_output=True, text=True, encoding="utf-8", cwd=SCGEN)
+        print("page build failed:", r.stderr[:800])
+        return False
+    return True
+
+
+def _parse_cdp(out):
+    """cdp.mjs may hand back the expression's value directly or JSON-encode it once
+    more (it depends on how the harness serialises the result). Accept either --
+    assuming the double-encoded shape crashed the gate with a TypeError instead of
+    reporting a verdict."""
+    v = json.loads(out.strip())
+    if isinstance(v, str):
+        v = json.loads(v)
+    return v
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("zip")
+    ap.add_argument("--sample", type=int, default=25)
+    ap.add_argument("--width", type=int, default=390)
+    ap.add_argument("--root", default=None, help="repository root (default: derived from this file)")
+    ap.add_argument("--scgen", default=None,
+                    help="jsdom generator dir (default <root>/scgen_test, env SCGEN_DIR)")
+    ap.add_argument("--popup-css", default=None,
+                    help="Hoshi's popup.css (default <root>/_hoshi/popup.css, env "
+                         "HOSHI_POPUP_CSS); optional")
+    ap.add_argument("--css", choices=("package", "generator"), default="package",
+                    help="stylesheet to test: the one IN the package (default, what "
+                         "actually ships) or the current generator output")
+    args = ap.parse_args()
+
+    root = os.path.abspath(args.root or ROOT)
+    scgen = os.path.abspath(args.scgen or os.environ.get("SCGEN_DIR")
+                            or os.path.join(root, "scgen_test"))
+    popup = args.popup_css or os.environ.get("HOSHI_POPUP_CSS") \
+        or os.path.join(root, "_hoshi", "popup.css")
+    if not os.path.isdir(scgen):
+        raise SystemExit(f"jsdom generator dir not found: {scgen}\n  pass --scgen or set SCGEN_DIR")
+    popup_used = popup if os.path.isfile(popup) else None
+
+    print(f"package    : {os.path.basename(args.zip)}")
+    print(f"root       : {root}")
+    print(f"scgen      : {scgen}")
+    print(f"hoshi popup: {popup_used or '(absent - rendering WITHOUT it; these invariants '
+          'concern OUR stylesheet, pass --popup-css for full fidelity)'}")
+
+    if args.css == "package":
+        css = zipfile.ZipFile(args.zip).read("styles.css").decode("utf-8")
+        src = "the package's own styles.css"
+    else:
+        sys.path.insert(0, os.path.join(root, "converter"))
+        import ldoce2yomitan as C
+        css = C.generate_css()
+        src = "generate_css() (current source)"
+    print(f"stylesheet : {src} ({len(css):,} chars)")
+
+    reset = carriers_reset_in_css(css)
+    neg = carriers_with_negative_indent(css)
+    uncovered = sorted(neg - reset)
+    print(f"\ncarriers with a negative text-indent ({len(neg)}): {sorted(neg)}")
+    print(f"carriers reset through `carrier *`   ({len(reset)}): {sorted(reset)}")
+    if uncovered:
+        print(f"  [FAIL] not reset, so their block descendants inherit the indent: {uncovered}")
+    else:
+        print("  [OK] every carrier is covered by the descendant reset")
+
+    act_rows, cn_rows = pick_rows(args.zip, args.sample)
+    ids = act_rows + [r for r in cn_rows if r not in act_rows]
+    print(f"\nsample     : {len(act_rows)} row(s) with ld-snum+ld-act, "
+          f"{len(cn_rows)} with ld-colloexa+ld-defcn -> {len(ids)} unique row id(s)")
+    if not ids:
+        print("nothing to check")
+        return 1
+    rows = extract(args.zip, set(ids))
+    print(f"extracted  : {len(rows)} row(s), keyed by (expression, sequence)")
+    if len(rows) < len(ids):
+        print(f"  [!] {len(ids) - len(rows)} sampled row id(s) did not round-trip")
+
+    out_html = os.path.join(root, "_ra.html")
+    if not build_page(rows, css, scgen, args.width, popup_used, out_html):
+        return 2
+    # Which carriers to test in the DOM: the ones the stylesheet resets, or -- when
+    # it resets none (the very case this gate must fail) -- the ones that introduce
+    # a negative indent, so check B still inspects the right nodes.
+    check_carriers = reset or neg
+    with open(os.path.join(scgen, "_ra_expr.js"), "w", encoding="utf-8") as f:
+        f.write(EXPR_JS.replace("__CARRIERS__",
+                                json.dumps(sorted(check_carriers), ensure_ascii=False)))
+    r = subprocess.run(["node", "cdp.mjs", "file:///" + out_html.replace("\\", "/"), "_ra_expr.js"],
+                       capture_output=True, text=True, encoding="utf-8", cwd=scgen)
     if r.returncode != 0:
-        print("cdp failed:", r.stderr[:800]); return 2
+        print("render failed:", r.stderr[:800])
+        return 2
 
-    rows = json.loads(json.loads(r.stdout.strip()))
-    cols = [c for row in rows for c in row.get("col", [])]
-    indents = [i for row in rows for i in row.get("indent", [])]
-    styles = [row["style"] for row in rows if row.get("style")]
-
-    bad_col = [c for c in cols if abs(c["delta"]) > TOL]
+    recs = _parse_cdp(r.stdout)
+    firsts = [c for rec in recs for c in rec.get("first", [])]
+    gutters = [c for rec in recs for c in rec.get("gutter", [])]
+    indents = [i for rec in recs for i in rec.get("indent", [])]
+    styles = [rec["style"] for rec in recs if rec.get("style")]
+    bad_gutter = list(gutters)
+    bad_gutter_act = [c for c in gutters if c.get("is_act")]
     bad_indent = [i for i in indents if i["textIndent"] != "0px"]
     bad_style = [s for s in styles
                  if s["textTransform"] != "none" or s["letterSpacing"] not in ("normal", "0px")]
 
-    print(f"\nA. numbered sense: first content child at its own content column")
-    print(f"   {len(cols)} sense(s) checked, {len(bad_col)} not on the column")
-    for c in bad_col[:10]:
-        print(f"     {c['word']:18} column={c['column']} first<{c['cls']}>={c['first']} "
-              f"delta={c['delta']}px  (snum left={c['snum_left']} {c['snum_position']})")
-    if cols:
-        good = cols[0]
-        print(f"   sample ok: {good['word']} column={good['column']} first={good['first']} "
-              f"delta={good['delta']}px snum={good['snum_position']}")
-
-    print(f"\nB. ld-defcn inside a hanging-indent carrier: computed text-indent must be 0")
-    print(f"   {len(indents)} node(s) checked, {len(bad_indent)} still inheriting an indent")
+    print(f"\nA. nothing but the number may start LEFT of the sense content column")
+    print(f"   {len(gutters)} child node(s) intrude ({len(bad_gutter_act)} of them ld-act chips)")
+    for c in bad_gutter[:10]:
+        flag = "ld-act" if c.get("is_act") else c.get("cls")
+        print(f"     {flag:12} left={c['left']} column={c['column']} "
+              f"delta={c['delta']}px  {c['text']!r}")
+    print(f"\nB. ld-defcn under any reset carrier: computed text-indent must be 0")
+    print(f"   {len(indents)} node(s) checked, {len(bad_indent)} still inheriting")
     for i in bad_indent[:8]:
-        print(f"     {i['word']:18} text-indent={i['textIndent']}  {i['text']!r}")
-
-    print(f"\nC. ld-act chip carries no uppercase / no letter-spacing")
+        print(f"     text-indent={i['textIndent']}  {i['text']!r}")
+    print(f"\nC. ld-act chip: no uppercase, no letter-spacing")
     print(f"   {len(styles)} chip(s) checked, {len(bad_style)} wrong")
     for s in bad_style[:4]:
         print(f"     text-transform={s['textTransform']} letter-spacing={s['letterSpacing']}")
     if styles:
         print(f"   sample: display={styles[0]['display']} font-size={styles[0]['fontSize']} "
-              f"text-transform={styles[0]['textTransform']} letter-spacing={styles[0]['letterSpacing']}")
+              f"text-transform={styles[0]['textTransform']} "
+              f"letter-spacing={styles[0]['letterSpacing']}")
 
-    ok = bool(cols) and bool(indents) and not (bad_col or bad_indent or bad_style)
-    if not cols or not indents:
-        print("\n[!] sample too small to be meaningful -- widen it")
-        ok = False
-    print("\n" + ("ALIGNMENT GATE: PASS" if ok else "ALIGNMENT GATE: FAIL"))
-    return 0 if ok else 1
+    problems = []
+    if uncovered:
+        problems.append(f"{len(uncovered)} carrier(s) not reset in the CSS")
+    if not indents:
+        problems.append("sample too small to be meaningful -- widen it")
+    if bad_gutter:
+        problems.append(f"{len(bad_gutter)} node(s) start left of the sense content column "
+                        f"({len(bad_gutter_act)} ld-act)")
+    if bad_indent:
+        problems.append(f"{len(bad_indent)} ld-defcn still inheriting an indent")
+    if bad_style:
+        problems.append(f"{len(bad_style)} chip(s) still uppercase/letter-spaced")
+    print()
+    if problems:
+        for p in problems:
+            print("  -", p)
+        print("ALIGNMENT GATE: FAIL")
+        return 1
+    print("ALIGNMENT GATE: PASS")
+    return 0
 
 
 if __name__ == "__main__":
