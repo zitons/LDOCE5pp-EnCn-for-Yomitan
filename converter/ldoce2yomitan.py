@@ -2528,7 +2528,18 @@ def generate_css():
 [data-sc-class="ld-gram"] { color:var(--ld-pos) !important; }
 [data-sc-class="ld-geo"] { color:var(--ld-geo); }
 [data-sc-class="ld-register"] { color:var(--ld-reg); }
-[data-sc-class="ld-act"] { color:var(--ld-frame); font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+/* Matched to the ORIGINAL, which displays ACTIV as an inline-block chip:
+   .ldoceEntry .ACTIV { font-weight:bold; font-style:normal; font-size:80%;
+       border:1.5px solid #E08080; color:#E08080; padding:0px 3px;
+       margin:0 0.5em; display:inline-block; line-height:1.2em; }
+   The original has NO text-transform and NO letter-spacing -- we had added
+   both, which is why our labels were the wrong width and case. The earlier
+   `.ldoceEntry .ACTIV { display:none }` in that same file is overridden by
+   this later rule, so the label IS meant to be visible (settles REVIEW D9). */
+[data-sc-class="ld-act"] {
+  color:var(--ld-frame); font-weight:700; font-style:normal;
+  font-size:80%; line-height:1.2em; padding:0 3px;
+}
 [data-sc-class="ld-synmark"] { font-size:.72em; color:var(--ld-reg); font-weight:700; }
 [data-sc-class="ld-actcn"] { font-size:.8em; color:var(--ld-frame); margin-left:var(--ld-chip-gap); }
 [data-sc-class="ld-field"], [data-sc-class="ld-fieldxx"] { display:inline-block; text-indent:0; font-size:.78em; font-weight:700; color:var(--ld-field) !important; letter-spacing:.4px; margin-right:var(--ld-chip-gap); }
@@ -2564,16 +2575,27 @@ def generate_css():
    when there is something to put in it -- 49% of senses have no number, and the
    empty gutter wasted ~5% of the popup width on every one of them.
    `~=` is required because that class value is then multi-token. */
-[data-sc-class~="ld-sense"], [data-sc-class~="ld-sense-cross"], [data-sc-class~="ld-sense-merge"] { display:block; margin:0 0 7px; }
+[data-sc-class~="ld-sense"], [data-sc-class~="ld-sense-cross"], [data-sc-class~="ld-sense-merge"] { display:block; margin:0 0 7px; position:relative; }   /* containing block for the absolutely placed ld-snum */
 [data-sc-class~="ld-sense-n"] { padding-left:var(--ld-gutter); }
-[data-sc-class="ld-subsense"] { display:block; margin:2px 0 3px; padding-left:1.6em; }
+[data-sc-class="ld-subsense"] { display:block; margin:2px 0 3px; padding-left:1.6em; position:relative; }
 [data-sc-class="ld-runon"] { display:block; margin:2px 0 4px; padding-left:var(--ld-gutter); color:var(--ld-text2); }
 [data-sc-class="ld-phrventry"] { display:block; border-left:3px solid rgba(47,156,110,.45); border-left:3px solid color-mix(in srgb, var(--ld-frame) 45%, transparent); /* static fallback, scheme A */; margin:6px 0; padding:2px 0 2px .7em; }
-[data-sc-class="ld-snum"] { display:inline-block; text-indent:0; min-width:1.35em; margin-left:calc(-1 * var(--ld-gutter)); font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums; }
+/* The number is taken OUT OF FLOW and pinned in the gutter. While it was an
+   in-flow inline-block with a negative margin, the line it sat on was shifted
+   left and the ACTIV chips that follow it inherited that geometry, ending up
+   4.1px left of the ld-def column (measured). Absolute placement keeps the
+   number beside the first line and lets the text column start at padding-left
+   for chips and definitions alike. The original never hangs its number at all
+   (`span.sensenum{margin:0 3px 0 5px}`, plain inline). */
+[data-sc-class="ld-snum"] {
+  position:absolute; left:0; top:0; text-indent:0; min-width:1.35em;
+  font-weight:700; color:var(--ld-frame); font-variant-numeric:tabular-nums;
+}
 /* 5,742 subsenses DO carry a number. Their own indent (1.6em) is smaller than
    the sense gutter (1.9em), so an unscoped ld-snum would hang 0.3em past the
    subsense box and land on the parent definition text. Scope the hang. */
-[data-sc-class="ld-subsense"] [data-sc-class="ld-snum"] { margin-left:calc(-1 * var(--ld-gutter-sub)); }
+/* The subsense is position:relative too, so left:0 already pins its number
+   inside its own 1.6em indent -- the old -1.6em hang is unnecessary. */
 
 /* ---- definitions and translations -------------------------------------- */
 [data-sc-class="ld-def"] { display:block; margin:1px 0 1px; font-size:1.02em; font-weight:500; }
@@ -2596,6 +2618,23 @@ def generate_css():
 [data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; }
+/* `text-indent` is INHERITED, and any descendant that starts a block container
+   applies the inherited value to its OWN first line. T9 fixed the
+   display:inline-block half; BLOCK descendants were still uncovered, so
+   `ld-defcn` inside `ld-colloexa` (padding-left:23.28px; text-indent:-23.28px)
+   was pulled 23px left of the collocation it belongs to (measured 46.5 vs
+   69.8) and the Chinese collocation gloss no longer lined up.
+   Nothing inside a hanging-indent block wants a first-line indent, so reset it
+   for every descendant. The original needs no such rule because it uses NO
+   negative text-indent anywhere (684 rules, zero occurrences) -- its indents
+   are all margin-left. */
+[data-sc-class="ld-ex"] *, [data-sc-class="ld-ex-good"] *, [data-sc-class="ld-ex-bad"] *,
+[data-sc-class="ld-gramexa"] *, [data-sc-class="ld-colloexa"] *,
+[data-sc-class="ld-corpexa"] *, [data-sc-class="ld-corpexa-corpus"] *,
+[data-sc-class="ld-corpexa-dics"] *, [data-sc-class="ld-corpexa-encyc"] *,
+[data-sc-class="ld-corpexa-online"] *, [data-sc-class="ld-corpexa-phrases"] * {
+  text-indent: 0;
+}
 [data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }

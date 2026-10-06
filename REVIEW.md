@@ -1493,3 +1493,161 @@ validate_audio_db.py（复现 Hoshi 的 SQL 与排序规则）  25/25 词命中
 - `v2026.09.13-audio` Release 已创建但**附件为空**（上传被主动中断），
   本地 `android.db` 完整可补传。
 
+---
+
+## D42【中】中文搭配释义被继承的负 `text-indent` 拉左 23px ✅ 已修复
+
+> 触发来源：用户在 Hoshi 里搜 `item`，截图圈出 `一件衣服/家具/珠宝等` —— 它和上方英文
+> 搭配行**对不齐**（用户原话：「这已经对不上了」，并明确纠正「不是重叠而是错位」）。
+
+### 根因（实测，非推断）
+
+`ld-colloexa` 用悬挂缩进：
+
+```css
+[data-sc-class="ld-colloexa"] { display:block; padding-left:1.6em; text-indent:-1.6em; }
+```
+
+`text-indent` **是继承属性**，而 `ld-defcn`（中文搭配释义）是 **`display:block`** —— 块级
+元素同样会开启新的块容器，同样把继承来的负值用到**自己的首行**。祖先链实测：
+
+```
+<div ld-defcn   > display=block  text-indent=-23.28px  pad-left=0px       ← 被拉左
+<div ld-colloexa> display=block  text-indent=-23.28px  pad-left=23.28px   ← 载体
+```
+
+左边缘实测：`ld-collo` **58.6** / `ld-gloss` **69.8** / `ld-defcn` **46.5** → **左出 23.3px**。
+
+### 为什么 T9 没挡住
+
+T9（= HANDOVER 坑 33）的修法是「给所有 `display:inline-block` 规则加 `text-indent:0`」。
+它只覆盖了**机制的一半**：inline-block 会开新块容器，**块级也会**。`ld-defcn`/`ld-def`/
+`ld-gloss` 等从来没有 `text-indent:0`。
+
+### 修法
+
+给 11 个负 `text-indent` 载体的**所有后代**重置（`*` 不含自身，载体的首行缩进不受影响）：
+
+```css
+[data-sc-class="ld-ex"] *, [data-sc-class="ld-colloexa"] *, [data-sc-class="ld-corpexa"] *, … {
+  text-indent: 0;
+}
+```
+
+### 验证（真 Chrome + Hoshi 真实 popup.css + 真实嵌套作用域）
+
+```
+修前  defcn=46.5  gloss=69.8   delta = -23.3px
+修后  defcn=69.8  gloss=69.8   delta =   0.0px   text-indent=0px
+```
+
+### 追根：这个缺陷类是我们自造的
+
+拿到**完整**原版样式表（684 条规则）后核对 —— **负 `text-indent` 出现 0 次**。原版所有
+缩进都用 `margin-left`：
+
+```css
+.ldoceEntry .Sense { display:block; margin-left:20px; border-top:1px solid hsla(0,0%,50%,.15); }
+.ldoceEntry .COLLO { font-weight:bold; margin-left:20px; }
+.ldoceEntry .ColloExa { display:block; }
+.Sense .exaGroup .exa { margin-left:15px; }
+.ldoceEntry .Collocate, .ldoceEntry .Exponent { display:block; margin:15px 0 0 6px; }
+```
+
+**悬挂缩进是我们的发明**，因此整个「错位」缺陷类都是自造的。本次按最小改动打补丁（后代
+重置）保住了现有观感；**若将来重做排版，应优先回到 `margin-left` 方案**，而不是继续给
+自造机制打补丁。另外原版用 `.Sense` 的 `border-top` 做义项分隔 —— 这正是用户当初要的
+「结构框架」的原生做法。
+
+---
+
+## D43【中】ACTIV 标签芯片与它所标注的释义错位 4.1px ✅ 已修复
+
+> 触发来源：用户搜 `break`，截图圈出 `CHANGE CHEMICALLY` / `CHANGE FROM ONE THING TO
+> ANOTHER`：「这两个也错了位，你应该研究原词典是怎么做的」。
+
+### 根因（实测）
+
+`ld-act` 是 `display:inline-block`，**留在文档流里**；而义项编号 `ld-snum` 用
+`margin-left:calc(-1*var(--ld-gutter))` 悬挂，**同样留在流里**。于是编号所在行的几何被
+紧随其后的芯片继承，而 `ld-def` 是块级、从正文列开始 —— 两者差 4.1px：
+
+```
+# 现状（shipped）
+chip display=inline-block   snum position=static  margin-left=-28.5px
+   ld-snum   left= 18.0
+   ld-act[0] left= 70.9      ← 比释义列左出 4.1px
+   ld-def    left= 75.0
+=> first chip vs ld-def: -4.1px
+```
+
+`break` 词条里同族的例子更明显：`ld-act[0]` 46.5 / `ld-def` 70.5 → **24px**。
+
+### 原版怎么做（用户要求先研究）
+
+**完整原版样式表 + 源 HTML 双向核对**：
+
+```html
+<div class="newline Sense" id="hour__7">
+  <a href="entry://ACTIV:TIME-WHAT TIME IS IT"><span class="ACTIV">TIME/WHAT TIME IS IT</span></a>
+  <span class="DEF …">used to give the time in official or military reports…</span>
+```
+
+1. **ACTIV 是 `Sense` 的第一个子元素**；
+2. **`DEF` 是 `<span>`（内联）** —— 标签与释义**接在同一行**流动；我们把 `ld-def` 做成了
+   块级，标签就被孤立；
+3. **原版编号根本不悬挂**：`span.sensenum { margin-right:5px; margin-left:3px }`，普通内联，
+   所以不存在「芯片继承悬挂行几何」这个问题。
+
+### 修法（候选逐个实测后选定）
+
+| 候选 | 芯片 vs 释义 | 结论 |
+|---|---:|---|
+| 现状 | **-4.1px** | 错位 |
+| **编号改绝对定位悬挂**（选定） | **0px** | ✅ 编号仍在悬挂位（left=18），芯片回到正文列 |
+| 芯片改块级 | 0px | 可达标，但每个标签各占一行 |
+| 芯片加左外边距 | **+18.7px** | ❌ 更糟 |
+
+采用**编号绝对定位**（`position:absolute; left:0; top:0`，义项容器加 `position:relative`）：
+把编号**移出文档流**，正文列不再被它扰动，芯片与释义同列；编号仍停在首行旁的悬挂位。
+`ld-subsense` 同样处理，原来那条 `-1.6em` 的 subsense 特例随之删除。
+
+### 同时按原版修正芯片自身（这条是 D9 的更正）
+
+完整原版样式表里，`.ldoceEntry .ACTIV{display:none}` **被同一文件后面一条同优先级规则
+覆盖**，最终形态：
+
+```css
+.ldoceEntry .ACTIV { font-weight:bold; font-style:normal; font-size:80%;
+    border:1.5px solid #E08080; color:#E08080; padding:0px 3px;
+    margin:0 0.5em; display:inline-block; line-height:1.2em; }
+```
+
+⇒ **D9 的歧义收敛：原版是「显示」ACTIV 的**（`LM5style_show.css` 只有 36 字节、
+`LM5Switch.js` 无显示分支，所以与开关无关）。并且原版 ACTIV **没有 `text-transform`、
+没有 `letter-spacing`** —— 我们两条都加了，导致标签**字宽与大小写都不是原版的**。
+本次按原版改为 `font-size:80%; line-height:1.2em; padding:0 3px`，去掉大写与字距
+（芯片高度参与行盒计算，这几项直接影响对齐）。
+
+### 验证
+
+```
+[break] ACTIV 芯片  chip1=75  chip2=75  def=75
+        delta chip1-def = 0px   delta chip2-def = 0px
+        text-transform = none      （原版无大写）
+        编号 '35' left=18  position=absolute（仍在悬挂位）
+
+[item]  中文搭配    defcn=69.8  gloss=69.8  delta = 0px
+
+ALL ALIGNMENT CHECKS PASS
+```
+
+### 教训
+
+**这一轮我作废了两次实验**：把多个候选 CSS 放进同一页且都用同一个
+`[data-dictionary="…"]` 作用域，导致每条规则命中所有对照片、同优先级下最后一条全局胜出
+（症状是"所有变体结果完全相同"）。**对照组必须出现不同的数字，否则实验无效** —— 见
+HANDOVER 坑 74。另有两个测量陷阱同样造成过假阳性：元素盒"重叠"判据对内联兄弟必然误报；
+收起的 `<details>` 内容保留布局但不绘制（需 `checkVisibility({contentVisibilityAuto:true})`
+过滤）。
+
