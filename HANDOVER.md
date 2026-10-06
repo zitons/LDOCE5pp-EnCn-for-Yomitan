@@ -124,8 +124,8 @@ db 内 expression 全部属于词典、查询 0.063 ms。
   尚未在 Android 设备上实际导入播放。这是当前最大缺口。
 - 未含例句音频（`exaProns`，86,450 个）—— 按需求只做词头发音。
 - 未含 `.spx`（1,842 个）—— Hoshi 不支持，转码收益 <1%。
-- `v2026.09.13-audio` Release 已建但**附件为空**（上传被主动中断），
-  本地 `android.db` 完整，随时可补传。
+- **尚未发布 Release**：早先那次音频 Release 已不存在（上传被主动中断后清理），
+  当前 Releases 列表里只有词典包。本地 `android.db` 完整（sha256 `45f1b310…`），随时可发。
 
 ---
 
@@ -261,15 +261,16 @@ CSS 118 → 120 类，**无类被删除**。全量构建 665 s，行数/词条/�
 
 ### 交付物清单
 
-**最新一轮修复（2026-09-14 · N1–N3）的成品在 `yomitan_fixed/2026-09-14-n1-n3/`，
-尚未搬进 `yomitan_full/`、也未发布 Release。** 已发布到 GitHub Release 的是 09.13。
+**最新一轮修复（2026.10.03 · 排版错位 D42/D43）的成品在 `yomitan_fixed/2026-09-15-align/`，
+已搬进 `yomitan_full/` 并发布 Release `v2026.10.03`。** 上一版 09.13 仍在 Release 里（内容相同，只差 CSS）。
 
 | 路径 | 说明 | 状态 |
 |---|---|---|
-| `yomitan_fixed\2026-09-14-n1-n3\bilingual\LDOCE5pp_Yomitan_2026.09.14.zip` | **最新双语成品**（N1–N3 修复，63,737,646 B；491,866 行官方 Schema 全通过 + 真导入器验收） | ✅ 最新 |
-| `yomitan_fixed\2026-09-14-n1-n3\mono\LDOCE5pp_Yomitan_2026.09.14_EN.zip` | **最新纯英文成品**（零 CJK） | ✅ 最新 |
-| `C:\workspace\ldoce\yomitan_audio\android.db` | **Hoshi Reader 本地音频库**（436.4 MiB，92,544 行索引 / 91,559 条音频，覆盖 72.75%）。**不入库**；`v2026.09.13-audio` Release 已建但附件为空，本地完整 | ✅ 待发布 |
-| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.13.zip` + `_EN.zip` | **已发布**的双语/纯英文包（Release `v2026.09.13`，sha256 `8544ed4c…` / `73662eab…`） | 📦 已发布 |
+| `yomitan_full\LDOCE5pp_Yomitan_2026.10.03.zip` | **最新双语成品**（D42/D43 对齐修复；245,933 行；63,738,529 B，sha256 `5839816d…`） | 📦 已发布 |
+| `yomitan_full\LDOCE5pp_Yomitan_2026.10.03_EN.zip` | **最新纯英文成品**（零 CJK；54,117,455 B，sha256 `f921c73e…`） | 📦 已发布 |
+| `yomitan_fixed\2026-09-14-n1-n3\{bilingual,mono}\LDOCE5pp_Yomitan_2026.09.14[_EN].zip` | 上一轮（N1–N3）成品；与本版**逐成员对比 29 个里 27 个完全相同**，只差 `styles.css` 与 revision 字符串 | 🗄 被取代 |
+| `C:\workspace\ldoce\yomitan_audio\android.db` | **Hoshi Reader 本地音频库**（436.4 MiB，92,544 行索引 / 91,559 条音频，覆盖 72.75%）。**不入库、尚未发布**（本地完整，随时可传） | ✅ 待发布 |
+| `C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.13.zip` + `_EN.zip` | 09.13 发布版（sha256 `8544ed4c…` / `73662eab…`） | 🗄 被取代 |
 | `C:\workspace\ldoce\LDOCE5.zip` | **参照成品**（同一本 LDOCE5++ 的另一个转换版，作者 lng）。**无 styles.css 却有结构** —— 靠原生 `<ol>/<li>` + 嵌套 `<ul><li>` + 4 种行内样式。列表语义改造的正解来源 | 📖 只读参照 |
 | `C:\workspace\ldoce\_MODE_COMPARE.html` | **双模式对比页**：左栏 Yomitan（样式表作用域 `.y`）、右栏 Anki（无样式），同词条并排。浏览器直接打开即可验收 | ✅ 验收工具 |
 | `C:\workspace\ldoce\converter\ldoce2yomitan.py` | **转换器，唯一事实来源**（单文件，无包依赖结构） | ✅ 最终版 |
