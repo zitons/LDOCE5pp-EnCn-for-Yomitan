@@ -1490,8 +1490,8 @@ validate_audio_db.py（复现 Hoshi 的 SQL 与排序规则）  25/25 词命中
 - **未做真机 Hoshi 导入验收** —— 格式依据是源码 + 本地 SQL 复现，尚未在
   Android 设备上实际导入播放。这是本项最大缺口。
 - 未含例句音频（`exaProns` 86,450 个）、未含 `.spx`（1,842 个，Hoshi 不支持）。
-- `v2026.09.13-audio` Release 已创建但**附件为空**（上传被主动中断），
-  本地 `android.db` 完整可补传。
+- **尚未发布 Release** —— 早先那次音频 Release 已不存在（上传中断后清理），
+  当前 Releases 列表里只有词典包。本地 `android.db` 完整（sha256 `45f1b310…`）可随时发。
 
 ---
 

@@ -10,9 +10,15 @@
 **已发布成品**（双语 ~61 MB / 纯英文 ~52 MB）——从 Release 下载，不入库
 （GitHub 大包推送会在约 19 秒后被链路重置，实测非偶发）：
 
-> **[⬇ 双语 `LDOCE5pp_Yomitan_2026.09.13.zip`](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/download/v2026.09.13/LDOCE5pp_Yomitan_2026.09.13.zip)**
-> **[⬇ 纯英文 `LDOCE5pp_Yomitan_2026.09.13_EN.zip`](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/download/v2026.09.13/LDOCE5pp_Yomitan_2026.09.13_EN.zip)**
+> **[⬇ 双语 `LDOCE5pp_Yomitan_2026.10.03.zip`](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/download/v2026.10.03/LDOCE5pp_Yomitan_2026.10.03.zip)**
+> **[⬇ 纯英文 `LDOCE5pp_Yomitan_2026.10.03_EN.zip`](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/download/v2026.10.03/LDOCE5pp_Yomitan_2026.10.03_EN.zip)**
 > 全部版本见 [Releases](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases)。
+>
+> 2026.10.03 修的是**排版错位**（中文搭配释义被继承的负 `text-indent` 拉左 23px、
+> ACTIV 标签芯片与它标注的释义差 4.1px），并让 ACTIV 芯片样式回归原版。
+> **与 09.14 逐成员对比：25 个 term bank + term_meta_bank + tag_bank 全部逐字节相同，
+> 只有 `styles.css` 变了** —— 纯 CSS 改动，内容零变化。详见
+> [Release 说明](https://github.com/zitons/LDOCE5pp-EnCn-for-Yomitan/releases/tag/v2026.10.03)。
 
 | | |
 |---|---|
