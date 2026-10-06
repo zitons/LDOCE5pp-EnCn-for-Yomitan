@@ -9,7 +9,8 @@ Checks
   2. tables present with the exact column names Hoshi selects
   3. integrity: PRAGMA integrity_check, foreign-key style orphan check both ways
   4. Hoshi's source discovery query returns its expected set
-  5. every entry's blob is a real audio payload (ID3 or MPEG frame sync), not empty
+  5. every entry's blob is a real audio payload (ID3 / MPEG frame sync / OggS),
+     not empty
   6. no duplicate (expression, source) rows that would shadow each other
   7. expression coverage against the shipped dictionary package
   8. the exact query Hoshi runs is fast (it runs on every lookup)
@@ -37,14 +38,18 @@ def main():
                                      r"\LDOCE5pp_Yomitan_2026.09.13.zip")
     args = ap.parse_args()
 
+    if not os.path.isfile(args.db):
+        raise SystemExit(f"no such database: {args.db}")
     fails = []
-    db = sqlite3.connect(args.db)
+    # read-only: an audit must never be able to modify the artifact, and a
+    # plain connect() would silently CREATE an empty db on a typo'd path
+    db = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
     size = os.path.getsize(args.db)
     print(f"db      : {args.db}")
     print(f"size    : {size:,} B ({size/1048576:.1f} MiB)")
     print(f"name    : {os.path.basename(args.db)}  "
-          f"({'ok' if args.db.endswith('.db') else 'WRONG - must end .db'})")
-    if not args.db.endswith(".db"):
+          f"({'ok' if args.db.lower().endswith('.db') else 'WRONG - must end .db'})")
+    if not args.db.lower().endswith(".db"):
         fails.append("extension")
 
     print("\n[1] schema")
@@ -80,7 +85,11 @@ def main():
     print(f"   entries with no blob : {orphan_e}")
     print(f"   blobs never referenced: {orphan_a}")
     if orphan_e:
-        fails.append("orphan entries")
+        fails.append(f"{orphan_e} orphan entries (matched but unplayable)")
+    if orphan_a:
+        # dead weight -- pointless bulk in a 0.4-1.6 GB file; the merger refuses
+        # to publish a db with these, so the audit must fail on one too
+        fails.append(f"{orphan_a} unreferenced blob pair(s)")
 
     print("\n[4] Hoshi source discovery")
     srcs = [r[0] for r in db.execute(
@@ -90,16 +99,33 @@ def main():
     if not srcs:
         fails.append("no discoverable sources")
 
-    print("\n[5] blob payload sanity")
-    bad, checked = 0, 0
-    for name, data in db.execute("SELECT file, data FROM android LIMIT 4000"):
+    print("\n[5] blob payload sanity (EVERY blob, 16-byte prefix)")
+    # substr() on a blob keeps the read proportional to the prefix, so this is
+    # affordable over the whole table -- the previous first-4000-in-rowid-order
+    # sample covered 1.9% of the merged db while the docstring said "every".
+    # OggS accepted: Hoshi serves .ogg/.opus, which both start with it; the old
+    # ID3/MPEG-only check would have false-FAILED a future ogg-bearing source.
+    bad, checked, samples = 0, 0, []
+    for name, head, ln in db.execute(
+            "SELECT file, substr(data, 1, 16), length(data) FROM android"):
         checked += 1
-        if not data or len(data) < 100:
+        # NULL data is possible in a perfectly readable database: this audit checks
+        # column NAMES, not the NOT NULL constraint. Then substr() and length() both
+        # return NULL, `ln >= 100` raised TypeError, and the whole audit CRASHED
+        # instead of recording a bad blob and returning AUDIT: FAIL.
+        if head is None or ln is None:
             bad += 1
+            if len(samples) < 5:
+                samples.append((name, None, ln))
             continue
-        if not (data[:3] == b"ID3" or data[0] == 0xFF):
+        if not (ln >= 100 and
+                (head[:3] == b"ID3" or head[0] == 0xFF or head[:4] == b"OggS")):
             bad += 1
+            if len(samples) < 5:
+                samples.append((name, bytes(head[:4]), ln))
     print(f"   checked {checked:,} blobs, not-recognisable-as-audio: {bad}")
+    for s in samples:
+        print(f"      {s}")
     if bad:
         fails.append("bad blobs")
     # aggregate: total payload size

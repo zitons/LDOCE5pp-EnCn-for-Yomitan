@@ -65,8 +65,9 @@ AUDIO_ATTR = re.compile(
     re.I)
 CLASS = re.compile(r'class="([^"]*)"', re.I)
 HEAD_ANY = re.compile(r'class="([^"]*\bHead\b[^"]*)"', re.I)
+SPAN_TAG = re.compile(r'<(/?)span\b[^>]*>', re.I)
 
-SRC_AUDIO_SOURCE = {"ameProns": "ldoce_ame", "breProns": "ldoce_bre"}
+SRC_AUDIO_SOURCE = {"ameprons": "ldoce_ame", "breprons": "ldoce_bre"}
 
 SCHEMA = """
 CREATE TABLE entries (
@@ -98,7 +99,12 @@ def head_region(blob):
     region = blob[m.start():] if m else blob
     for marker in ('class="Sense"', 'class="DEF"', 'class="lm5pp_popup"'):
         idx = region.find(marker)
-        if idx > 0:
+        if idx >= 0:
+            # >= 0, not > 0: a record with NO Head block has no headword audio,
+            # so the region must be empty. With `> 0` the marker-at-position-0
+            # case fell through and the WHOLE body was scanned for audio links.
+            # (Measured on this source: 0 such records carry ame/bre audio, so
+            # this is intent alignment, not a data fix.)
             return region[:idx]
     return region
 
@@ -112,12 +118,21 @@ def audio_in(region):
         if not h:
             continue
         d, name = h.group(1), h.group(2)
-        out.append((SRC_AUDIO_SOURCE[d], name))
+        # AUDIO_ATTR is re.I, so d may arrive as 'AMEProns' etc.; normalise
+        # instead of crashing on a dict lookup (no such variant seen yet).
+        sid = SRC_AUDIO_SOURCE.get(d.lower())
+        if sid is None:
+            continue
+        out.append((sid, name))
     return out
 
 
-def scan_source(src, limit=None, progress_every=50000):
-    """key -> {source_id: filename} for every source record with headword audio."""
+def scan_source(src, progress_every=50000):
+    """key -> {source_id: filename} for every source record with headword audio.
+
+    Scans the WHOLE source regardless of --limit: the limit cuts the dictionary
+    expression list (step [2/5]), and a half-scanned source would silently
+    change which record wins `variants.setdefault` for a form."""
     mapping = {}
     variants = {}
     seen_records = 0
@@ -153,8 +168,6 @@ def scan_source(src, limit=None, progress_every=50000):
                         for form in key_forms(key, blob):
                             variants.setdefault(form, first)
                         with_audio += 1
-                    if limit and records >= limit:
-                        break
             buf = []
             seen_records += 1
             if seen_records % progress_every == 0:
@@ -176,6 +189,43 @@ def scan_source(src, limit=None, progress_every=50000):
     return variants
 
 
+def hwd_text(blob):
+    """Full text of the HWD span, nested <span>s included.
+
+    The previous regex `(.*?)</span>` stopped at the first inner close, and 51%
+    of HWD spans carry a nested hyphenation dot (`class="HYP"`), so their derived
+    form was TRUNCATED ('18-wheel' + <span class="HYP">'·' -> "18-wheel·"). A
+    form containing the middle dot can never equal a dictionary expression, so
+    records with hyphenated headwords could only match through their other key
+    forms.
+
+    The body is sliced from the open tag to the MATCHING close -- one pass with
+    a depth counter that only FINDS the close, never advances the text cursor
+    past nested content. (An intermediate version sliced from the last inner
+    close instead, which yielded the headword's SUFFIX -- 'car·rot' -> 'rot' --
+    and those suffix forms then hijacked `variants`, assigning 2,091 expressions
+    another word's audio. Caught by diffing the rebuilt db against the old one.)"""
+    m = re.search(r'class="[^"]*\bHWD\b[^"]*"', blob)
+    if not m:
+        return None
+    gt = blob.find('>', m.end())
+    if gt < 0:
+        return None
+    depth, j = 1, gt + 1
+    while True:
+        n = SPAN_TAG.search(blob, j)
+        if not n:
+            return None
+        if n.group(1) == '/':
+            depth -= 1
+            if depth == 0:
+                raw = blob[gt + 1:n.start()]
+                return C.strip_invisible(re.sub(r'<[^>]+>', '', raw)).strip()
+        else:
+            depth += 1
+        j = n.end()
+
+
 def key_forms(key, blob):
     """Candidate expressions a dictionary row might carry for this record."""
     forms = set()
@@ -185,13 +235,10 @@ def key_forms(key, blob):
     forms.add(C.collapse_ws(base))
     forms.add(base.casefold())
     # the HWD text inside the head block is the authoritative headword
-    m = re.search(r'class="[^"]*\bHWD\b[^"]*"[^>]*>(.*?)</span>', blob, re.S)
-    if m:
-        hwd = re.sub(r"<[^>]+>", "", m.group(1))
-        hwd = C.strip_invisible(hwd).strip()
-        if hwd:
-            forms.add(hwd)
-            forms.add(C.collapse_ws(hwd))
+    hwd = hwd_text(blob)
+    if hwd:
+        forms.add(hwd)
+        forms.add(C.collapse_ws(hwd))
     return {f for f in forms if f}
 
 
@@ -222,9 +269,50 @@ def collect_needed_files(rows):
     return need
 
 
+def _same_file(a, b):
+    """True when two paths denote the same file.
+
+    `os.path.abspath` string comparison is NOT enough: on Windows the same file can
+    be spelled `Src.DB` and `src.db`, and samefile() also resolves symlinks and hard
+    links. Falls back to a normalised comparison when a side does not exist yet,
+    because samefile() requires both to exist.
+    """
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _guard_paths(out_path, tmp, inputs):
+    """Refuse path layouts that would destroy an input.
+
+    Two distinct hazards, both learned in merge_audio_db.py (D1/D2):
+
+      * `--out` that IS an input: `os.replace(tmp, out_path)` at the end of the build
+        overwrites that input with the database built from it. Every read has already
+        completed, so nothing fails -- the source is simply gone afterwards.
+      * `tmp` (`<out>.part`) that IS an input: it is removed unconditionally before
+        anything is read from it.
+
+    Both checks are same-file, not string, so case aliases, symlinks and hard links
+    are caught on every supported path spelling.
+    """
+    inputs = [p for p in inputs if p]
+    for p in inputs:
+        if _same_file(p, out_path):
+            raise SystemExit(
+                f"output {out_path} is also an input ({p}); refusing to overwrite a "
+                f"source file with the database built from it (use a different --out)")
+    for p in inputs:
+        if _same_file(p, tmp):
+            raise SystemExit(
+                f"temporary path {tmp} collides with input {p}; it would be deleted "
+                f"before being read (use a different --out name)")
+
+
 def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
     print(f"[1/5] scanning source records for headword audio ...", flush=True)
-    variants = scan_source(src, limit=None if not limit else None)
+    variants = scan_source(src)
 
     print(f"[2/5] reading dictionary expressions ...", flush=True)
     exprs = dictionary_expressions(zip_path)
@@ -260,6 +348,12 @@ def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
     print(f"[4/5] extracting audio from mdd ...", flush=True)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     tmp = out_path + ".part"
+    # Refuse `out_path` == input and `tmp` == input outright, by same-file identity.
+    # The previous version compared abspath STRINGS against `tmp` only, so a case
+    # alias (Windows `Src.DB` vs `src.db`) slipped through, and an `--out` pointing
+    # at an input was never checked at all -- the os.replace below would then destroy
+    # that input after the read had completed, silently.
+    _guard_paths(out_path, tmp, (mdd_path, src, zip_path))
     if os.path.exists(tmp):
         os.remove(tmp)
     conn = sqlite3.connect(tmp)
@@ -269,7 +363,6 @@ def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
 
     from mdict_utils.reader import MDD as _MDD
     m = _MDD(mdd_path)
-    dir_of = {sid: d for d, sid in SRC_AUDIO_SOURCE.items()}
     want = set()
     for sid, names in need.items():
         for nm in names:
@@ -288,7 +381,7 @@ def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
             continue
         fname = parts[-1]
         d = parts[-2]
-        sid = SRC_AUDIO_SOURCE.get(d)
+        sid = SRC_AUDIO_SOURCE.get(d.lower())
         if sid is None:
             continue
         if (sid, fname) in want:
@@ -320,20 +413,39 @@ def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
                      (name, sid, data))
         inserted += 1
     conn.commit()
-    # sanity: no entry may lack a blob once written
-    orphan = conn.execute("""
-        SELECT COUNT(*) FROM entries e WHERE NOT EXISTS (
-            SELECT 1 FROM android a WHERE a.source = e.source AND a.file = e.file)
-    """).fetchone()[0]
+    # Validate the PRIVATE .part, then rename it into place -- the same
+    # check-before-publish rule merge_audio_db.py follows (here the previous
+    # order was os.replace first, `assert orphan == 0` second, so a bad build
+    # would have overwritten the previous good android.db before failing).
+    # Both orphan directions: an entry with no blob breaks playback; a blob
+    # nothing points at is dead weight.
+    ent_pairs = set(conn.execute("SELECT source, file FROM entries"))
+    blob_pairs = set(conn.execute("SELECT source, file FROM android"))
+    orphan_e = len(ent_pairs - blob_pairs)
+    orphan_a = len(blob_pairs - ent_pairs)
+    ic = conn.execute("PRAGMA integrity_check").fetchone()[0]
     conn.close()
+    problems = []
+    if ic != "ok":
+        problems.append(f"integrity_check={ic!r}")
+    if orphan_e:
+        problems.append(f"{orphan_e} entry pair(s) with no blob")
+    if orphan_a:
+        problems.append(f"{orphan_a} blob pair(s) referenced by no entry")
+    if problems:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise SystemExit(f"refusing to publish {out_path}: " + "; ".join(problems))
     os.replace(tmp, out_path)
     size = os.path.getsize(out_path)
     print(f"  db written: {out_path}  {size:,} B ({size/1048576:.1f} MiB)")
-    print(f"  entries rows: {kept:,}   android blobs: {inserted:,}   orphans: {orphan}")
+    print(f"  entries rows: {kept:,}   android blobs: {inserted:,}   "
+          f"orphan pairs: ent-blob={orphan_e} blob-ent={orphan_a}   integrity: {ic}")
     if dropped:
         print(f"  dropped {len(dropped)} row(s) whose audio is missing from the mdd: "
               f"{sorted({d[0] for d in dropped})}")
-    assert orphan == 0, "entries without a blob would break playback"
     return {"rows": kept, "blobs": inserted, "size": size,
             "matched_exprs": len(exprs) - len(unmatched),
             "exprs": len(exprs), "unmatched": unmatched[:20],
