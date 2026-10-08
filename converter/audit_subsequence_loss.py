@@ -30,13 +30,21 @@ WS = re.compile(r"\s+")
 
 
 def rows_of(path):
+    """All rows keyed by (expression, reading) -> LIST of rows.
+
+    Keying by expression and keeping a single row per reading silently dropped the
+    extra rows of an expression that carries more than one (the packages do contain
+    duplicated expressions, and an entry + its alias share reading ""). Those rows
+    were then never subsequence-tested, so the "no content loss" verdict covered a
+    silent subset.
+    """
     z = zipfile.ZipFile(path)
     out = {}
     for n in z.namelist():
         if not re.fullmatch(r"term_bank_\d+\.json", n):
             continue
         for r in json.loads(z.read(n)):
-            out.setdefault(r[0], {})[r[1]] = r
+            out.setdefault((r[0], r[1]), []).append(r)
     return out
 
 
@@ -65,15 +73,24 @@ old_rows = rows_of(OLD)
 shared = set(new_rows) & set(old_rows)
 print(f"new: {NEW.split(chr(92))[-1]}")
 print(f"old: {OLD.split(chr(92))[-1]}")
-print(f"shared expressions: {len(shared):,}")
+print(f"shared (expression, reading) keys: {len(shared):,}")
 print()
 
 identical = inserted = 0
 losses = []
-for expr in shared:
-    for reading in set(new_rows[expr]) & set(old_rows[expr]):
-        so = squeeze(old_rows[expr][reading][5])
-        sn = squeeze(new_rows[expr][reading][5])
+pairs_checked = 0
+for key in shared:
+    expr, reading = key
+    orows = old_rows[key]
+    nrows = new_rows[key]
+    # Compare every row pair, and report a count divergence: a group whose row
+    # count changed between builds is exactly what this gate must not miss.
+    if len(orows) != len(nrows):
+        losses.append((expr, reading, f"row count {len(orows)} -> {len(nrows)}", ""))
+    for o, n in zip(orows, nrows):
+        pairs_checked += 1
+        so = squeeze(o[5])
+        sn = squeeze(n[5])
         if so == sn:
             identical += 1
         elif is_subsequence(so, sn):
@@ -81,6 +98,7 @@ for expr in shared:
         else:
             losses.append((expr, reading, so, sn))
 
+print(f"row pairs checked                       : {pairs_checked:,}")
 print(f"identical after removing whitespace      : {identical:,}")
 print(f"pure insertion / reorder-free superset   : {inserted:,}")
 print(f"POTENTIAL CONTENT LOSS                   : {len(losses):,}")

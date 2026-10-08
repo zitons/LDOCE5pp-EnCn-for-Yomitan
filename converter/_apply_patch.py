@@ -33,14 +33,27 @@ def write_atomic(text):
 
 
 def restore_from_git(ref="HEAD:converter/ldoce2yomitan.py"):
-    raw = subprocess.run(["git", "show", ref], cwd=r"C:\workspace\ldoce",
-                         capture_output=True).stdout
+    proc = subprocess.run(["git", "show", ref], cwd=r"C:\workspace\ldoce",
+                          capture_output=True)
+    # The return code used to be discarded here. A bad ref makes git print nothing
+    # on stdout, so `raw` was b"" and the os.replace below wrote those 0 bytes over
+    # the live converter -- the exact truncation this module's docstring says can
+    # never happen. Verified: bad ref -> returncode 128, stdout 0 bytes.
+    if proc.returncode != 0 or not proc.stdout:
+        raise SystemExit(f"git show {ref} failed (exit {proc.returncode}): "
+                         f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    raw = proc.stdout
     d = os.path.dirname(P)
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     os.close(fd)
-    with open(tmp, "wb") as fh:
-        fh.write(raw)
-    os.replace(tmp, P)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(raw)
+        os.replace(tmp, P)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
     return raw
 
 

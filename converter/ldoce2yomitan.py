@@ -3093,7 +3093,12 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
         for required in ("index.json", "styles.css", "tag_bank_1.json"):
             if required not in names:
                 errors.append(f"missing {required}")
-        index = json.loads(zf.read("index.json").decode("utf-8"))
+        # The missing index.json is recorded just above, so the read has to be
+        # guarded -- otherwise the one file whose absence was just detected is the
+        # one file whose read raises KeyError and the validator dies instead of
+        # reporting its verdict. (styles.css below already uses this pattern.)
+        index = (json.loads(zf.read("index.json").decode("utf-8"))
+                 if "index.json" in names else {})
         if index.get("format") != 3:
             errors.append("index.format must be 3")
         if index.get("sequenced") is not True:
