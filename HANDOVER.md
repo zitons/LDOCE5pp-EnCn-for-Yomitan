@@ -7,6 +7,12 @@
 
 ## 当前工作区补充（2026-09-14 · N1–N3）
 
+> ⚠️ **本条已被 2026.10.03 取代。** 本轮（N1–N3）的成品后来已并入
+> `yomitan_fixed/2026-09-15-align/` 并以 Release **`v2026.10.03`** 发布
+> （`yomitan_full/LDOCE5pp_Yomitan_2026.10.03[_EN].zip`）。
+> 下文"`yomitan_full/` 及 Release 没有更新""没有提交或推送"等描述是**当时的**状态，
+> 现在都已不成立。最新状态见文末「交付物清单」。
+
 三项修复及完整验收已完成：空渲染记录默认拒绝发布（含同 key、已刷 bank 和 `--skip-validation`），
 修复 `relieve d` / `fertilize d` / `did n’t`，无 Yomitan 主题变量时正文继承宿主颜色。
 28 组快速回归、11 个旧门禁调用、491,866 行官方 Schema、64,659 条源 DOM 核对及真实 Chrome

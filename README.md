@@ -86,12 +86,12 @@ python converter/regress_list_validity.py   <package.zip>   # 列表嵌套合法
 # 依赖：Python 3.11+、beautifulsoup4、lxml、tqdm、mdict-utils
 python converter/ldoce2yomitan.py \
   -i "extract/LDOCE5++ V 2-15.mdx.txt" \
-  -o yomitan_full -m bilingual --revision 2026.09.14-review-fixes
+  -o yomitan_full -m bilingual --revision 2026.10.03
 
 # 纯英文（源里 cn_txt 全剥；校验器强制全 bank 零 CJK）
 python converter/ldoce2yomitan.py \
   -i "extract/LDOCE5++ V 2-15.mdx.txt" \
-  -o yomitan_full -m mono --revision 2026.09.14-review-fixes
+  -o yomitan_full -m mono --revision 2026.10.03
 ```
 
 源数据（`.mdx` / `.mdd` / 解包文本）**不入库**：体积过大且受版权保护。
