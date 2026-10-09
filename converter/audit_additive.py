@@ -65,9 +65,17 @@ def strip_marks(node):
             if isinstance(x, dict) and (x.get("data") or {}).get("class") == "ld-mark":
                 continue
             out.append(strip_marks(x))
-        # collapse the doubled separators the removal can leave behind
+        # Collapse the separator that preceded a removed ld-mark. Appending every
+        # element unchanged (the old body) left those separators in place, so a
+        # legitimate mark+separator insertion was reported as "structurally
+        # different" -- exactly the pure insertion this audit is meant to bless.
         cleaned = []
-        for x in out:
+        for i, x in enumerate(out):
+            prev = out[i - 1] if i else None
+            if (isinstance(prev, dict)
+                    and (prev.get("data") or {}).get("class") == "ld-mark"
+                    and isinstance(x, str) and not x.strip()):
+                continue          # this whitespace belonged to the removed mark
             cleaned.append(x)
         return cleaned
     if isinstance(node, dict):

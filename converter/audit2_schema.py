@@ -24,7 +24,9 @@ def _find_zip():
     import sys as _sys
     if len(_sys.argv) > 1 and _sys.argv[1].endswith('.zip'):
         return _sys.argv[1]
-    cands = [p for p in glob.glob(r"C:\\workspace\\ldoce\\yomitan_full\\LDOCE5pp_Yomitan_*.zip")
+    cands = [p for p in glob.glob(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "yomitan_full", "LDOCE5pp_Yomitan_*.zip"))
              if '_DEBUG' not in p]
     if not cands:
         raise SystemExit('no package found in yomitan_full/')
@@ -90,12 +92,15 @@ expr_count = Counter()
 stats = Counter()
 no_head = []
 empty_rules = 0
-redirect_nonentry = []
 seqs = set()
 ctrl_bad = []
 tag_tokens = Counter()
 sized = []          # (len, bank, expr) for extremes
-row_index = {}      # expr -> (bank, approx offset) not needed; rescan banks for sampled validation
+
+# NOTE: `redirect_nonentry` and `row_index` used to live here. The first was
+# filled against a half-built all_exprs (so entries appearing in later banks were
+# misclassified) and never read -- pass 2 recomputes the same check correctly as
+# bad_redirect. The second was never populated at all.
 
 # ---- full structural scan -------------------------------------------------
 for bn in bank_names:
@@ -120,9 +125,8 @@ for bn in bank_names:
                 no_head.append((expr, len(blob)))
         else:
             stats["redirects"] += 1
-            for item in gloss:
-                if isinstance(item, list) and item[0] not in all_exprs:
-                    redirect_nonentry.append((expr, item[0]))
+            # (the redirect-target check is done in pass 2, once all_exprs is
+            #  complete -- it used to be attempted here against a half-built set)
 print(f"structural scan: rows={stats['rows']} entries={stats['entries']} "
       f"redirects={stats['redirects']}")
 

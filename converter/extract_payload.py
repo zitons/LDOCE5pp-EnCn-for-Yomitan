@@ -20,7 +20,8 @@ def _find_sources():
     if explicit:
         return explicit
     srcs = []
-    full = [p for p in glob.glob(r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_*.zip")
+    full = [p for p in glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "yomitan_full", "LDOCE5pp_Yomitan_*.zip"))
             if "_DEBUG" not in p]
     if full:
         srcs.append(max(full, key=os.path.getmtime))

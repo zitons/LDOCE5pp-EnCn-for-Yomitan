@@ -18,7 +18,7 @@ import time
 import zipfile
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "converter"))
 import ldoce2yomitan as M  # noqa: E402
@@ -62,6 +62,8 @@ def failing_validate(*a, **kw):
 
 
 buf = io.StringIO()
+message = ""      # bound before the try as well: if the build does NOT raise,
+                  # the check below would otherwise hit an unbound local
 M.validate_package = failing_validate
 try:
     with contextlib.redirect_stdout(buf):

@@ -4,9 +4,10 @@ D14 (GRAM), D13 (LDOCE Online panel), render_inflections rewrite.
 All writes go through _apply_patch.write_atomic (temp + os.replace), and every
 edit is asserted, so a mismatch aborts without touching the target file.
 """
+import os
 import sys
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _apply_patch import apply  # noqa: E402
 
 DOT = "\u00b7"

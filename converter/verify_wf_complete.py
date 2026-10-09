@@ -8,6 +8,7 @@ panels. Any token in the source that never reaches the output is real loss.
 This is the guard that would have caught the two regressions introduced while
 fixing opp (skipped loose text nodes) before a full rebuild.
 """
+import os
 import collections
 import json
 import re
@@ -16,10 +17,11 @@ import zipfile
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 4000
 TOK = re.compile(r"[A-Za-z]+|[\u4e00-\u9fff]|\d+")

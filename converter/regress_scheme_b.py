@@ -17,7 +17,7 @@ import sys
 import zipfile
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
 ZIP = sys.argv[1] if len(sys.argv) > 1 else \

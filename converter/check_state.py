@@ -9,7 +9,7 @@ import sys
 import zipfile
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
 FULL = r"C:\workspace\ldoce\yomitan_full"
@@ -32,6 +32,8 @@ for z in reversed(zips):
     if "DEBUG" not in os.path.basename(z):
         target = z
         break
+if target is None:
+    raise SystemExit(f"no non-DEBUG zip in {FULL}")
 print(f"\n=== newest non-debug zip: {os.path.basename(target)} ===")
 zf = zipfile.ZipFile(target)
 names = zf.namelist()

@@ -52,6 +52,10 @@ kinds = Counter()
 unexplained = []
 tag_only = rule_only = 0
 
+if len(pre) != len(r2):
+    sys.exit(f"row counts differ ({len(pre)} vs {len(r2)}) -- refusing a positional compare")
+if [r[0] for r in pre] != [r[0] for r in r2]:
+    sys.exit("row order differs -- refusing a positional compare")
 for a, b in zip(pre, r2):
     ga, gb = json.dumps(a[5], ensure_ascii=False), json.dumps(b[5], ensure_ascii=False)
     ta, tb = set(a[2].split()), set(b[2].split())

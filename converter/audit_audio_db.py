@@ -155,9 +155,11 @@ def main():
                         exprs.add(r[0])
     have = {r[0] for r in db.execute("SELECT DISTINCT expression FROM entries")}
     both = exprs & have
+    if not exprs:
+        fails.append("no term banks in the package")
     print(f"   dictionary expressions : {len(exprs):,}")
     print(f"   expressions with audio : {len(both):,}  "
-          f"({len(both)*100.0/len(exprs):.2f}%)")
+          f"({len(both)*100.0/max(len(exprs),1):.2f}%)")
     print(f"   db expressions not in dict: {len(have - exprs):,}")
 
     print("\n[8] lookup latency (what Hoshi runs per lookup)")

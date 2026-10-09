@@ -8,13 +8,14 @@ innerText).
 Kept only as a record of the investigation. See REVIEW.md D33 and
 HANDOVER.md pitfall 63.
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
 ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"

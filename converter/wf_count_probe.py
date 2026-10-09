@@ -5,13 +5,15 @@ For every record: parse with lxml, walk all elements with 'wordfams' in their
 class list, classify by (a) inside lm5pp_popup?, (b) has direct-child sensefold?,
 (c) is it the exact class="wordfams" form?
 """
+import os
 import io
 import re
 from collections import Counter
 
 from bs4 import BeautifulSoup
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 tot = 0
 in_popup = 0
@@ -45,7 +47,7 @@ with io.open(SIDE, encoding="utf-8", newline="") as fh:
     for line in fh:
         line = line.rstrip("\r\n")
         if line == "</>":
-            if key and "wordfams" in buf_join:
+            if key and "wordfams" in "\n".join(buf):
                 pass
             if key:
                 scan(key, "\n".join(buf))
@@ -55,7 +57,6 @@ with io.open(SIDE, encoding="utf-8", newline="") as fh:
             key = line
         else:
             buf.append(line)
-        buf_join = ""
 
 print(f"elements with class wordfams: {tot}")
 print(f"  inside lm5pp_popup        : {in_popup}")

@@ -85,25 +85,29 @@ for expr in sorted(set(new_rows) & set(old_rows)):
     for r in old_rows[expr]:
         o_by_reading.setdefault(r[1], []).append(r)
     for reading in set(n_by_reading) & set(o_by_reading):
-        n = n_by_reading[reading][0]
-        o = o_by_reading[reading][0]
-        if (n[2], n[3], n[4], n[6]) != (o[2], o[3], o[4], o[6]):
-            struct_diff += 1
-        ntags = set(str(n[2]).split())
-        otags = set(str(o[2]).split())
-        tags_removed += len(otags - ntags)
-        tags_added += len(ntags - otags)
-        nt = norm("".join(flat(n[5], [])))
-        ot = norm("".join(flat(o[5], [])))
-        # the sense-number chip is repeated as a native list marker now, so the
-        # text may legitimately gain/lose a bare digit; compare with digits in
-        # list positions normalised out
-        nt2 = re.sub(r"\b(\d)\b(?=\s)", "", nt)
-        ot2 = re.sub(r"\b(\d)\b(?=\s)", "", ot)
-        if nt2 != ot2:
-            text_diff += 1
-            if len(text_examples) < 8:
-                text_examples.append((expr, ot[:90], nt[:90]))
+        ng = n_by_reading[reading]
+        og = o_by_reading[reading]
+        if len(ng) != len(og):
+            bad.append((expr, reading, f"row count {len(og)} -> {len(ng)}"))
+            continue
+        for n, o in zip(ng, og):
+            if (n[2], n[3], n[4], n[6]) != (o[2], o[3], o[4], o[6]):
+                struct_diff += 1
+            ntags = set(str(n[2]).split())
+            otags = set(str(o[2]).split())
+            tags_removed += len(otags - ntags)
+            tags_added += len(ntags - otags)
+            nt = norm("".join(flat(n[5], [])))
+            ot = norm("".join(flat(o[5], [])))
+            # the sense-number chip is repeated as a native list marker now, so the
+            # text may legitimately gain/lose a bare digit; compare with digits in
+            # list positions normalised out
+            nt2 = re.sub(r"\b(\d)\b(?=\s)", "", nt)
+            ot2 = re.sub(r"\b(\d)\b(?=\s)", "", ot)
+            if nt2 != ot2:
+                text_diff += 1
+                if len(text_examples) < 8:
+                    text_examples.append((expr, ot[:90], nt[:90]))
 
 print(f"rows with changed (tags,rules,score,seq): {struct_diff}")
 print(f"tags removed: {tags_removed}   tags added: {tags_added}")

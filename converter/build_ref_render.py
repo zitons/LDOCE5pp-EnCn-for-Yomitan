@@ -1,8 +1,10 @@
+import os
 import io, re, sys, os
-sys.path.insert(0, r'C:\workspace\ldoce\converter')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ldoce2yomitan import iter_records, strip_invisible
 
-SIDE = r'C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt'
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 CSS = io.open(r'C:\workspace\ldoce\mdd_assets\LM5style.css', encoding='utf-8', errors='replace').read()
 
 WANT = ['18-wheeler', 'abandon', 'improve', 'seeing', 'second class', 'the']

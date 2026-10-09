@@ -1,14 +1,16 @@
 """Precise: is the region label / 'same pronunciation' note INSIDE the
 Inflections span, or a sibling (GEO) that render_head handles anyway?"""
+import os
 import re
 import sys
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 inside_same = 0
 inside_region = 0

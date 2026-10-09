@@ -15,14 +15,15 @@ import os
 import zipfile
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ldoce2yomitan import (  # noqa: E402
     TermIndex, LdoceRenderer, classify_record, iter_records, strip_invisible,
     extract_tags, pos_tags_rules, sc, norm_target, sanitize_strings,
     ENTRY_SCORE, REDIRECT_SCORE,
 )
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 def _find_zip():
     """Newest non-debug package in yomitan_full (an explicit argv[1] wins).
 
@@ -33,7 +34,9 @@ def _find_zip():
     import sys as _sys
     if len(_sys.argv) > 1 and _sys.argv[1].endswith('.zip'):
         return _sys.argv[1]
-    cands = [p for p in glob.glob(r"C:\\workspace\\ldoce\\yomitan_full\\LDOCE5pp_Yomitan_*.zip")
+    cands = [p for p in glob.glob(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "yomitan_full", "LDOCE5pp_Yomitan_*.zip"))
              if '_DEBUG' not in p]
     if not cands:
         raise SystemExit('no package found in yomitan_full/')

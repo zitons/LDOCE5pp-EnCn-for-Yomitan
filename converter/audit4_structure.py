@@ -18,7 +18,9 @@ def _find_zip():
     import sys as _sys
     if len(_sys.argv) > 1 and _sys.argv[1].endswith('.zip'):
         return _sys.argv[1]
-    cands = [p for p in glob.glob(r"C:\\workspace\\ldoce\\yomitan_full\\LDOCE5pp_Yomitan_*.zip")
+    cands = [p for p in glob.glob(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "yomitan_full", "LDOCE5pp_Yomitan_*.zip"))
              if '_DEBUG' not in p]
     if not cands:
         raise SystemExit('no package found in yomitan_full/')

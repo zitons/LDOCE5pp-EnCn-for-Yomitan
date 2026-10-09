@@ -6,6 +6,7 @@
     which --test-words cannot express because it splits on commas);
 (c) tag cap: 'about'/'back' must now carry their S/W levels in definitionTags.
 """
+import os
 import io
 import json
 import re
@@ -14,7 +15,8 @@ import zipfile
 from bs4 import BeautifulSoup
 
 ZIP = r"C:\workspace\ldoce\yomitan_wf_test\LDOCE5pp_Yomitan_2026.09.11_DEBUG.zip"
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 T10 = ["close", "cooperate", "cooperation", "cooperative", "definite", "definitely",
        "displace", "displacement", "enable", "explicit", "external", "implication",

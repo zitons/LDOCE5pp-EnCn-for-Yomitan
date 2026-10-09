@@ -14,7 +14,7 @@ import sys
 import zipfile
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from glue_detect import find_glue  # noqa: E402
 
 ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"

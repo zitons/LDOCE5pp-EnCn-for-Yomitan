@@ -8,12 +8,13 @@ Usage:
     python audit7_parser_equiv.py [sample_size]
 Exit code 0 = byte-identical (safe to switch), 1 = differences found.
 """
+import os
 import json
 import random
 import sys
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from bs4 import BeautifulSoup  # noqa: E402
 from ldoce2yomitan import (  # noqa: E402
     TermIndex, LdoceRenderer, classify_record, iter_records, strip_invisible,
@@ -21,7 +22,8 @@ from ldoce2yomitan import (  # noqa: E402
     ENTRY_SCORE,
 )
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 N_RANDOM = int(sys.argv[1]) if len(sys.argv) > 1 else 1500
 random.seed(5)
 
