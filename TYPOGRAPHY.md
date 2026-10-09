@@ -298,7 +298,12 @@ HWD → HOMNUM → PronCodes → tt/LEVEL(●●●) → FREQ(S/W) → AC(AWL) �
 
 ---
 
-## T9【中等】`text-indent` 被继承进 `inline-block` 芯片 → 文字"跃出"自己的边框 ✅ 已修复并验证
+## T9【中等】`text-indent` 被继承进 `inline-block` 芯片 → 文字"跃出"自己的边框 ✅ 已根治
+
+> **2026-10-09 更新：已换方案根治。** 悬挂缩进整体从 `text-indent` 改为 `margin-left`
+> （见 REVIEW D44），样式表里不再有负 `text-indent`，本条描述的继承问题从源头消失。
+> 下面的诊断与实测数据保留作为历史记录。
+
 
 > 触发来源：用户反馈「`rather` 这个单词 British English 样式有问题，字跃出了边界」。
 

@@ -21,20 +21,32 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 import argparse
 
-FIX_MARK=re.compile(r'\[data-sc-class="ld-colloexa"\]\s*\*')   # the D42 descendant reset
+# A package is eligible for the alignment gate when its stylesheet carries the
+# D42/D43 fix. Test the SUBSTANCE, not one specific rule: the original marker was
+# the D42 descendant reset (`ld-colloexa *`), which D44 then deleted as unnecessary
+# -- so a rule-literal marker silently rejected every post-D44 package and fell
+# back to the previous one. These properties hold for both the D42 patch and the
+# D44 rewrite: no negative text-indent anywhere, and the hanging classes use a
+# positive margin-left.
+FIX_MARK=re.compile(r'text-indent\s*:\s*-')
+HANGING_MARK=re.compile(r'\[data-sc-class="ld-ex"\][^{]*\{[^}]*margin[^;}]*1\.6em')
 
 def has_alignment_fix(pkg):
  try:
   css=zipfile.ZipFile(pkg).read('styles.css').decode('utf-8','replace')
  except Exception:
   return False
- return bool(FIX_MARK.search(css))
+ if FIX_MARK.search(css):
+  return False          # still on the fragile text-indent scheme
+ return bool(HANGING_MARK.search(css))
 
 def newest_fixed_package(mode):
- """Newest non-DEBUG package whose styles.css contains the fix.
+ """Newest non-DEBUG package whose stylesheet carries the D42/D43 fix.
 
  Selecting by the fix itself -- rather than by directory name or mtime alone -- stays
  correct across rebuilds and renames: a pre-fix package is simply never eligible.
+ The marker tests the substance (no negative text-indent + margin-left indents), so
+ it keeps matching after the D44 rewrite replaced the original D42 band-aid rule.
  """
  for p in newest_first(mode):
   if has_alignment_fix(p):

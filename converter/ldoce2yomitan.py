@@ -2517,9 +2517,10 @@ def generate_css():
 [data-sc-class="ld-freq"], [data-sc-class="ld-gram"], [data-sc-class="ld-geo"],
 [data-sc-class="ld-register"], [data-sc-class="ld-act"], [data-sc-class="ld-synmark"] {
   display:inline-block; font-size:var(--ld-chip-size); font-weight:600; line-height:1.35;
-  text-indent:0;   /* text-indent is inherited: .ld-ex uses -1.6em for its hanging indent,
-                      and an inline-block inherits it onto its own first line, which pulls
-                      the chip's text out of its own box (see REVIEW T9). */
+  text-indent:0;   /* defensive: an inline-block opens a block container, so it would
+                      apply any inherited first-line indent to its own first line. Nothing
+                      in this stylesheet sets a negative text-indent any more (the hanging
+                      indents are margin-left), so this is belt-and-braces rather than a fix. */
   border-radius:4px; padding:0 5px; margin:0 var(--ld-chip-gap) 0 0; vertical-align:baseline;
   border:1px solid rgba(128,128,128,.38); border:1px solid color-mix(in srgb, currentColor 38%, transparent); /* static fallback, scheme A */;
   background:rgba(128,128,128,.10); background:color-mix(in srgb, currentColor 10%, transparent); /* static fallback, scheme A */;
@@ -2614,27 +2615,20 @@ def generate_css():
 [data-sc-class="ld-panel-online"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-dim); }
 
 /* ---- examples ---------------------------------------------------------- */
-[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px; padding-left:1.6em; text-indent:-1.6em; color:var(--ld-text2); font-size:.97em; }
-[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; }
-[data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; }
-[data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; }
-/* `text-indent` is INHERITED, and any descendant that starts a block container
-   applies the inherited value to its OWN first line. T9 fixed the
-   display:inline-block half; BLOCK descendants were still uncovered, so
-   `ld-defcn` inside `ld-colloexa` (padding-left:23.28px; text-indent:-23.28px)
-   was pulled 23px left of the collocation it belongs to (measured 46.5 vs
-   69.8) and the Chinese collocation gloss no longer lined up.
-   Nothing inside a hanging-indent block wants a first-line indent, so reset it
-   for every descendant. The original needs no such rule because it uses NO
-   negative text-indent anywhere (684 rules, zero occurrences) -- its indents
-   are all margin-left. */
-[data-sc-class="ld-ex"] *, [data-sc-class="ld-ex-good"] *, [data-sc-class="ld-ex-bad"] *,
-[data-sc-class="ld-gramexa"] *, [data-sc-class="ld-colloexa"] *,
-[data-sc-class="ld-corpexa"] *, [data-sc-class="ld-corpexa-corpus"] *,
-[data-sc-class="ld-corpexa-dics"] *, [data-sc-class="ld-corpexa-encyc"] *,
-[data-sc-class="ld-corpexa-online"] *, [data-sc-class="ld-corpexa-phrases"] * {
-  text-indent: 0;
-}
+/* Hanging indent via margin-left, NOT text-indent.
+   text-indent is inherited, so a negative value leaks into every descendant
+   that opens a block container -- that mechanism caused the misalignment
+   defects in REVIEW D42/D43 and TYPOGRAPHY T9, and needed an 11-selector
+   descendant reset to contain. margin-left applies to this element's own box
+   and does not inherit, which is what the original stylesheet does (684
+   rules, zero negative text-indent).
+   Geometry is unchanged: the block's border box moves right by the indent,
+   and the bullet's negative margin-left pulls it back out, so the bullet
+   sits where the dash used to and wrapped lines still start at the indent. */
+[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px 1.6em; color:var(--ld-text2); font-size:.97em; }
+[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; margin-left:-1.6em; }
+[data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; margin-left:-1.6em; }
+[data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; margin-left:-1.6em; }
 [data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
@@ -2712,8 +2706,9 @@ def generate_css():
 [data-sc-class="ld-exagroup"] { display:block; margin:3px 0; }
 [data-sc-class="ld-exagroup-title"] { font-weight:700; color:var(--ld-frame) !important; margin-bottom:2px; }
 [data-sc-class="ld-corpulist"] { list-style:none; margin:0 0 4px; padding:0; }
-[data-sc-class="ld-corpexa"], [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"], [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"], [data-sc-class="ld-corpexa-phrases"] { display:list-item; padding-left:1.2em; text-indent:-1.2em; margin:1px 0; font-size:.96em; color:var(--ld-text2); }
-[data-sc-class="ld-corpexa"]::before, [data-sc-class="ld-corpexa-corpus"]::before, [data-sc-class="ld-corpexa-dics"]::before, [data-sc-class="ld-corpexa-encyc"]::before, [data-sc-class="ld-corpexa-online"]::before, [data-sc-class="ld-corpexa-phrases"]::before { content:"\\2022\\00a0 "; color:var(--ld-faint); }
+/* same margin-left scheme as the examples above */
+[data-sc-class="ld-corpexa"], [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"], [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"], [data-sc-class="ld-corpexa-phrases"] { display:list-item; margin:1px 0 1px 1.2em; font-size:.96em; color:var(--ld-text2); }
+[data-sc-class="ld-corpexa"]::before, [data-sc-class="ld-corpexa-corpus"]::before, [data-sc-class="ld-corpexa-dics"]::before, [data-sc-class="ld-corpexa-encyc"]::before, [data-sc-class="ld-corpexa-online"]::before, [data-sc-class="ld-corpexa-phrases"]::before { content:"\\2022\\00a0 "; color:var(--ld-faint); margin-left:-1.2em; }
 
 /* ---- lists ------------------------------------------------------------- */
 [data-sc-class="ld-list"] { margin:2px 0 4px 1.4em; padding:0; }

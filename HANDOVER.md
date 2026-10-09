@@ -463,7 +463,8 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 26. **验证排版不要只看代码，也别只靠静态分析**：用真 Chrome 复刻 Yomitan 的注入结构（`[data-dictionary]` 嵌套 + `--text-color`/`--background-color` 两套变量）跑 `getComputedStyle`，才能量出真实对比度和真实生效情况。本轮的 T1 单靠读代码先后写错了两版。注意两个自己踩过的测量陷阱：① `getComputedStyle().color` 可能返回 `color(srgb r g b)` 小数格式，解析要兼容；② 无头 Chrome 默认 `prefers-color-scheme: dark`，会把"宿主报暗色"这条分支激活，测量前要显式钉住 `color-scheme`。
 27. **元素的可视顺序只能来自源 DOM，不能自造模板**。`render_head()` 曾按 `hwd → gram → pron → pos → chips` 的固定次序拼装，把 `GRAM` 顶到音标前（`18-wheel·er [countable] /…/ noun`）。判定依据不能靠"哪种排布更常见"，而是要证明原版**没有**用 CSS 重排：拿到 `.mdd` 里的 `LM5style.css` 后确认词头区域无任何 `order:`/绝对定位（`.Head` 是 `display:inline`），视觉顺序 = DOM 顺序。**通法**：任何"按类别分桶再按固定次序输出"的渲染器都有此风险；改成单次遍历、遇到什么发什么。
 28. **同一个"位置"在源里可能有多份，且顺序有语义**：`the` 有两条 `lm5pp_POS`（`definite article` + `determiner`），原来用单个 `pos_text` 槽位**只留最后一条**。凡是"每类元素只留一个值"的写法都要先统计该类元素的最大重复数。
-33. **`text-indent` 是继承属性，会给 `display:inline-block` 的子元素埋雷**：例句块 `.ld-ex{text-indent:-1.6em}`，而芯片是 inline-block —— inline-block 会建立**新的块容器**，于是继承的负 `text-indent` 作用到它自己的首行，把盒内文字左移约 19px，且盒子的内在宽度按"首行左移"算 → **盒子比文字还窄，文字溢出边框并压到前一句上**（`rather` 的 `British English` 就是活证据，影响 598 处）。修法是给所有 inline-block 规则加 `text-indent:0`。同理要警惕 `line-height`/`letter-spacing`/`word-spacing`/`text-align`/`visibility` —— 都是继承属性。
+33. **`text-indent` 是继承属性，会给 `display:inline-block` 的子元素埋雷**
+   > ✅ **2026-10-09 已根治**：悬挂缩进整体改为 `margin-left`（详见 REVIEW D44），样式表里已无负 `text-indent`，本条描述的问题不再出现。`converter/regress_hanging_indent.py` 静态+动态双重守住，改动会立刻失败。：例句块 `.ld-ex{text-indent:-1.6em}`，而芯片是 inline-block —— inline-block 会建立**新的块容器**，于是继承的负 `text-indent` 作用到它自己的首行，把盒内文字左移约 19px，且盒子的内在宽度按"首行左移"算 → **盒子比文字还窄，文字溢出边框并压到前一句上**（`rather` 的 `British English` 就是活证据，影响 598 处）。修法是给所有 inline-block 规则加 `text-indent:0`。同理要警惕 `line-height`/`letter-spacing`/`word-spacing`/`text-align`/`visibility` —— 都是继承属性。
 34. **审计脚本不要硬编码包路径**：zip 名带修订日期，重建后路径就过期，审计会静默跑在**旧包**上（本轮踩到：`audit2/3/4/5` 全写死 `2026.09.10`）。已统一改成 `_find_zip()`（取 `yomitan_full` 里最新的非 DEBUG 包，argv 可覆盖）。
 35. **大文件不要走 `git push`**：60 MB 的单次 POST（`Content-Length: 60052449`）无论直连还是经代理都会在**约 19 秒后被链路重置**（`curl 55 Send failure`），`http.postBuffer` 调大/调小、chunked、HTTP/1.1 均无效。**改用 Release 附件**（`uploads.github.com/.../releases/{id}/assets?name=X`）一次通过。
 36. **`git push` 静默失败**：本机 `~/.gitconfig` 里有 `http.proxy`，且凭据助手会干扰；用 `git -c credential.helper= push <带 token 的 URL>` 才稳定。
@@ -644,7 +645,8 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
 71. **修"提取类"bug 时，探针必须对比完整输出（哪个输入拿到哪个值），只比较匹配/不匹配集合会放走劫持**（2026-09-15）：给 `build_audio_db.py` 修 HWD 嵌套 span 截断时，第一版深度感知提取把"切到匹配闭合"写成了"从最后一个内层闭合之后切"，产出词头**后缀**（`car·rot`→`rot`、`CompactFlash`→`Flash`）。这些后缀形式抢占 `variants` 后，**2,091 个表达式被配到别的词条的音频**（`Dutch`→`double-dutch.mp3`、`England`→`amateur_athl1.mp3`）——而探针只报"匹配数 46,845 → 46,886"，看起来是纯收益。最后靠**重建旧代码产物并逐表达式对比文件分配**才抓出（`changed=2091`），修正后产物与旧版**逐字节相同**（`45f1b310…` 不变，见 AUDIO.md）。
     - **通法**：改任何"从 A 提取后给 B 赋值"的逻辑，回归判据是**逐键对比赋值结果**，不是"命中数变了多少"——命中数差异对**错配**完全不敏感。另一个红旗信号：产物的 blob 数/共享结构突然大幅变化（91,559 → 87,615）时别急着解释成"修复的自然结果"。
 
-72. **`text-indent` 的继承会打到"块级"后代，不只是 `inline-block`**（2026-09-15）：T9 的修法是"给所有 `display:inline-block` 规则加 `text-indent:0`"，**只覆盖了机制的一半**。`ld-colloexa` 用 `padding-left:23.28px; text-indent:-23.28px` 做悬挂缩进，而 `ld-defcn` 是 **`display:block`** —— 块级同样会开新的块容器、同样把继承来的负 `text-indent` 用到自己首行。实测：`ld-defcn` 左边缘 **46.5** vs 它上一行的 `ld-collo` **58.6**，中文搭配释义整体左出 **23px**，与用户截图完全一致。
+72. **`text-indent` 的继承会打到"块级"后代，不只是 `inline-block`**（2026-09-15）：T9 的修法是"给所有 `display:inline-block` 规则加 
+   > ✅ **2026-10-09 已根治**：改用 `margin-left` 方案，见坑 77 与 REVIEW D44。`text-indent:0`"，**只覆盖了机制的一半**。`ld-colloexa` 用 `padding-left:23.28px; text-indent:-23.28px` 做悬挂缩进，而 `ld-defcn` 是 **`display:block`** —— 块级同样会开新的块容器、同样把继承来的负 `text-indent` 用到自己首行。实测：`ld-defcn` 左边缘 **46.5** vs 它上一行的 `ld-collo` **58.6**，中文搭配释义整体左出 **23px**，与用户截图完全一致。
     - **修法**：给负 `text-indent` 载体的**所有后代**重置（`[data-sc-class="ld-colloexa"] * { text-indent:0 }` 等 11 个载体）。载体自己的首行缩进不受影响（`*` 不含自身）。
     - **更重要的背景**：拿到**完整**原版样式表（684 条规则）后核对，**负 `text-indent` 出现 0 次** —— 原版所有缩进都用 `margin-left`（`.Sense{margin-left:20px}`、`.COLLO{margin-left:20px}`、`.Sense .exaGroup .exa{margin-left:15px}`）。**悬挂缩进是我们自己发明的**，整个"错位"缺陷类都源于此。若将来重做排版，优先考虑回到 `margin-left` 方案，而不是继续给自造机制打补丁。
 73. **完整原版样式表解决了 D9 悬案：原版是「显示」ACTIV 的**（2026-09-15）：`LM5style.css` 里先有 `.ldoceEntry .ACTIV{display:none}`，**后面又有一条同优先级的规则覆盖它**：
@@ -663,6 +665,11 @@ ${env:PYTHONIOENCODING}='utf-8'   # 否则中文 print 在 pwsh 下直接 Unicod
       - **收起的 `<details>` 内容保留布局但不绘制**（Chrome 131+ 的 `::details-content{content-visibility:hidden}`）。`getBoundingClientRect()` 照样返回非零矩形，于是 `item` 报出 599 处"重叠"，实际**全部**是收起面板里的隐形内容。必须用 `el.checkVisibility({checkVisibilityCSS:true, contentVisibilityAuto:true})` 过滤。
 75. **动手前先搜既有文档**（2026-09-15）：我花了十几轮把"词典 CSS 被包进 `[data-dictionary]{…}`"当成 Hoshi 的 bug 去复现，而**本文件坑 25 + TYPOGRAPHY T1 早就写明**那是 Yomitan `addScopeToCss()` 的行为，且是**合法的 CSS Nesting**（隐式后代组合符）。用户一句"这不是已知的吗，你看接手文档啊"点破。教训：这类"外部消费者行为"的疑问，**先 grep 本目录的 md**，再开新调查。
 76. **取证工具本身也有坑：`Select-Object -First N` 会掐断上游管道**（2026-09-15）：`python … | Tee-Object log | Select-Object -First 70` 会在第 70 行**终止上游进程**，于是 **log 文件也残缺**（我据此判定"AFTER 段缺失"，白跑一轮）。要看全量日志就重定向到文件、再分段读。另外 PowerShell 的 `> file` 默认写 **UTF-16**，用 `Out-File -Encoding utf8` 或让脚本自己写文件，否则读回来是每个字符带空格的乱码。
+77. **悬挂缩进用 `margin-left`，不要用 `text-indent`**（2026-10-09）：`text-indent` 是**继承属性**，负值会漏进每个开启块容器的后代（块级元素和 inline-block 都算），这就是坑 33 / 坑 72 / REVIEW D42·D43 / TYPOGRAPHY T9 那一整类错位的共同根因，当年要靠 11 个选择器的后代重置才压住。`margin-left` 只作用于元素自己的盒子、**不遗传**，原版样式表 684 条规则里负 `text-indent` 出现 **0 次**、缩进一律 `margin-left`。
+    - **做法**：块自身 `margin:1px 0 3px 1.6em`（左缩进挪到外边距），`::before` 项目符号 `margin-left:-1.6em` 把它拉回悬挂位。几何与旧方案**完全等价**（实测：破折号 58.64、换行 69.77、中文框 69.77 三项逐一相同），因为 `ld-ex`/`ld-corpexa` 没有背景和边框，缩进放内边距还是外边距看不出差别。
+    - **改完之后**：11 个选择器的后代重置整块删除 —— 没有负 `text-indent` 就没什么可继承，留着反而会掩盖将来重新引入同一机制。
+    - **门禁**：`converter/regress_hanging_indent.py`，静态（无负 `text-indent` + 每个悬挂类都有 `margin-left` 且其 `::before` 有对应负值）+ 动态（真浏览器量破折号与换行位）双重。已做负向测试：把旧方案注回去，静态检查立刻报 6 处失败。
+    - **教训**：会遗传的属性（`text-indent`/`line-height`/`letter-spacing`/`text-align`/`word-spacing`/`visibility`）不要用来实现"只影响自己首行"的效果。要的就是首行效果时，用作用在自身盒子上、且可用负 margin 抵消的属性。
 
 ## 6. Yomitan 契约速查（format-3）
 
