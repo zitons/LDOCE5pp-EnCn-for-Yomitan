@@ -23,9 +23,10 @@ import json
 import re
 import sys
 import zipfile
+from itertools import zip_longest
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 OLD = ROOT / "yomitan_full/LDOCE5pp_Yomitan_2026.09.11.zip"
 NEW = ROOT / "yomitan_full/LDOCE5pp_Yomitan_2026.09.12.zip"
 FAILURES = []
@@ -80,8 +81,19 @@ n = rules_changed = tags_changed = gloss_changed = 0
 gloss_ok = gloss_bad = 0
 meta_bad = 0
 first_bad = None
-for ob, nb in zip(old["rows"], new["rows"]):
-    assert len(ob) == len(nb)
+# zip_longest, not zip: zip() would truncate to the shorter list and silently
+# under-compare, while the verdict below still claims full coverage.
+for ob, nb in zip_longest(old["rows"], new["rows"]):
+    if ob is None or nb is None:
+        meta_bad += 1
+        if first_bad is None:
+            first_bad = f"bank count {len(old['rows'])} -> {len(new['rows'])}"
+        continue
+    if len(ob) != len(nb):
+        meta_bad += 1
+        if first_bad is None:
+            first_bad = f"row count {len(ob)} -> {len(nb)}"
+        continue
     for ro, rn in zip(ob, nb):
         n += 1
         if (ro[0], ro[1], ro[4], ro[6]) != (rn[0], rn[1], rn[4], rn[6]):

@@ -19,7 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-REPO = r"C:\workspace\ldoce"
+REPO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "C:", "workspace", "ldoce")
 OWNER_REPO = "zitons/LDOCE5pp-EnCn-for-Yomitan"
 TAG = os.environ.get("REL_TAG", "v2026.09.13")
 NAME = os.environ.get("REL_NAME", "LDOCE5pp En-Cn for Yomitan — 2026.09.13")

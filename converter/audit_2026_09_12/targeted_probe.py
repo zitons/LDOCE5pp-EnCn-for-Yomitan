@@ -92,7 +92,10 @@ for key,content in M.iter_records(ROOT/'extract/LDOCE5++ V 2-15.mdx.txt'):
     key=M.strip_invisible(key).strip()
     if key not in selected or M.classify_record(key,content)[0]!='entry': continue
     which=occurrence[key]; occurrence[key]+=1
-    row=package[key][which]
+    rs=package.get(key,[])
+    if which>=len(rs):
+        continue
+    row=rs[which]
     if key in mono_words:
         nodes=mono.render_record(key,content)
         blob=json.dumps(nodes,ensure_ascii=False)

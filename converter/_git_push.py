@@ -22,8 +22,12 @@ import os
 import subprocess
 import sys
 
-REPO = r"C:\workspace\ldoce"
-PROXY = "http://127.0.0.1:7890"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The proxy was needed when direct access was blocked, but it also breaks the push
+# whenever the local proxy itself is down (400 Bad Request on CONNECT). Direct
+# access now works, so allow either: GIT_HTTPS_PROXY="" forces direct, otherwise
+# fall back to the local proxy when that env var is unset.
+PROXY = os.environ.get("GIT_HTTPS_PROXY", "http://127.0.0.1:7890")
 CRED_TARGET = "git:https://github.com"
 SHIM = os.path.join(REPO, "converter", "_askpass_tmp.bat")
 
@@ -67,8 +71,12 @@ def main():
         env = dict(os.environ)
         env["GIT_ASKPASS"] = SHIM
         env["GIT_TERMINAL_PROMPT"] = "0"
-        cmd = ["git", "-c", "credential.helper=", "-c", f"http.proxy={PROXY}",
-               "push", "--progress"]
+        cmd = ["git", "-c", "credential.helper=", "push", "--progress"]
+        # http.proxy is only set when a proxy is actually configured; passing
+        # http.proxy= (empty) to git is not the same as omitting it and broke
+        # the direct path.
+        if PROXY:
+            cmd[3:3] = ["-c", f"http.proxy={PROXY}"]
         # --force-with-lease is needed after a rebase onto a moved base. Use the
         # lease form, never a bare --force: it refuses if the remote branch moved
         # since our last fetch, so it cannot clobber someone else's commits.

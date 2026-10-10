@@ -1,11 +1,12 @@
 """Break the 29,066 changed entry rows down by WHAT changed."""
+import os
 import json
 import re
 import zipfile
 from collections import Counter
 
-OLD = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
-NEW = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
+OLD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
+NEW = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.11.zip")
 
 
 def banks(path):

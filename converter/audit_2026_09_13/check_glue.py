@@ -21,7 +21,7 @@ import zipfile
 from html import unescape
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "converter"))
 import ldoce2yomitan as M  # noqa: E402
 
@@ -122,7 +122,6 @@ print(f"expressions with a removed space: {len(changed):,}   "
 # equivalent here (only entities differ, and the pairs tested are alphanumeric).
 TAG_RE = re.compile(r"<[^>]+>")
 src_text = {}
-missing_src = 0
 for key, content in M.iter_records(SRC):
     k = M.strip_invisible(key).strip()
     if k not in changed or k in src_text:

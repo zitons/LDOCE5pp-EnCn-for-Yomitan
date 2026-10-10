@@ -20,11 +20,12 @@ def _find_sources():
     if explicit:
         return explicit
     srcs = []
-    full = [p for p in glob.glob(r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_*.zip")
+    full = [p for p in glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "yomitan_full", "LDOCE5pp_Yomitan_*.zip"))
             if "_DEBUG" not in p]
     if full:
         srcs.append(max(full, key=os.path.getmtime))
-    dbg = glob.glob(r"C:\workspace\ldoce\yomitan_debug*\*_DEBUG.zip")
+    dbg = glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_debug*", "*_DEBUG.zip"))
     if dbg:
         srcs.append(max(dbg, key=os.path.getmtime))
     if not srcs:
@@ -79,7 +80,7 @@ for r in picks:
     if c is not None:
         out.append({"word": r[0], "content": c})
 
-json.dump(out, open(r"C:\workspace\ldoce\scgen_test\payload.json", "w", encoding="utf-8"),
+json.dump(out, open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scgen_test", "payload.json"), "w", encoding="utf-8"),
           ensure_ascii=False)
 print("payload entries:", len(out),
       "bytes:", round(len(json.dumps(out, ensure_ascii=False)) / 1048576, 1), "MB")

@@ -2,16 +2,18 @@
 grouped by class; (b) count elements with class token 'w'/'rootword'/'crossRef'
 that live OUTSIDE an LDOCE_word_family, to explain the build's unknown-class
 counts."""
+import os
 import re
 import sys
 from collections import Counter
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = 8000
 
 span_href = Counter()

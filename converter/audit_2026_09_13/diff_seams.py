@@ -17,7 +17,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 OLD = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "yomitan_full/LDOCE5pp_Yomitan_2026.09.12.zip"
 NEW = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "yomitan_full/LDOCE5pp_Yomitan_2026.09.13.zip"
 WS = " \t\r\n\u00a0"

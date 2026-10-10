@@ -1651,3 +1651,64 @@ HANDOVER 坑 74。另有两个测量陷阱同样造成过假阳性：元素盒"�
 收起的 `<details>` 内容保留布局但不绘制（需 `checkVisibility({contentVisibilityAuto:true})`
 过滤）。
 
+---
+
+## D44【中】悬挂缩进从 text-indent 换成 margin-left，根治整类错位 ✅ 已修复
+
+> 触发来源：用户看到 D42/D43 的修复结论后问「这一整类错位都源于自造的悬挂缩进」
+> 是什么意思，了解后决定「换方案吧，直接干」。
+
+### 根因（一句话）
+
+`text-indent` 是**继承属性**。用负值实现悬挂缩进，负值就会漏进每一个开启块容器的
+后代 —— 块级元素和 `inline-block` 都算。D42（`ld-defcn` 被拉左 23px）、
+D43（ACTIV 芯片错位 4.1px）、T9（芯片文字跃出边框）**是同一个根因的三个面**，
+当年的修法是给 11 个载体加后代重置（`ld-ex * { text-indent:0 }`）把症状压住。
+
+原版样式表（完整版 684 条规则）里**负 `text-indent` 出现 0 次**，缩进一律
+`margin-left` —— 因为 `margin-left` 只作用于元素自己的盒子，不遗传。
+
+### 修法
+
+```css
+/* 之前 */
+[data-sc-class="ld-ex"], … { display:block; margin:1px 0 3px;
+    padding-left:1.6em; text-indent:-1.6em; … }
+[data-sc-class="ld-ex"]::before, … { content:"\2013\00a0 "; … }
+
+/* 之后 */
+[data-sc-class="ld-ex"], … { display:block; margin:1px 0 3px 1.6em; … }
+[data-sc-class="ld-ex"]::before, … { content:"\2013\00a0 "; margin-left:-1.6em; … }
+```
+
+`ld-corpexa` 一族（`-1.2em`）同样处理。11 个选择器的后代重置**整块删除** ——
+没有负 `text-indent` 就没什么可继承，留着反而会掩盖将来重新引入同一机制。
+
+### 几何等价性（实测，不是推断）
+
+| 量 | 改前 | 改后 |
+|---|---|---|
+| `ld-ex` 盒左 | 46.5（+ padding-left 23.28） | 69.77（+ margin-left 23.28） |
+| 首行文字（破折号后） | 58.64 | **58.64** |
+| 换行行 | 69.77 | **69.77** |
+| 中文框 `ld-excn` | 69.77（pad-left 22.116） | **69.77**（pad-left 22.116） |
+| `text-indent` | −23.28px | **0px** |
+
+**视觉零变化**：破折号、换行、中文三项位置逐一相同。盒子自身从 46.5 移到 69.77
+不影响任何可见元素（`ld-ex`/`ld-corpexa` 无背景无边框，缩进放内边距还是外边距
+看不出差别）。
+
+### 新增门禁
+
+`converter/regress_hanging_indent.py`：
+
+- **静态**：`generate_css()` 不得出现负 `text-indent`；每个悬挂类必须有正的
+  `margin-left`（认得 `margin` 简写），其 `::before` 必须有对应负值
+- **动态**：真浏览器量破折号与换行位，破折号必须在左、换行必须正好落在缩进处
+- **负向测试**：把旧方案注回去，静态检查立刻报 6 处失败
+
+### 教训
+
+会遗传的属性（`text-indent` / `line-height` / `letter-spacing` / `text-align` /
+`word-spacing` / `visibility`）**不要用来实现「只影响自己首行」的效果**。需要的
+就是首行效果时，用作用在自身盒子上、且能用负 margin 抵消的属性。

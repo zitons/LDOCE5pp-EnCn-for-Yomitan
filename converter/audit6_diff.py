@@ -6,6 +6,7 @@ plus a regression guard on row counts and structure.
 Usage:
     python audit6_diff.py <old.zip> <new.zip>
 """
+import os
 import json
 import re
 import sys
@@ -13,9 +14,9 @@ import zipfile
 from collections import Counter
 
 OLD = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.10.BASELINE.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.10.BASELINE.zip")
 NEW = sys.argv[2] if len(sys.argv) > 2 else \
-    r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.10.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.10.zip")
 
 
 def load(path):

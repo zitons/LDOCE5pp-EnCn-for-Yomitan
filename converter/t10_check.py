@@ -1,6 +1,7 @@
 """T10 check: count div.wordfams blocks whose first child is not the sensefold
 header (i.e. the blocks the original dictionary leaves collapsed/hidden), and
 count ld-panel-wf panels per word in the shipped package."""
+import os
 import io
 import json
 import re
@@ -8,8 +9,9 @@ import sys
 import zipfile
 from collections import Counter
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.11.zip")
 
 pat = re.compile(r'<div class="wordfams">(.{0,100})', re.S)
 tot = 0

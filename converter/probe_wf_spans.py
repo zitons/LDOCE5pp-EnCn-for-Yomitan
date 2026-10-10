@@ -2,6 +2,7 @@
 span.w / span.rootword / span.crossRef that are NOT anchors -- those fall into
 the generic inline branch, losing their link and polluting the unknown-class
 report. Prints concrete source snippets and compares text with the output."""
+import os
 import json
 import re
 import sys
@@ -9,11 +10,12 @@ import zipfile
 
 from bs4 import BeautifulSoup, Tag
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.11.zip")
 LIMIT = 6000
 
 z = zipfile.ZipFile(ZIP)

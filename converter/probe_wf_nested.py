@@ -1,16 +1,18 @@
 """Precisely: which w/rootword/crossRef spans inside word families are NOT
 direct children of LDOCE_word_family (those are the ones that miss the
 render_wordfams branches), and what is their immediate parent?"""
+import os
 import re
 import sys
 from collections import Counter
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = 6000
 
 parents = Counter()

@@ -1,13 +1,14 @@
 """Audit #1: where did the dropped aliases go? Single pass over the sidecar,
 reusing the converter's own classification logic (imported, not re-typed)."""
+import os
 import re
 import sys
 from collections import Counter
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ldoce2yomitan import classify_record, iter_records, strip_invisible  # noqa: E402
 
-SIDECAR = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDECAR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 entry_keys = {}          # exact key -> count (records)
 alias = {}               # word -> [targets]

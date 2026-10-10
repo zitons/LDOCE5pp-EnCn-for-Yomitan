@@ -4,13 +4,14 @@ detector firing on legitimate text?
 For each pattern, print several real hits with enough context to judge, and say
 which structural boundary produced them.
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
 
 
 def flatten(node, acc):

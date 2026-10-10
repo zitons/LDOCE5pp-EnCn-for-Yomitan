@@ -7,14 +7,15 @@ Use audit_subsequence_loss.py (whitespace-stripped subsequence test).
 Kept only as a record of the investigation. See REVIEW.md D33 and
 HANDOVER.md pitfall 63.
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-NEW = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-OLD = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
+NEW = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+OLD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
 
 STRIP = re.compile(r"[\s\u00a0\u2013\u2014\u00b7\u2022\-\u2019'\[\](){}]")
 

@@ -11,6 +11,7 @@ Checks, on a built package:
   3. list items are not nested directly in another list item without a list
   4. report ol/ul/li counts and any orphan examples
 """
+import os
 import json
 import re
 import sys
@@ -18,7 +19,7 @@ import zipfile
 from collections import Counter
 
 ZIP = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_cap_test\LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_cap_test", "LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip")
 
 LIST_TAGS = {"ol", "ul", "menu"}
 ITEM_TAG = "li"
