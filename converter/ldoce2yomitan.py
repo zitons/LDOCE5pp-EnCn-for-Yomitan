@@ -37,6 +37,14 @@ AUTHOR = "LDOCE5++ Yomitan converter"
 PROJECT_URL = "https://forum.freemdict.com/"
 SOURCE_FORUM_URL = "https://forum.freemdict.com/"
 TERM_BANK_BATCH = 10000
+# A bank is also closed once its JSON reaches this size, regardless of row count.
+# Row count alone is not a size bound: this dictionary's entries carry full
+# rendered HTML, so 10,000 rows came to ~106 MB per file and Yomitan's import
+# died with a bare "Error: Unknown error" (see the comment at flush_if_full).
+# 16 MB keeps the peak well inside a Chrome extension process's budget while
+# still leaving banks large enough that the file count stays reasonable.
+BANK_BYTE_LIMIT = 16 * 1024 * 1024
+BANK_SIZE_CHECK_EVERY = 200
 REDIRECT_SCORE = -10
 ENTRY_SCORE = 10
 COMPRESS_LEVEL = 6
@@ -3423,6 +3431,23 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
             print(f"    -> wrote term_bank_{file_index}.json ({len(term_bank)} rows)")
             term_bank = []
             file_index += 1
+        elif term_bank and len(term_bank) % BANK_SIZE_CHECK_EVERY == 0:
+            # Banks were split by ROW COUNT only, which for this dictionary put
+            # ~9,200 large entries -- 106 MB of JSON -- in a single file. Yomitan's
+            # zip worker reads and JSON.parses each entry whole, so on Chrome the
+            # extension process runs out of memory and the worker dies without a
+            # message; Yomitan then reports the bare "Error: Unknown error"
+            # (z-worker.js sendErrorMessage's default). Every member passes the
+            # official schema, which is why nothing caught it locally.
+            # Measure periodically rather than per row: json.dumps on every row
+            # would dominate the build time.
+            if len(json.dumps(term_bank, ensure_ascii=False,
+                              separators=(",", ":"))) >= BANK_BYTE_LIMIT:
+                save_bank(term_bank, file_index)
+                print(f"    -> wrote term_bank_{file_index}.json "
+                      f"({len(term_bank)} rows, size-capped)")
+                term_bank = []
+                file_index += 1
 
     processed = 0
     for key, content in tqdm(iter_records(input_path), total=n_records,
