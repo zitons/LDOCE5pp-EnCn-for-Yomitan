@@ -3,13 +3,108 @@
 给 [Hoshi Reader](https://github.com/HuangAntimony/Hoshi-Reader-Android) 用的
 发音库。**与 Yomitan 词典包是两件独立成品。**
 
-有两个版本：**单源版**（只用 LDOCE5 词头发音）与**合并版**（再并入第三方 OALD10 音频）。
+有三个版本：**单源版**（只用 LDOCE5 词头发音）、**合并版**（再并入第三方 OALD10
+音频）、**TLD 版**（The Little Dict 全量，含 spx→opus 转码）。
 
 ## 为什么需要单独做
 
 Yomitan 的 structured-content **没有 audio tag**，所以音频塞不进词典包
 （详见 `HANDOVER.md` §9.9）。Hoshi 另有一套**本地音频数据库**机制绕开这个限制：
 导入一个 `android.db`，它自己按词条查表取音频。
+
+## TLD 版（The Little Dict）
+
+### 它是什么
+
+`The little dict/TLD.mdx` + 7 个 `.mdd`，作者 GaryPang，英英词典，3.8 GB 媒体文件。
+**与 LDOCE5 无关**，是独立的英语词条覆盖。
+
+### 为什么值得做
+
+| | 英语词条覆盖 |
+|---|---:|
+| 现有合并版 | 71,260 |
+| **+ TLD** | **310,918** |
+| | **+239,658（4.36 倍）** |
+
+TLD 有音频的词条绝大部分是 LDOCE 里**不存在的词**，所以对"扩大整个英语词条覆盖"
+价值很大；但如果只问"提升 LDOCE 自己词头的覆盖率"，答案是没有（+0.57 pp），
+因为 LDOCE 缺音频的 17,275 个词头里 17,116 个是短语词条，任何词典都不给配发音。
+
+### 三个必须先知道的事实
+
+**① 82% 是 `.spx`，Hoshi 不能播。** 824,116 个音频文件里 669,505 个是 Speex。
+Hoshi 只接受 `.mp3`/`.opus`/`.ogg`，所以必须转码。
+
+**② mdict-utils 读不了这些 .mdd。** 报
+`zlib.error: invalid stored block lengths`。这不是文件加密 —— 手工按正确偏移解，
+6,407/6,423 个块是纯 zlib（compression=2, encryption=0），TLD.1.mdd 第一块就解出
+合法 MP3（`ff f3` 帧头）。mdict-utils 是把记录块 info 列表当成块读了。
+所以 `build_tld_audio_db.py` 自己解析布局。
+
+**③ 键名大多不可读，词条映射必须来自 MDX。** `4015093.spx`、`COLmp300002.spx`
+这种 opaque ID 占 570,280 个。唯一权威映射是 MDX 条目自己引用的
+`<audio src="...">` —— 靠猜键名会把 `p028-000001320.mp3` 剥成假词 `p028-`。
+
+### 转码码率：为什么是 opus 16k
+
+实测 TLD spx 的有效码率是 **13–15 kbps**。重新编码只要码率**不低于源**，就不可能
+再丢信息（信息在第一次编码时就定死了）。
+
+| 码率 | 相对 spx 体积 | 判断 |
+|---|---|---|
+| opus 8k | 58% | 低于源 → 确定丢 |
+| opus 12k | 88% | 低于源 → 丢一些 |
+| **opus 16k** | **~104%** | **≥ 源 → 不丢** |
+| mp3 96k | ~314% | 远大于源，纯浪费 |
+
+Speex 和 Opus 同属语音优先编解码器，效率接近；mp3 是通用音乐编解码器，对语音
+效率差一大截（同内容 mp3 96k 是 spx 的 3 倍以上）。
+
+### 7 个 source 标签
+
+一个 `.mdd` 一个标签，因为它们是**不同词典**，不是英美音对立：
+
+| .mdd | source | 内容 |
+|---|---|---|
+| `TLD.1.mdd` | `tld_ame` | `ameProns\*.mp3` 美音 |
+| `TLD.2.mdd` | `tld_uk` | `media\english\uk_pron\*` 英音 |
+| `TLD.3.mdd` | `tld_collins` | `COLmp3*.spx` 柯林斯发音库 |
+| `TLD.4.mdd` | `tld_mw` | `mw_*.spx` |
+| `TLD.5.mdd` | `tld_ids` | 纯数字 ID |
+| `TLD.6.mdd` | `tld_uk2` | `uk_pron\ca2uk*.mp3` 第二套英音 |
+| `TLD.mdd` | `tld_snd` | `snd*.spx` |
+
+`speaker`/`display`/`reading` 全写 **NULL**，与合并版里 LDOCE 行的约定一致；
+不标 `UK`/`US`，因为这 7 个不是英美音对立，硬标会误导。
+
+### 构建
+
+```bash
+python converter/build_tld_audio_db.py --out yomitan_audio/tld.db
+# 断点续跑：--from TLD.3.mdd
+# 单文件冒烟测试：--only TLD.4.mdd --limit 3000
+# 不转码（调试）：--keep-spx
+```
+
+依赖 `imageio-ffmpeg`（自带静态 ffmpeg，含 libspeex 解码 + libopus 编码，
+不需要系统装 ffmpeg）。
+
+### 三个性能要点
+
+1. **批量转码**：一次 ffmpeg 进程处理整块（~24 个文件）。逐文件转码 94% 的时间
+   耗在 Windows 进程启动上（~50 ms/次），824k 文件要 20 小时；批量后 **2.5 小时**。
+2. **键区间用二分**：每块都遍历全部 154,737 个键是 O(块×键) ≈ 10 亿次迭代，
+   改成 `bisect` 后常数级。
+3. **MDX 索引缓存**：解析 4.36 M 条记录要 60–90 秒，pickle 缓存后二次运行命中。
+
+### 已知问题
+
+- **16/6,423 个块解不开**（TLD.1.mdd 的 block 1553 起），损失约 0.5% 音频。
+  布局校验过（最后一块结束位置 == 文件大小），不是偏移漂移，是数据本身有问题。
+- **30,041 个重复 `(source, file)`**：同一文件被多个词条引用，blob 存了多份，
+  浪费约 120 MB。不影响功能（Hoshi 按 `file` 查）。
+- **未做真机验证**：db 格式与契约逐项验过，但没在 Hoshi 里实际导入播放。
 
 ## 成品
 
