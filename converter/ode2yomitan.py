@@ -268,10 +268,26 @@ class Parser:
     def _sense(self, s, out, n):
         inner = self._cls_inner(s, "senseInnerWrapper") or s
         parts = [span(str(n), "ld-snum")]
-        d = self._cls_text(inner, "definition")
+        # The Chinese definition is NOT always a sibling of the English one. Two
+        # shapes exist in this dictionary:
+        #   <span class="definition">the product of...</span>
+        #   <span class="cn_def">阶乘...</span>                          (siblings)
+        #   <span class="definition">dollar or dollars.
+        #     <div class="cn_def">美元</div></span>                      (nested)
+        # Measured over 20,000 records: 2,110 definitions contain CJK and ALL of
+        # them are the nested shape. A non-greedy `.*?</span>` runs past the
+        # nested </div> to the next </span> and swallows the Chinese, so the
+        # Chinese appeared inline after the English. Remove the nested cn_def
+        # before taking the text.
+        draw = self._cls_inner(inner, "definition")
+        d = None
+        if draw is not None:
+            d = strip_tags(re.sub(
+                r'<div[^>]*class="[^"]*\bcn_def\b[^"]*"[^>]*>.*?</div>', " ",
+                draw, flags=re.S | re.I))
+        cn = self._cls_text(inner, "cn_def")
         if d:
             parts.append(span(d, "ld-def"))
-        cn = self._cls_text(inner, "cn_def")
         if cn:
             parts.append(span(cn, "ld-defcn"))
         # "See parent entry: -aemia" style stubs carry no definition; keep the
