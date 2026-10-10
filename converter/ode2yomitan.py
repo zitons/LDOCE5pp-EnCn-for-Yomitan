@@ -128,7 +128,10 @@ def generate_css():
 [data-sc-class="ld-ex"] { display:block; margin:1px 0 2px; color:var(--ld-text2); font-size:.95em; }
 [data-sc-class="ld-excn"] { display:block; color:var(--ld-zh); font-size:.95em; }
 [data-sc-class="ld-etym"] { display:block; font-size:.88em; color:var(--ld-dim); margin-top:3px; }
-[data-sc-class="ld-more"] { display:block; font-size:.9em; color:var(--ld-text2); margin:2px 0 0; }
+[data-sc-class="ld-more"] { display:block; font-size:.9em; color:var(--ld-text2); margin:3px 0 0; }
+[data-sc-class="ld-more-label"] { font-weight:600; color:var(--ld-frame); }
+[data-sc-class="ld-more-list"] { display:block; margin:1px 0 0; }
+[data-sc-class="ld-more-list"] > * { display:list-item; list-style-type:disc; margin-left:1.2em; }
 """
 
 
@@ -287,9 +290,32 @@ class Parser:
                 parts.append(div(en, "ld-ex"))
             if zh:
                 parts.append(div(zh, "ld-excn"))
-        more = self._cls_text(inner, "moreInformation")
+        more = self._cls_inner(inner, "moreInformation")
         if more:
-            parts.append(div(more, "ld-more"))
+            # moreInformation holds <a class="moreInformationExemples">Examples
+            # <img></a> followed by <ul class="sentence_dictionary"> with one
+            # <li class="sentence"> per example. strip_tags() concatenated them
+            # into a single run, which read as one enormous paragraph and made
+            # the label ("More examples") run into the first sentence.
+            # Split on the li boundary and keep the label separate.
+            label = self._cls_text(more, "moreInformationExemples")
+            sents = []
+            for sm in re.finditer(
+                    r'<li[^>]*class="[^"]*\bsentence\b[^"]*"[^>]*>(.*?)</li>',
+                    more, re.S | re.I):
+                s = strip_tags(sm.group(1))
+                if s:
+                    sents.append(s)
+            if not sents:
+                s = strip_tags(re.sub(r"<a\b[^>]*>.*?</a>", " ", more, flags=re.S | re.I))
+                if s:
+                    sents = [s]
+            if sents:
+                kids = []
+                if label:
+                    kids.append(span(label, "ld-more-label"))
+                kids.append(div(sents, "ld-more-list"))
+                parts.append(div(kids, "ld-more"))
         if len(parts) > 1:
             out.append(div(parts, "ld-sense"))
 
