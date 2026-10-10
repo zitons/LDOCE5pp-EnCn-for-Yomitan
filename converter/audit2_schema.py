@@ -13,7 +13,7 @@ from collections import Counter
 
 import fastjsonschema
 
-SCHEMA_DIR = r"C:\workspace\ldoce\yomitan-ext\data\schemas"
+SCHEMA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan-ext", "data", "schemas")
 def _find_zip():
     """Newest non-debug package in yomitan_full (an explicit argv[1] wins).
 

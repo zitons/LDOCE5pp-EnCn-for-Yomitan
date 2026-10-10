@@ -13,6 +13,7 @@ What must be preserved is the CONTENT:
 
 Usage: python audit_additive_lists.py [new.zip] [old.zip]
 """
+import os
 import json
 import re
 import sys
@@ -20,9 +21,9 @@ import zipfile
 from collections import Counter
 
 NEW = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
 OLD = sys.argv[2] if len(sys.argv) > 2 else \
-    r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
 
 
 def rows_of(path):

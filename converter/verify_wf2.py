@@ -5,13 +5,14 @@
  * loose-text members survive
  * non-wordfam content unchanged (panels, senses)
 """
+import os
 import json
 import re
 import sys
 import zipfile
 
 ZIP = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_wf_test\LDOCE5pp_Yomitan_2026.09.11_DEBUG.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_wf_test", "LDOCE5pp_Yomitan_2026.09.11_DEBUG.zip")
 
 z = zipfile.ZipFile(ZIP)
 rows = {}

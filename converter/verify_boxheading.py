@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-ZIP = r"C:\workspace\ldoce\yomitan_wf_test\LDOCE5pp_Yomitan_2026.09.11_DEBUG.zip"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_wf_test", "LDOCE5pp_Yomitan_2026.09.11_DEBUG.zip")
 SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     "extract", "LDOCE5++ V 2-15.mdx.txt")
 

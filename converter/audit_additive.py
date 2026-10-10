@@ -16,14 +16,15 @@ are gone, so this comparison uses the PRE_FIX 09.11 baseline for the structural
 invariants and proves the 09.12R2 content deltas are additive relative to 09.11
 plus the known R1 changes (A1-A6 + D29 + A/B).
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-R2 = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-PRE = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
+R2 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+PRE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
 
 
 def load(path):
@@ -58,26 +59,28 @@ print(f"sequences unique/gapless: {len(set(seqs)) == len(seqs) and min(seqs) == 
 
 # ---- 2. glossary deltas are additive --------------------------------------
 def strip_marks(node):
-    """Remove every ld-mark span (and its preceding separator) from an SC tree."""
+    """Remove every ld-mark span from an SC tree.
+
+    An earlier version also tried to collapse "the separator that preceded a
+    removed mark". That was wrong twice over:
+
+      * the branch looked back in a list the marks had already been filtered out
+        of, so `prev` could never be an ld-mark and it never fired, and
+      * there is nothing to collapse. Measured over the whole 09.12 package:
+        645,801 ld-mark occurrences, every single one at index 0 of its list,
+        none with any element before it. The mark carries its own separator in
+        its content ("\u2013\u00a0"), so removing it leaves no doubled separator.
+
+    Both halves are why the branch is gone rather than "fixed" by looking back on
+    the pre-filter list -- that would be code for a problem the data does not have.
+    """
     if isinstance(node, list):
         out = []
         for x in node:
             if isinstance(x, dict) and (x.get("data") or {}).get("class") == "ld-mark":
                 continue
             out.append(strip_marks(x))
-        # Collapse the separator that preceded a removed ld-mark. Appending every
-        # element unchanged (the old body) left those separators in place, so a
-        # legitimate mark+separator insertion was reported as "structurally
-        # different" -- exactly the pure insertion this audit is meant to bless.
-        cleaned = []
-        for i, x in enumerate(out):
-            prev = out[i - 1] if i else None
-            if (isinstance(prev, dict)
-                    and (prev.get("data") or {}).get("class") == "ld-mark"
-                    and isinstance(x, str) and not x.strip()):
-                continue          # this whitespace belonged to the removed mark
-            cleaned.append(x)
-        return cleaned
+        return out
     if isinstance(node, dict):
         d = dict(node)
         if "content" in d:

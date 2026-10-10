@@ -25,8 +25,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
 ZIP = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-SCGEN = r"C:\workspace\ldoce\scgen_test"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+SCGEN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scgen_test")
 
 # sample: the historically failing words plus a spread of head shapes
 SAMPLE = ["12", "000", "A", "abet", "abandon", "improve", "the", "advantage",

@@ -5,12 +5,21 @@ Usage: python _apply_patch.py <patch-name>
 """
 import hashlib
 import io
+import io
 import os
 import subprocess
 import sys
 import tempfile
 
-P = r"C:\workspace\ldoce\converter\ldoce2yomitan.py"
+# Derived from this file's own location, not a literal. This module is the patch
+# and restore framework for the converter, so a hardcoded absolute path is the
+# worst possible place for one: run from another checkout it would patch, and
+# restore_from_git() would read, that checkout's converter instead of this one --
+# exactly the "auditing the wrong object" hazard the sweep of 2026-10-09 was
+# meant to remove.
+HERE = os.path.dirname(os.path.abspath(__file__))
+P = os.path.join(HERE, "ldoce2yomitan.py")
+REPO = os.path.dirname(HERE)
 
 
 def read():
@@ -33,7 +42,7 @@ def write_atomic(text):
 
 
 def restore_from_git(ref="HEAD:converter/ldoce2yomitan.py"):
-    proc = subprocess.run(["git", "show", ref], cwd=r"C:\workspace\ldoce",
+    proc = subprocess.run(["git", "show", ref], cwd=REPO,
                           capture_output=True)
     # The return code used to be discarded here. A bad ref makes git print nothing
     # on stdout, so `raw` was b"" and the os.replace below wrote those 0 bytes over

@@ -16,15 +16,16 @@ any character of the original dictionary text was dropped or reordered.
 
 Usage: python audit_subsequence_loss.py [new.zip] [old.zip]
 """
+import os
 import json
 import re
 import sys
 import zipfile
 
 NEW = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
 OLD = sys.argv[2] if len(sys.argv) > 2 else \
-    r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.12.R2.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.12.R2.zip")
 
 WS = re.compile(r"\s+")
 

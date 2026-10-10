@@ -5,7 +5,7 @@ from ldoce2yomitan import iter_records, strip_invisible
 
 SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     "extract", "LDOCE5++ V 2-15.mdx.txt")
-CSS = io.open(r'C:\workspace\ldoce\mdd_assets\LM5style.css', encoding='utf-8', errors='replace').read()
+CSS = io.open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mdd_assets", "LM5style.css"), encoding='utf-8', errors='replace').read()
 
 WANT = ['18-wheeler', 'abandon', 'improve', 'seeing', 'second class', 'the']
 recs = {}
@@ -41,6 +41,6 @@ html = '<!doctype html><html><head><meta charset="utf-8"><style>\n' \
     + 'body{background:#fff;margin:0;padding:12px;max-width:760px;}\n' \
     + '</style></head><body>\n' + '\n'.join(blocks) + '\n</body></html>'
 
-out = r'C:\workspace\ldoce\_original_render.html'
+out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_original_render.html")
 io.open(out, 'w', encoding='utf-8').write(html)
 print('written', out, len(html), 'bytes')

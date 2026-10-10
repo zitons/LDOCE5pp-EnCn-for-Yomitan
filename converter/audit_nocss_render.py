@@ -18,7 +18,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
 
 # ---- flatten exactly like the generator: only `content` strings, no styles ----
 def flatten(node, acc):

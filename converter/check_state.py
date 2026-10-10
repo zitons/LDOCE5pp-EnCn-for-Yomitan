@@ -12,11 +12,11 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
-FULL = r"C:\workspace\ldoce\yomitan_full"
+FULL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full")
 
 print("=== converter identity ===")
 print("VERSION", C.VERSION, "| AUTHOR", C.AUTHOR)
-src = io.open(r"C:\workspace\ldoce\converter\ldoce2yomitan.py", encoding="utf-8").read()
+src = io.open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "converter", "ldoce2yomitan.py"), encoding="utf-8").read()
 print("source lines:", src.count("\n") + 1, "| md5:",
       __import__("hashlib").md5(src.encode("utf-8")).hexdigest()[:12])
 

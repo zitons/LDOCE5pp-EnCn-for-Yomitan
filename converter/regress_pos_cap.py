@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
 ZIP = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\workspace\ldoce\yomitan_cap_test\LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip"
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_cap_test", "LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip")
 SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     "extract", "LDOCE5++ V 2-15.mdx.txt")
 FREQ = {"S1", "S2", "S3", "W1", "W2", "W3"}

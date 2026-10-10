@@ -14,14 +14,15 @@ Known fixes between 09.11 PRE_FIX and 09.12 R2:
   B    semantic markers                             -> ld-mark spans appear
   box  sense-group labels                           -> ld-panel-sub appears
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-R2 = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-PRE = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
+R2 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+PRE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
 
 
 def load(path):

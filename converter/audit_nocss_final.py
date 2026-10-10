@@ -17,8 +17,8 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from glue_detect import find_glue  # noqa: E402
 
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-SCGEN = r"C:\workspace\ldoce\scgen_test"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+SCGEN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scgen_test")
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 400
 
 PRIORITY = ["abbreviation", "improve", "abandon", "the", "A", "run", "get",
@@ -70,7 +70,7 @@ for (const [w, sc] of Object.entries(scByWord)) {
 fs.writeFileSync(process.argv[3],
     '<!doctype html><html><head><meta charset="utf-8"></head><body>' + body + '</body></html>');
 """)
-page = r"C:\workspace\ldoce\_final_nocss.html"
+page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_final_nocss.html")
 r = subprocess.run(["node", os.path.join(SCGEN, "_final_page.mjs"), sc_path, page],
                    capture_output=True, text=True, encoding="utf-8", cwd=SCGEN)
 if r.returncode != 0:

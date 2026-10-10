@@ -33,9 +33,8 @@ def cols(db, table):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=r"C:\workspace\ldoce\yomitan_audio\android.db")
-    ap.add_argument("--zip", default=r"C:\workspace\ldoce\yomitan_full"
-                                     r"\LDOCE5pp_Yomitan_2026.09.13.zip")
+    ap.add_argument("--db", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_audio", "android.db"))
+    ap.add_argument("--zip", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.13.zip"))
     args = ap.parse_args()
 
     if not os.path.isfile(args.db):

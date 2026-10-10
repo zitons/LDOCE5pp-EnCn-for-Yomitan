@@ -128,7 +128,7 @@ def check_dynamic(css):
         if zpath:
             break
     if not zpath:
-        return ["no package found to probe"]
+        return ["no package found to probe"], []
     import zipfile
     with zipfile.ZipFile(zpath) as z:
         for n in z.namelist():
@@ -140,27 +140,49 @@ def check_dynamic(css):
                         if isinstance(it, dict) and it.get("type") == "structured-content":
                             sc[r[0]] = it["content"]
     if not sc:
-        return ["probe words not found in the package"]
+        return ["probe words not found in the package"], []
 
     fails = []
+    skips = []
+    # A missing harness prerequisite (node, headless Chrome) is an ENVIRONMENT
+    # problem, not a broken scheme. Reporting it as FAIL makes "Chrome is not
+    # running" look like "the hanging indent regressed", which is exactly the
+    # misreading that wastes a debugging round. Skip instead, and say why.
+    for tool in ("node",):
+        try:
+            subprocess.run([tool, "--version"], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            return [], [f"SKIP dynamic checks: {tool} unavailable ({e})"]
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{os.environ.get('CDP_TARGET', 'http://127.0.0.1:9333')}"
+                                    f"/json/version", timeout=5) as resp:
+            resp.read()
+    except Exception as e:
+        return [], [f"SKIP dynamic checks: no DevTools endpoint at "
+                    f"{os.environ.get('CDP_TARGET', 'http://127.0.0.1:9333')} ({e.__class__.__name__})"]
+
     with open(os.path.join(SCGEN, "_hi_sc.json"), "w", encoding="utf-8") as f:
         json.dump(sc, f, ensure_ascii=False)
     with open(os.path.join(SCGEN, "_hi.css"), "w", encoding="utf-8") as f:
         f.write(css)
     page = os.path.join(ROOT, "_hi.html")
+    # the page URL is derived from the repo root, never written as a literal:
+    # a hardcoded absolute path here silently points at another checkout
+    page_url = "file:///" + page.replace("\\", "/")
     r = subprocess.run(["node", "_hi_page.mjs", "_hi_sc.json", "_hi.css", "390", page],
                        capture_output=True, text=True, encoding="utf-8", cwd=SCGEN)
     if r.returncode != 0:
-        return [f"page build failed: {r.stderr[:300]}"]
-    r = subprocess.run(["node", "cdp.mjs", "file:///C:/workspace/ldoce/_hi.html", "_hi_expr.js"],
+        return [f"page build failed: {r.stderr[:300]}"], []
+    r = subprocess.run(["node", "cdp.mjs", page_url, "_hi_expr.js"],
                        capture_output=True, text=True, encoding="utf-8", cwd=SCGEN,
                        env={**os.environ, "CDP_TARGET": "http://127.0.0.1:9333"})
     if r.returncode != 0:
-        return [f"probe failed (is headless Chrome on :9333?): {r.stderr[:200]}"]
+        return [f"probe failed (is headless Chrome on :9333?): {r.stderr[:200]}"], []
     try:
         data = json.loads(json.loads(r.stdout.strip()))
     except Exception as e:
-        return [f"could not parse probe output: {e}"]
+        return [f"could not parse probe output: {e}"], []
 
     for word, recs in data.items():
         for d in recs:
@@ -173,7 +195,7 @@ def check_dynamic(css):
             if abs(d["first_l"] - d["wrapped_l"]) > 40:
                 fails.append(f"{word} {d['cls']}: first line {d['first_l']} vs wrapped "
                              f"{d['wrapped_l']} differ by more than the indent")
-    return fails
+    return fails, skips
 
 
 def main():
@@ -196,16 +218,23 @@ def main():
           f"{len(f1)} static failure(s)")
 
     print("\n=== dynamic checks (real browser) ===")
-    f2 = check_dynamic(css)
+    f2, skips = check_dynamic(css)
+    for s in skips:
+        print("  ", s)
     for f in f2:
         print("   FAIL", f)
-    print(f"   {len(f2)} dynamic failure(s)")
+    if not f2 and skips:
+        print("   (dynamic checks did not run -- environment, not the scheme)")
+    print(f"   {len(f2)} dynamic failure(s), {len(skips)} skip(s)")
 
     bad = f1 + f2
     print()
     if bad:
         print("HANGING INDENT GATE: FAIL")
         return 1
+    if skips:
+        print("HANGING INDENT GATE: PASS (static only; dynamic skipped)")
+        return 0
     print("HANGING INDENT GATE: PASS  (margin-left scheme intact)")
     return 0
 

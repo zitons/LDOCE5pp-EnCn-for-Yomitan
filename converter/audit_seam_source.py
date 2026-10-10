@@ -11,13 +11,14 @@ seam, by walking the tree and recording (parent class, child index i, child i+1)
 for every place where child[i] text ends with a letter/digit and child[i+1] text
 starts with a letter -- with NO whitespace in between.
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
 
 SEAM = re.compile(r"[a-z\u4e00-\u9fff\u2019')\]]\d*(?=[A-Z\u4e00-\u9fff])")
 SEAM2 = re.compile(r"\d(?![\d/:.])(?=[A-Za-z\u4e00-\u9fff])")

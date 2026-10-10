@@ -14,8 +14,8 @@ import sys
 import zipfile
 from collections import Counter
 
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-SCGEN = r"C:\workspace\ldoce\scgen_test"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+SCGEN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scgen_test")
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 150
 
 PRIORITY = ["abbreviation", "improve", "abandon", "the", "A", "run", "get",
@@ -66,7 +66,7 @@ fs.writeFileSync(process.argv[3],
 console.log('page built');
 """
 open(os.path.join(SCGEN, "_nocss_page.mjs"), "w", encoding="utf-8").write(page_js)
-page_path = r"C:\workspace\ldoce\_nocss_audit.html"
+page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_nocss_audit.html")
 r = subprocess.run(["node", os.path.join(SCGEN, "_nocss_page.mjs"), work, page_path],
                    capture_output=True, text=True, encoding="utf-8", cwd=SCGEN)
 print(r.stdout.strip() or r.stderr[:400], flush=True)

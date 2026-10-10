@@ -15,7 +15,7 @@ import ldoce2yomitan as M  # noqa: E402
 
 SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                     "extract", "LDOCE5++ V 2-15.mdx.txt")
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.11.zip")
 LIMIT = 6000
 
 z = zipfile.ZipFile(ZIP)

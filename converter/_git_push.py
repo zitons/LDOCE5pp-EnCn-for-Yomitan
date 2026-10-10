@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 
-REPO = r"C:\workspace\ldoce"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The proxy was needed when direct access was blocked, but it also breaks the push
 # whenever the local proxy itself is down (400 Bad Request on CONNECT). Direct
 # access now works, so allow either: GIT_HTTPS_PROXY="" forces direct, otherwise
