@@ -155,39 +155,45 @@ class Parser:
         return strip_tags(m.group(2))
 
     @staticmethod
-    def _balanced(html, start):
-        """Given the index just past an opening <tag ...>, return the inner html.
+    def _balanced(html, open_start):
+        """Inner HTML of the element whose '<' is at open_start.
 
-        A non-greedy `.*?</tag>` stops at the first nested closing tag, which for
-        div.entryPageContent (full of nested divs) truncated the entry to almost
-        nothing -- that is why the first run parsed 0 of 3,000 entries. Count
-        open/close of the same tag instead.
+        The tag name is read from the OPENING tag itself, then open/close of that
+        same name are counted from just past it. The previous version took the
+        index after the '>' and matched the tag there, which is the first CHILD
+        -- so it counted the child's open/close and returned a fragment. Counting
+        from the opening tag's own name is what makes nested elements safe.
         """
-        m = re.match(r"<(\w+)", html[start:])
+        m = re.match(r"<(\w+)", html[open_start:])
         if not m:
             return None
         tag = m.group(1).lower()
+        # m.end() is only past the tag NAME ("<section"), not past the whole
+        # opening tag. Scanning from there includes the attributes in the
+        # "inner" html, which shifted every child match and made the senses
+        # vanish. Skip to the closing ">" of the opening tag.
+        gt = html.find(">", open_start)
+        if gt < 0:
+            return None
+        body_start = gt + 1
         depth = 1
-        pos = start
-        for tok in re.finditer(r"<(/?)(\w+)[^>]*?(/?)>", html[start:]):
+        for tok in re.finditer(r"<(/?)(\w+)[^>]*?(/?)>", html[body_start:]):
             closing, name, selfclose = tok.group(1), tok.group(2).lower(), tok.group(3)
             if name != tag or selfclose:
                 continue
             if closing:
                 depth -= 1
                 if depth == 0:
-                    return html[start:start + tok.start()]
+                    return html[body_start:body_start + tok.start()]
             else:
                 depth += 1
-        return html[start:]
+        return html[body_start:]
 
     def _cls_inner(self, html, cls):
         """Inner HTML of the first element whose class list contains `cls`."""
         for m in re.finditer(r'<(\w+)[^>]*\bclass="([^"]*)"[^>]*>', html, re.I):
             if cls in m.group(2).split():
-                inner = self._balanced(html, m.end())
-                if inner is not None:
-                    return inner
+                return self._balanced(html, m.start())
         return None
 
     # -- entry --------------------------------------------------------
@@ -220,11 +226,11 @@ class Parser:
         if not groups:
             groups = [None]
         for gm in groups:
-            g = body[gm.end():] if gm else body
-            if gm:
-                # the group runs to the next group start or the end of the body
-                nxt = body.find("<", gm.end())
-                g = self._balanced(body, gm.end())
+            # _balanced takes the position of the opening tag's "<", not the
+            # index past its ">" -- passing gm.end() made it read the first
+            # CHILD's tag and count that, so the group body was a fragment and
+            # every sense disappeared.
+            g = self._balanced(body, gm.start()) if gm else body
             self._group(g or body, out)
 
         etym = self._cls_text(body, "etym")
