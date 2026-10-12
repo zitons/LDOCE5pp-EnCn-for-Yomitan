@@ -83,6 +83,14 @@ def div(content, cls=None, **kw):
     return sc("div", content, cls, **kw)
 
 
+def details(content, cls=None, **kw):
+    return sc("details", content, cls, **kw)
+
+
+def summary(content, cls=None, **kw):
+    return sc("summary", content, cls, **kw)
+
+
 def strip_tags(s):
     s = re.sub(r"<script\b[^>]*>.*?</script>", " ", s, flags=re.S | re.I)
     s = re.sub(r"<style\b[^>]*>.*?</style>", " ", s, flags=re.S | re.I)
@@ -233,19 +241,33 @@ def generate_css():
 [data-sc-class="ld-gram"] { color:var(--ld-brown); }
 [data-sc-class="ld-gloss"] { color:var(--ld-text2); }
 
-/* ---- boxed collocation / thesaurus / phrase sections ---- */
-[data-sc-class="ld-box"] { display:block; background:var(--ld-boxbg);
+/* ---- boxed collocation / thesaurus / phrase sections ----
+   Each is a <details> that starts COLLAPSED. The source dictionary hides these
+   popups behind .expandable with display:none; expanding them all turned one
+   entry into a wall of text ('make': 69 senses, 1,616 examples). Native
+   <details>/<summary> restores the folding -- verified that Yomitan's SC
+   generator passes both tags through and that omitting `open` leaves them shut. */
+[data-sc-class="ld-box"] { display:block; margin:6px 0; }
+[data-sc-class="ld-box-body"] { display:block; background:var(--ld-boxbg);
   color:var(--ld-boxtx); border-top:1px solid var(--ld-rule);
-  border-bottom:1px solid var(--ld-rule); padding:5px 7px; margin:8px 0; }
+  border-bottom:1px solid var(--ld-rule); padding:5px 7px; }
+/* the summary IS the header bar; drop the default disclosure triangle and show a
+   chevron instead */
+[data-sc-class="ld-box"] > summary { list-style:none; cursor:pointer; }
+[data-sc-class="ld-box"] > summary::-webkit-details-marker { display:none; }
 /* ONE class per element: Yomitan puts the whole class string into data-sc-class,
-   so a combined "ld-boxhead ld-boxhead-wf" never matches
-   [data-sc-class="ld-boxhead"]. The kind therefore gets its own rule. */
+   so a combined value never matches [data-sc-class="ld-boxhead"]. */
 [data-sc-class="ld-boxhead-collo"], [data-sc-class="ld-boxhead-exa"],
 [data-sc-class="ld-boxhead-thes"], [data-sc-class="ld-boxhead-etym"],
 [data-sc-class="ld-boxhead-wf"], [data-sc-class="ld-boxhead-phrase"] {
   display:block; font-weight:700; color:var(--ld-onband);
-  background:var(--ld-pop); padding:2px 6px; margin:-5px -7px 5px;
+  background:var(--ld-pop); padding:2px 6px;
   font-variant:small-caps; text-transform:uppercase; font-size:.85em; }
+[data-sc-class="ld-boxhead-collo"]::after, [data-sc-class="ld-boxhead-exa"]::after,
+[data-sc-class="ld-boxhead-thes"]::after, [data-sc-class="ld-boxhead-etym"]::after,
+[data-sc-class="ld-boxhead-wf"]::after, [data-sc-class="ld-boxhead-phrase"]::after {
+  content:" ▸"; float:right; font-size:.8em; opacity:.85; }
+[data-sc-class="ld-box"][open] > summary::after { content:" ▾"; }
 [data-sc-class="ld-boxhead-wf"] { background:var(--ld-wf); color:#20303f; }
 [data-sc-class="ld-boxhead-phrase"] { background:var(--ld-purple); }
 [data-sc-class="ld-boxhead-etym"] { background:var(--ld-green); }
@@ -636,22 +658,26 @@ class Parser:
             parts.append(div(nodes, "ld-ex"))
 
     def _popup(self, pop, out, kind):
-        """Render one hidden popup (collocations / thesaurus / phrases / ...)."""
+        """Render one hidden popup as a COLLAPSED <details> section.
+
+        The source dictionary hides every collocation / thesaurus / phrase /
+        word-family popup behind .expandable with `display:none` and a
+        .popup-button. Rendering them expanded turned one entry into a wall of
+        text -- 'make' carries 69 senses and 1,616 examples -- which is exactly
+        the lookup friction the folding was there to prevent. Native
+        <details>/<summary> restores it: verified that Yomitan's SC generator
+        passes both tags through, and that omitting `open` leaves them collapsed.
+        """
         # the popup may hold several entries of its own
         entries = self._all(pop, "entry") or [pop]
+        header = None
         kids = []
         for e in entries:
             ph = self._cls_inner(e, "popheader")
             if ph is not None:
                 t = strip_tags(ph)
-                if t:
-                    # ONE class only. Yomitan's generator puts the whole class
-                    # string into data-sc-class, so "ld-boxhead ld-boxhead-wf"
-                    # never matches [data-sc-class="ld-boxhead"] -- the box header
-                    # rendered with a transparent background and invisible text.
-                    # The kind is carried by a separate marker class chosen from a
-                    # fixed set, each of which has its own rule.
-                    kids.append(div(t, f"ld-boxhead-{kind}"))
+                if t and header is None:
+                    header = t
             # section headings
             for sh in self._all(e, "secheading") + self._all(e, "subheading"):
                 t = strip_tags(sh)
@@ -691,8 +717,17 @@ class Parser:
                 t = strip_tags(wm[1])
                 if t:
                     kids.append(span(t, "ld-wfwd"))
-        if kids:
-            out.append(div(kids, "ld-box"))
+        if not kids:
+            return
+        if header is None:
+            header = {"collo": "Collocations", "thes": "Thesaurus",
+                      "phrase": "Phrases", "wf": "Word family",
+                      "etym": "Word origin", "exa": "Examples"}.get(
+                          kind, "More")
+        # ONE class on the summary: Yomitan puts the whole class string into
+        # data-sc-class, so a combined value never matches the selector.
+        out.append(details([summary(header, f"ld-boxhead-{kind}"),
+                            div(kids, "ld-box-body")], "ld-box"))
 
     def _parse_gramexa(self, key, html):
         """A grammar-example entry: propform + optional example."""
@@ -729,7 +764,9 @@ class Parser:
                                 "ld-collo-ex"))
         if not kids:
             return None
-        out.append(div(kids, "ld-box"))
+        # collapsed by default, like the source's Word Family popup
+        out.append(details([summary("Word family", "ld-boxhead-wf"),
+                            div(kids, "ld-box-body")], "ld-box"))
         return div(out, "ld-entry")
 
     def _parse_colloexa(self, key, html, wrap=True):
