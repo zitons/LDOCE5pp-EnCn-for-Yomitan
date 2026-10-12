@@ -14,14 +14,15 @@ Known fixes between 09.11 PRE_FIX and 09.12 R2:
   B    semantic markers                             -> ld-mark spans appear
   box  sense-group labels                           -> ld-panel-sub appears
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-R2 = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-PRE = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
+R2 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+PRE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
 
 
 def load(path):
@@ -52,6 +53,10 @@ kinds = Counter()
 unexplained = []
 tag_only = rule_only = 0
 
+if len(pre) != len(r2):
+    sys.exit(f"row counts differ ({len(pre)} vs {len(r2)}) -- refusing a positional compare")
+if [r[0] for r in pre] != [r[0] for r in r2]:
+    sys.exit("row order differs -- refusing a positional compare")
 for a, b in zip(pre, r2):
     ga, gb = json.dumps(a[5], ensure_ascii=False), json.dumps(b[5], ensure_ascii=False)
     ta, tb = set(a[2].split()), set(b[2].split())

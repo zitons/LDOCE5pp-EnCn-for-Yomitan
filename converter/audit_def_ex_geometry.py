@@ -23,8 +23,8 @@ import subprocess
 import sys
 import zipfile
 
-ZIP = r"C:\workspace\ldoce\yomitan_cap_test\LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip"
-SCGEN = r"C:\workspace\ldoce\scgen_test"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_cap_test", "LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip")
+SCGEN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scgen_test")
 WORDS = ["abandon", "abbreviation", "child", "improve"]
 
 z = zipfile.ZipFile(ZIP)
@@ -63,7 +63,7 @@ fs.writeFileSync(process.argv[3],
   + '</head><body>' + body + '</body></html>');
 console.log('page built');
 """)
-page = r"C:\workspace\ldoce\_defex.html"
+page = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_defex.html")
 r = subprocess.run(["node", os.path.join(SCGEN, "_defex_page.mjs"), sc_path, page],
                    capture_output=True, text=True, encoding="utf-8", cwd=SCGEN)
 print(r.stdout.strip() or r.stderr[:400], flush=True)

@@ -1,14 +1,16 @@
 """Locate the boxes whose lm5ppBoxHead carries a sense-gloss heading
 ('– Meaning 1: ...') and show their classes + what the renderer does with them."""
+import os
 import re
 import sys
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 WORD = sys.argv[1] if len(sys.argv) > 1 else "act"
 
 content = None
@@ -17,6 +19,8 @@ for key, c in M.iter_records(SIDE):
         content = c
         break
 
+if content is None:
+    raise SystemExit(f"{WORD!r}: no record in {SIDE}")
 soup = BeautifulSoup(content, "lxml")
 print(f"=== {WORD}: every lm5ppBoxHead, with its enclosing box class ===")
 for h in soup.find_all(class_="lm5ppBoxHead"):

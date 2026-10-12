@@ -6,7 +6,6 @@ Only writes evidence alongside this script, using the project's atomic writer.
 import collections
 import hashlib
 import json
-import re
 import sys
 import time
 from pathlib import Path

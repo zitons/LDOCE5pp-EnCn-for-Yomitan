@@ -2,7 +2,7 @@
 All three package dates are explicit; no older report is overwritten.
 """
 from collections import Counter,defaultdict
-import gc,hashlib,json,re,sys,zipfile
+import hashlib,json,re,sys,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 OUT=Path(__file__).resolve().parent

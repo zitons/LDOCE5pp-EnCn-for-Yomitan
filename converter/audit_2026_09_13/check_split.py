@@ -9,7 +9,6 @@ alnum runs on either side (L, R) and ask the SOURCE:
 
     PYTHONIOENCODING=utf-8 venv/Scripts/python.exe -u converter/audit_2026_09_13/check_split.py
 """
-import collections
 import json
 import re
 import sys
@@ -17,7 +16,7 @@ import zipfile
 from html import unescape
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "converter"))
 import ldoce2yomitan as M  # noqa: E402
 

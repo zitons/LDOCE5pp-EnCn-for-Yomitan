@@ -88,9 +88,8 @@ def hoshi_load_audio(db, source, file):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=r"C:\workspace\ldoce\build\audio_sample.db")
-    ap.add_argument("--zip", default=r"C:\workspace\ldoce\yomitan_full"
-                                     r"\LDOCE5pp_Yomitan_2026.09.13.zip")
+    ap.add_argument("--db", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "audio_sample.db"))
+    ap.add_argument("--zip", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.13.zip"))
     ap.add_argument("--words", default="improve,abandon,child,run,the,water,happy,"
                                        "computer,government,beautiful,one,time")
     args = ap.parse_args()

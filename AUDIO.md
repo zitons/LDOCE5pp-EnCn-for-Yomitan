@@ -98,7 +98,7 @@ CREATE TABLE android (          -- Hoshi: loadAudio()
 python converter/build_audio_db.py \
   --mdd "LDOCE5_V_2-15.mdd" \
   --src "extract/LDOCE5++ V 2-15.mdx.txt" \
-  --zip "yomitan_full/LDOCE5pp_Yomitan_2026.09.13.zip" \
+  --zip "yomitan_full/LDOCE5pp_Yomitan_2026.10.03.zip" \
   --out "yomitan_audio/android.db"
 ```
 

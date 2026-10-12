@@ -454,11 +454,10 @@ def build(mdd_path, out_path, zip_path, src, limit=None, progress_every=20000):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mdd", default=r"C:\workspace\ldoce\LDOCE5_V_2-15.mdd")
-    ap.add_argument("--src", default=r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt")
-    ap.add_argument("--zip", default=r"C:\workspace\ldoce\yomitan_full"
-                                     r"\LDOCE5pp_Yomitan_2026.09.13.zip")
-    ap.add_argument("--out", default=r"C:\workspace\ldoce\yomitan_audio\android.db")
+    ap.add_argument("--mdd", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "LDOCE5_V_2-15.mdd"))
+    ap.add_argument("--src", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extract", "LDOCE5++ V 2-15.mdx.txt"))
+    ap.add_argument("--zip", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.13.zip"))
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_audio", "android.db"))
     ap.add_argument("--limit", type=int, default=None,
                     help="only this many dictionary expressions (sampling)")
     args = ap.parse_args()

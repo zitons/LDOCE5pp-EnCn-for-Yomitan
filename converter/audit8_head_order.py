@@ -10,14 +10,16 @@ and the renderer deliberately drops those).
 
 Exit code is non-zero when any head mismatches.
 """
+import os
 import sys
 import collections
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r'C:\workspace\ldoce\converter')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M
 
-SIDE = r'C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt'
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
 
 DIRECT = {

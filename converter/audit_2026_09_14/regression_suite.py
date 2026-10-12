@@ -21,20 +21,32 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 import argparse
 
-FIX_MARK=re.compile(r'\[data-sc-class="ld-colloexa"\]\s*\*')   # the D42 descendant reset
+# A package is eligible for the alignment gate when its stylesheet carries the
+# D42/D43 fix. Test the SUBSTANCE, not one specific rule: the original marker was
+# the D42 descendant reset (`ld-colloexa *`), which D44 then deleted as unnecessary
+# -- so a rule-literal marker silently rejected every post-D44 package and fell
+# back to the previous one. These properties hold for both the D42 patch and the
+# D44 rewrite: no negative text-indent anywhere, and the hanging classes use a
+# positive margin-left.
+FIX_MARK=re.compile(r'text-indent\s*:\s*-')
+HANGING_MARK=re.compile(r'\[data-sc-class="ld-ex"\][^{]*\{[^}]*margin[^;}]*1\.6em')
 
 def has_alignment_fix(pkg):
  try:
   css=zipfile.ZipFile(pkg).read('styles.css').decode('utf-8','replace')
  except Exception:
   return False
- return bool(FIX_MARK.search(css))
+ if FIX_MARK.search(css):
+  return False          # still on the fragile text-indent scheme
+ return bool(HANGING_MARK.search(css))
 
 def newest_fixed_package(mode):
- """Newest non-DEBUG package whose styles.css contains the fix.
+ """Newest non-DEBUG package whose stylesheet carries the D42/D43 fix.
 
  Selecting by the fix itself -- rather than by directory name or mtime alone -- stays
  correct across rebuilds and renames: a pre-fix package is simply never eligible.
+ The marker tests the substance (no negative text-indent + margin-left indents), so
+ it keeps matching after the D44 rewrite replaced the original D42 band-aid rule.
  """
  for p in newest_first(mode):
   if has_alignment_fix(p):
@@ -80,8 +92,12 @@ align_bi=align_bi.resolve() if align_bi else None
 align_mo=align_mo.resolve() if align_mo else None
 print('alignment packages:',align_bi or '(none found)',align_mo or '(none found)',flush=True)
 SKIP_CODE=2
-# only these steps may turn exit 2 into "skipped"; every other non-zero exit is a failure
-SKIP_OK={'bilingual_alignment','mono_alignment'}
+# exit 2 means "prerequisite missing" and only these steps may turn it into a skip
+SKIP_OK={'bilingual_alignment','mono_alignment','hanging_indent'}
+# ...but only the alignment steps genuinely need a package on the command line.
+# regress_hanging_indent.py tests the stylesheet and takes no package, so lumping
+# it in here made line 122 skip it before it ever ran.
+NEEDS_PKG={'bilingual_alignment','mono_alignment'}
 steps=[
  ('followup_fast','regress_review_followup.py',None),
  ('publication_and_sequence','audit_2026_09_12/regress_gates.py',None),
@@ -94,6 +110,10 @@ steps=[
  ('markers','regress_scheme_b.py',bilingual),
  ('bilingual_alignment','regress_alignment.py',align_bi),
  ('mono_alignment','regress_alignment.py',align_mo),
+ # D44: the hanging-indent gate. Static + dynamic, needs Chrome, so a missing
+ # browser must degrade to SKIP, not FAIL -- the same contract as the
+ # alignment steps above (SKIP_OK).
+ ('hanging_indent','regress_hanging_indent.py',None),
  ('historical_content','audit_2026_09_12/regress_content.py',bilingual),
  ('headword_pollution','audit5_headword.py',bilingual),
 ]
@@ -103,7 +123,7 @@ state={'packages':{str(p):sha(p) for p in (bilingual,mono)},
        'checks':[]}
 save=lambda:(OUT/'results.json').write_text(json.dumps(state,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 for label,script,package in steps:
- if label in SKIP_OK and package is None:
+ if label in NEEDS_PKG and package is None:
   state['checks'].append({'name':label,'command':None,'exit_code':None,'skipped':True,
                           'reason':'no package containing the D42/D43 fix was found'})
   save(); print('SKIP',label,'-- pass --alignment-bilingual/--alignment-mono',flush=True)

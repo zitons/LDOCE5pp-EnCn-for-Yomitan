@@ -1,6 +1,7 @@
 """Quick preview: render Yomitan structured-content rows from a term bank
 into a standalone HTML page (mirroring Yomitan's generator semantics) so the
 build can be eyeballed in a browser."""
+import os
 import json
 import sys
 import html as html_mod
@@ -80,7 +81,8 @@ body {{ font-family: Georgia, 'Times New Roman', 'Segoe UI', sans-serif; backgro
 a {{ color:#0a66c2; }}
 {css}
 </style></head><body>{''.join(parts)}</body></html>"""
-    out = "C:\\workspace\\ldoce\\preview.html"
+    out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                   "preview.html")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(page)
     print("written", out)

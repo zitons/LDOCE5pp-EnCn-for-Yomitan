@@ -1,15 +1,17 @@
 """Quantify the panel-heading question: how often does a source box heading
 carry real content that our generic fallback title would replace?"""
+import os
 import collections
 import re
 import sys
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 2500
 
 known = set(M.PANEL_TITLES_ZH.keys())

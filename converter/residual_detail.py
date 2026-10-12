@@ -5,16 +5,18 @@ double-counting that plagued earlier probes.
 Hidden-per-audit9-model nodes are skipped, so anything reported is either real
 loss or a deliberate transform we should be able to name.
 """
+import os
 import collections
 import re
 import sys
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 600
 DROP = set(M.DROP_CLASSES)
 EXTRA_HIDDEN = {"HYPHENATION", "landscape", "portrait"}

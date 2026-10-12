@@ -10,14 +10,16 @@ Measures, over the whole corpus:
   * how many carry an `Entry.LDOCEVERSION_new`
   * total hidden-entry bodies (the actual leak surface)
 """
+import os
 import collections
 import re
 import sys
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 PAT_NEW = re.compile(r'class="dictentry LDOCEVERSION_new"')
 PAT_ENTRY = re.compile(r'class="ldoceEntry Entry LDOCEVERSION_new"')

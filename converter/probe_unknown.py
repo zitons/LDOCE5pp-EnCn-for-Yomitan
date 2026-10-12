@@ -1,9 +1,10 @@
 """Find WHICH code path logs 'w' / 'rootword' / 'crossRef' as unknown classes."""
+import os
 import sys
 import traceback
 from collections import Counter
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
 WATCH = {"w", "rootword", "crossRef", "newfamily", "notRef"}
@@ -19,7 +20,8 @@ class TracingCounter(Counter):
         super().__setitem__(key, value)
 
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 ti = M.TermIndex()
 recs = []
 for k, c in M.iter_records(SIDE):

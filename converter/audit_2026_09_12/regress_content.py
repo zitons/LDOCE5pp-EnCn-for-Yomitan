@@ -14,7 +14,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "converter"))
 import ldoce2yomitan as M  # noqa: E402

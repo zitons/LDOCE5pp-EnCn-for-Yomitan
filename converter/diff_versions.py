@@ -5,14 +5,15 @@ Both builds walk the same source in the same order, so row i of bank k
 corresponds; the row counts are identical (245,933), so a positional diff is
 sound. Reports: rows changed, entries vs aliases, and what changed inside them.
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-OLD = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
-NEW = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
+OLD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
+NEW = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.11.zip")
 
 
 def banks(path):

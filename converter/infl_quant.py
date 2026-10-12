@@ -1,16 +1,18 @@
 """Check Inflections fidelity: every surface form in the source Inflections span
 should appear in the rendered row (the '·' separator and dropped parentheses are
 deliberate styling, but no FORM may go missing)."""
+import os
 import json
 import re
 import sys
 
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = 4000
 
 ti = M.TermIndex()

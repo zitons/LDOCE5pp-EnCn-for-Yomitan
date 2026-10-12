@@ -1,13 +1,14 @@
 """Investigate the 14 rows whose glossary changed with no marker/tag/rule
 explanation. Show the exact textual delta against the PRE_FIX baseline."""
+import os
 import difflib
 import json
 import re
 import sys
 import zipfile
 
-R2 = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.12.zip"
-PRE = r"C:\workspace\ldoce\_baseline\LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip"
+R2 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.12.zip")
+PRE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_baseline", "LDOCE5pp_Yomitan_2026.09.11.PRE_FIX.zip")
 WORDS = ["4-F", "coconut shy", "Father of the Church", "heave to", "innings",
          "Lord Lieutenant, the", "M", "mother-to-be", "Nepali", "oarswoman",
          "Orangeman", "steno"]

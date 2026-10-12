@@ -4,14 +4,16 @@ Scan the raw sidecar for Inflections spans containing:
   * region labels (BrE / AmE / British English / American English)
   * other parenthesised notes
 """
+import os
 import io
 import re
 import sys
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 SPAN = re.compile(r'<span class="Inflections">.*?</span>\s*(?=<span|<div|</)', re.S)
 same_pron = 0
@@ -32,6 +34,8 @@ for key, content in M.iter_records(SIDE):
         # cut at the closing of the Inflections span by depth counting is overkill;
         # the annotation lives within the first ~400 chars in every observed case
         end = seg.find('</span><span class="GRAM"')
+    if end != -1:
+        seg = seg[:end]   # only what is INSIDE the Inflections span
         total += 1
         txt = re.sub(r"<[^>]+>", " ", seg)
         txt = re.sub(r"\s+", " ", txt)

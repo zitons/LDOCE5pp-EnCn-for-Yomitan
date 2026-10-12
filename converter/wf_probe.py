@@ -1,9 +1,11 @@
 """Print the raw structure of every div.wordfams block of given words."""
+import os
 import io
 import re
 import sys
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 words = set(sys.argv[1:]) or {"close"}
 pat = re.compile(r'<div class="wordfams">', re.I)
 

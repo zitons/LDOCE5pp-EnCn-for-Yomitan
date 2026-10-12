@@ -20,15 +20,17 @@ Anything still missing is real loss. Note the known exception: the `See picture`
 cross-reference (class `imagerelated`) IS displayed by the original and IS
 dropped by us -- see REVIEW.md D8.
 """
+import os
 import re
 import sys
 import collections
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-sys.path.insert(0, r'C:/workspace/ldoce/converter')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M
 
-SIDE = r'C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt'
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 800
 
 TOK = re.compile(r'[A-Za-z]+|[\u4e00-\u9fff]|\d+')

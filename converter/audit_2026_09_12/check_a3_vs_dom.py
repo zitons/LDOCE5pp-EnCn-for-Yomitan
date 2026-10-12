@@ -7,7 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(r"C:\workspace\ldoce")
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "converter"))
 import ldoce2yomitan as M  # noqa: E402
 from lxml import html  # noqa: E402

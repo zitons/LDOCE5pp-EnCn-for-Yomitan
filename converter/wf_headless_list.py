@@ -1,8 +1,10 @@
 """List every word whose entry has a headerless div.wordfams (T10 set)."""
+import os
 import io
 import re
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 pat = re.compile(r'<div class="wordfams">(.{0,100})', re.S)
 key = None
 buf = []

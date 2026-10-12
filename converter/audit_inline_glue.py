@@ -7,13 +7,14 @@ Use audit_nocss_final.py.
 Kept only as a record of the investigation. See REVIEW.md D33 and
 HANDOVER.md pitfall 63.
 """
+import os
 import json
 import re
 import sys
 import zipfile
 from collections import Counter
 
-ZIP = r"C:\workspace\ldoce\yomitan_cap_test\LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip"
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_cap_test", "LDOCE5pp_Yomitan_2026.09.12_DEBUG.zip")
 
 BLOCK_TAGS = {"div", "details", "summary", "ol", "ul", "li", "table", "thead",
               "tbody", "tr", "td", "th", "p", "h1", "h2", "h3"}

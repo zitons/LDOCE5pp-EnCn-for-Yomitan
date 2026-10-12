@@ -1,5 +1,6 @@
 """Print the raw <span class="LDOCE_word_family"> subtree for chosen words, and
 the rendered word-family panel, side by side."""
+import os
 import io
 import json
 import re
@@ -8,8 +9,9 @@ import zipfile
 
 from bs4 import BeautifulSoup
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
-ZIP = r"C:\workspace\ldoce\yomitan_full\LDOCE5pp_Yomitan_2026.09.11.zip"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
+ZIP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yomitan_full", "LDOCE5pp_Yomitan_2026.09.11.zip")
 words = set(sys.argv[1:]) or {"advantage"}
 
 key = None

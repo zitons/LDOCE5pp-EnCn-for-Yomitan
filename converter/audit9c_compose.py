@@ -10,16 +10,18 @@ output, which source elements carried them, and does the ORIGINAL stylesheet
 display those elements at all?  (audit9b over-counted: it attributed a token's
 full path count rather than the missing share.)
 """
+import os
 import collections
 import re
 import sys
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-sys.path.insert(0, r"C:/workspace/ldoce/converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as M  # noqa: E402
 
-SIDE = r"C:/workspace/ldoce/extract/LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 800
 TOK = re.compile(r"[A-Za-z]+|[\u4e00-\u9fff]|\d+")
 DROP = set(M.DROP_CLASSES)
@@ -109,8 +111,8 @@ tot = sum(missing_total.values())
 print(f"sample entries        = {len(recs)}")
 print(f"source tokens         = {src_n}")
 print(f"output tokens         = {got_n}")
-print(f"MISSING (audit9 model)= {tot}  ({tot*100.0/src_n:.3f}% of source)")
-print(f"entries with missing  = {len(offenders)} ({len(offenders)*100.0/len(recs):.1f}%)")
+print(f"MISSING (audit9 model)= {tot}  ({tot*100.0/max(src_n,1):.3f}% of source)")
+print(f"entries with missing  = {len(offenders)} ({len(offenders)*100.0/max(len(recs),1):.1f}%)")
 print()
 
 # ---- classify each path against what the ORIGINAL stylesheet hides ----------

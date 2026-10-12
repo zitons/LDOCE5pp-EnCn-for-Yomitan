@@ -5,19 +5,22 @@ For every record: parse with lxml, walk all elements with 'wordfams' in their
 class list, classify by (a) inside lm5pp_popup?, (b) has direct-child sensefold?,
 (c) is it the exact class="wordfams" form?
 """
+import os
 import io
 import re
 from collections import Counter
 
 from bs4 import BeautifulSoup
 
-SIDE = r"C:\workspace\ldoce\extract\LDOCE5++ V 2-15.mdx.txt"
+SIDE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "extract", "LDOCE5++ V 2-15.mdx.txt")
 
 tot = 0
 in_popup = 0
 headless = 0
 classes = Counter()
 headless_in_content = []
+skipped_no_wf = 0
 key = None
 buf = []
 
@@ -45,21 +48,26 @@ with io.open(SIDE, encoding="utf-8", newline="") as fh:
     for line in fh:
         line = line.rstrip("\r\n")
         if line == "</>":
-            if key and "wordfams" in buf_join:
-                pass
-            if key:
-                scan(key, "\n".join(buf))
+            body = "\n".join(buf)
+            # Records with no wordfams panel at all cannot contribute a wordfams
+            # element, so skip them instead of parsing 65k records to find
+            # nothing. The guard previously tested this and then did `pass`,
+            # which is why every record was still parsed.
+            if key and "wordfams" not in body:
+                skipped_no_wf += 1
+            elif key:
+                scan(key, body)
             key = None
             buf = []
         elif key is None and not buf:
             key = line
         else:
             buf.append(line)
-        buf_join = ""
 
 print(f"elements with class wordfams: {tot}")
 print(f"  inside lm5pp_popup        : {in_popup}")
 print(f"  headerless (guard skips)  : {headless}")
+print(f"  records skipped (no wordfams in body): {skipped_no_wf:,}")
 print(f"  headerless NOT in popup   : {headless - sum(1 for k, c in headless_in_content)} "
       f"(list below is capped at 20)")
 print("\ndistinct class strings (top 10):")

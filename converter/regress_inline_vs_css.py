@@ -19,10 +19,11 @@ generate_css() either
 It also measures the static scheme-A neutrals, which are theme-blind by construction:
 each must clear 3:1 against BOTH a white and a dark host background.
 """
+import os
 import re
 import sys
 
-sys.path.insert(0, r"C:\workspace\ldoce\converter")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ldoce2yomitan as C  # noqa: E402
 
 css = C.generate_css()
