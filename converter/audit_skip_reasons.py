@@ -11,7 +11,11 @@ import re
 import sys
 from collections import Counter
 
-ROOT = r"C:\workspace\ldoce"
+# Derive the checkout root from this file, as the audit_2026_09_* scripts do.
+# A hardcoded literal made the "no hardcoded paths anywhere" claim false, and
+# sys.path here imports the converter of WHATEVER checkout the literal names --
+# exactly the cross-checkout import hazard these audits are meant to catch.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "converter"))
 import ldoce2yomitan as C  # noqa: E402
 

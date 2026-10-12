@@ -18,13 +18,15 @@ import sys
 import zipfile
 from collections import Counter
 
-ROOT = r"C:\workspace\ldoce"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "converter"))
 import ldoce2yomitan as C  # noqa: E402
 
 SRC = os.path.join(ROOT, "extract", "LDOCE5++ V 2-15.mdx.txt")
-PKG = os.path.join(ROOT, "yomitan_fixed", "2026-10-09-margin-left", "bilingual",
-                   "LDOCE5pp_Yomitan_2026.10.09.zip")
+PKG = os.environ.get(
+    "AUDIT_PKG",
+    os.path.join(ROOT, "yomitan_fixed", "2026-10-09-margin-left", "bilingual",
+                 "LDOCE5pp_Yomitan_2026.10.12.zip"))
 
 print(f"source: {SRC}  ({os.path.getsize(SRC):,} B)")
 print(f"package: {os.path.basename(PKG)}")
@@ -81,6 +83,11 @@ for r, ks in sorted(skipped_samples.items(), key=lambda x: -len(x[1])):
 print()
 
 # --------------------------------------------------------------- package side
+# A redirect row is recognisable by its SHAPE, not by a magic score -- the same
+# criterion audit_redirect_coverage.py documents. An earlier version tested
+# `r[4] == 0`, which matches NOTHING in this package: content rows carry +10 and
+# redirect rows -10, so it reported 0 redirect rows and counted all 245,933 rows
+# as content rows. Two scripts in the same batch disagreed for that reason.
 z = zipfile.ZipFile(PKG)
 pkg_expr = set()
 pkg_rows = 0
@@ -91,11 +98,16 @@ for name in z.namelist():
     for r in json.loads(z.read(name)):
         pkg_rows += 1
         pkg_expr.add(r[0])
-        if len(r) > 4 and r[4] == 0:      # score 0 marks a redirect row
+        gloss = r[5] if len(r) > 5 else []
+        if (isinstance(r[4], (int, float)) and r[4] < 0
+                and isinstance(gloss, list) and bool(gloss)
+                and all(isinstance(g, list) and len(g) > 1
+                        and isinstance(g[1], list) and "redirect" in g[1]
+                        for g in gloss)):
             pkg_redirect_rows += 1
 
 print(f"package rows                  : {pkg_rows:,}")
-print(f"  redirect rows (score 0)     : {pkg_redirect_rows:,}")
+print(f"  redirect rows (by shape)    : {pkg_redirect_rows:,}")
 print(f"  content rows                : {pkg_rows - pkg_redirect_rows:,}")
 print(f"  distinct expressions        : {len(pkg_expr):,}")
 print()

@@ -16,13 +16,19 @@ import sys
 import zipfile
 from collections import Counter
 
-ROOT = r"C:\workspace\ldoce"
+# Derive the checkout root from this file, as the audit_2026_09_* scripts do.
+# A hardcoded literal made the "no hardcoded paths anywhere" claim false, and
+# sys.path here imports the converter of WHATEVER checkout the literal names --
+# exactly the cross-checkout import hazard these audits are meant to catch.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "converter"))
 import ldoce2yomitan as C  # noqa: E402
 
 SRC = os.path.join(ROOT, "extract", "LDOCE5++ V 2-15.mdx.txt")
-PKG = os.path.join(ROOT, "yomitan_fixed", "2026-10-09-margin-left", "bilingual",
-                   "LDOCE5pp_Yomitan_2026.10.09.zip")
+PKG = os.environ.get(
+    "AUDIT_PKG",
+    os.path.join(ROOT, "yomitan_fixed", "2026-10-09-margin-left", "bilingual",
+                 "LDOCE5pp_Yomitan_2026.10.12.zip"))
 
 # Two different markups exist in the source and they mean different things:
 #   class="_ACTIV_"  -> only inside the ACTIV: index pages (which are skipped)

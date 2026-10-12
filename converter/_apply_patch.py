@@ -5,7 +5,6 @@ Usage: python _apply_patch.py <patch-name>
 """
 import hashlib
 import io
-import io
 import os
 import subprocess
 import sys

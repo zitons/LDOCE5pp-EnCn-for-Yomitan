@@ -133,6 +133,7 @@ python converter/ldoce2yomitan.py -i "extract/LDOCE5++ V 2-15.mdx.txt" \
 | `regress_inline_vs_css.py` | 行内兜底在有 CSS 时必须是 no-op | 22 条声明全部等值 |
 | `regress_render_contract.py` | 真 Chrome 渲染契约（主题色 / 源编号 / 标记） | **PASS** |
 | `regress_review_followup.py` | 发布门禁与文本处理的 14 组单元回归 | **14/14 OK** |
+| `regress_hanging_indent.py` | **D44 悬挂缩进**：静态禁负 `text-indent` + 真 Chrome 测编号列对齐 | 静态 **0 违规**；无 Chrome 时 SKIP（进套件 `SKIP_OK`） |
 | `audit_2026_09_14/regress_new_findings.py` | 空记录门禁、词内接缝及正反例 | **14/14 OK** |
 | `audit_2026_09_14/official_schema.mjs` | 实际 Yomitan AJV 全量校验 | 新双语/mono 全部 **491,866 行通过** |
 | `audit_subsequence_loss.py` | 内容守恒：剥空白后旧文本须为新文本有序子序列 | **245,664 词条 0 损失** |
