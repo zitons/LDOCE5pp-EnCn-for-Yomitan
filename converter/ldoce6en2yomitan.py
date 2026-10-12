@@ -151,36 +151,41 @@ def generate_css():
 [data-sc-class="ld-entry"] { display:block; line-height:1.4; font-size:1em;
   color:var(--text-color,inherit); margin:0 0 12px; }
 
-/* palette: LDOCE6's hues, mixed with the inherited text colour so they follow
-   the theme instead of staying fixed.
+/* palette: LDOCE6's hues.
    These MUST be declared on ld-entry, the element the converter actually emits as
-   the root. They were originally on [data-sc-class="ld"], but no `ld` wrapper is
-   ever produced, so every --ld-* custom property was undefined and every
-   var(--ld-*) colour fell back to the inherited text colour -- the whole entry
-   rendered as flat white text with no head band, no green POS, no brown
-   collocations. Custom properties inherit, so declaring them on the root covers
-   every descendant. */
+   the root -- declaring them on a [data-sc-class="ld"] wrapper that is never
+   produced left every var() undefined and the whole entry rendered as flat white
+   text. Custom properties inherit, so the root covers every descendant.
+
+   THEME HANDLING: surfaces (bands, boxes, pills) are mixed with
+   --background-color, which Hoshi's popup.css defines per theme (#fff light /
+   #000 dark). The mix ratio is deliberately LOPsided toward the background so a
+   band comes out PALE on a light theme and DARK on a dark one -- a 50/50 mix
+   lands on a mid tone in both, which is unreadable against either text colour.
+   Text accents are mixed the other way, toward --text-color, so they darken on
+   light themes and lighten on dark ones. */
 [data-sc-class="ld-entry"] {
-  --ld-blue:   color-mix(in srgb, #20558E 80%, var(--text-color, currentColor) 20%);
-  --ld-green:  color-mix(in srgb, #27A058 80%, var(--text-color, currentColor) 20%);
-  --ld-brown:  color-mix(in srgb, #917F5C 80%, var(--text-color, currentColor) 20%);
-  --ld-teal:   color-mix(in srgb, #398597 80%, var(--text-color, currentColor) 20%);
+  --ld-blue:   color-mix(in srgb, #20558E 55%, var(--text-color, currentColor) 45%);
+  --ld-green:  color-mix(in srgb, #27A058 55%, var(--text-color, currentColor) 45%);
+  --ld-brown:  color-mix(in srgb, #917F5C 55%, var(--text-color, currentColor) 45%);
+  --ld-teal:   color-mix(in srgb, #398597 55%, var(--text-color, currentColor) 45%);
   --ld-text2:  color-mix(in srgb, var(--text-color, currentColor) 86%, transparent);
   --ld-dim:    color-mix(in srgb, var(--text-color, currentColor) 72%, transparent);
   --ld-rule:   color-mix(in srgb, #ababac 70%, var(--text-color, currentColor) 30%);
-  --ld-band:   color-mix(in srgb, #edf4fa 50%, var(--text-color, currentColor) 50%);
-  --ld-bandbd: color-mix(in srgb, #80a4be 80%, var(--text-color, currentColor) 20%);
-  --ld-boxbg:  color-mix(in srgb, #EDF4FA 50%, var(--text-color, currentColor) 50%);
-  --ld-boxtx:  color-mix(in srgb, #32648B 82%, var(--text-color, currentColor) 18%);
-  --ld-sectbg: color-mix(in srgb, #396789 26%, transparent);
-  --ld-secttx: color-mix(in srgb, #396789 88%, var(--text-color, currentColor) 12%);
-  --ld-signbg: color-mix(in srgb, #647FB8 80%, var(--text-color, currentColor) 20%);
-  --ld-signhd: color-mix(in srgb, #85a8c4 80%, var(--text-color, currentColor) 20%);
-  --ld-pop:    color-mix(in srgb, #6891b1 80%, var(--text-color, currentColor) 20%);
-  --ld-wf:     color-mix(in srgb, #ffd448 80%, var(--text-color, currentColor) 20%);
-  --ld-node:   color-mix(in srgb, #2a4d66 85%, var(--text-color, currentColor) 15%);
-  --ld-red:    color-mix(in srgb, #d0021b 78%, var(--text-color, currentColor) 22%);
-  --ld-purple: color-mix(in srgb, #7d26cd 78%, var(--text-color, currentColor) 22%);
+  --ld-band:   color-mix(in srgb, #edf4fa 22%, var(--background-color, currentColor) 78%);
+  --ld-bandbd: color-mix(in srgb, #80a4be 78%, var(--text-color, currentColor) 22%);
+  --ld-boxbg:  color-mix(in srgb, #EDF4FA 22%, var(--background-color, currentColor) 78%);
+  --ld-boxtx:  color-mix(in srgb, #32648B 45%, var(--text-color, currentColor) 55%);
+  --ld-sectbg: color-mix(in srgb, #396789 20%, var(--background-color, currentColor) 80%);
+  --ld-secttx: color-mix(in srgb, #396789 45%, var(--text-color, currentColor) 55%);
+  --ld-signbg: color-mix(in srgb, #647FB8 70%, var(--background-color, currentColor) 30%);
+  --ld-signhd: color-mix(in srgb, #85a8c4 55%, var(--text-color, currentColor) 45%);
+  --ld-pop:    color-mix(in srgb, #6891b1 70%, var(--background-color, currentColor) 30%);
+  --ld-wf:     color-mix(in srgb, #ffd448 85%, var(--background-color, currentColor) 15%);
+  --ld-node:   color-mix(in srgb, #2a4d66 55%, var(--text-color, currentColor) 45%);
+  --ld-red:    color-mix(in srgb, #d0021b 55%, var(--text-color, currentColor) 45%);
+  --ld-purple: color-mix(in srgb, #7d26cd 70%, var(--background-color, currentColor) 30%);
+  --ld-onband: #ffffff;
 }
 
 /* ---- the entry-head band: the signature LDOCE6 look ---- */
@@ -206,8 +211,8 @@ def generate_css():
   border-top:1px solid var(--ld-rule); border-bottom:1px solid var(--ld-rule);
   padding:3px 6px; margin:1ex 0; }
 [data-sc-class="ld-signpost-h"] { display:inline-block; background:var(--ld-signbg);
-  color:#fff; font-weight:700; text-transform:uppercase; border-radius:5px;
-  padding:1px 5px; font-size:.85em; }
+  color:var(--ld-onband); font-weight:700; text-transform:uppercase;
+  border-radius:5px; padding:1px 5px; font-size:.85em; }
 [data-sc-class="ld-signpost-hd"] { display:block; font-weight:700;
   color:var(--ld-signhd); margin-bottom:4px; }
 
@@ -232,10 +237,16 @@ def generate_css():
 [data-sc-class="ld-box"] { display:block; background:var(--ld-boxbg);
   color:var(--ld-boxtx); border-top:1px solid var(--ld-rule);
   border-bottom:1px solid var(--ld-rule); padding:5px 7px; margin:8px 0; }
-[data-sc-class="ld-boxhead"] { display:block; font-weight:700; color:#fff;
+/* ONE class per element: Yomitan puts the whole class string into data-sc-class,
+   so a combined "ld-boxhead ld-boxhead-wf" never matches
+   [data-sc-class="ld-boxhead"]. The kind therefore gets its own rule. */
+[data-sc-class="ld-boxhead-collo"], [data-sc-class="ld-boxhead-exa"],
+[data-sc-class="ld-boxhead-thes"], [data-sc-class="ld-boxhead-etym"],
+[data-sc-class="ld-boxhead-wf"], [data-sc-class="ld-boxhead-phrase"] {
+  display:block; font-weight:700; color:var(--ld-onband);
   background:var(--ld-pop); padding:2px 6px; margin:-5px -7px 5px;
   font-variant:small-caps; text-transform:uppercase; font-size:.85em; }
-[data-sc-class="ld-boxhead-wf"] { background:var(--ld-wf); color:var(--ld-blue); }
+[data-sc-class="ld-boxhead-wf"] { background:var(--ld-wf); color:#20303f; }
 [data-sc-class="ld-boxhead-phrase"] { background:var(--ld-purple); }
 [data-sc-class="ld-boxhead-etym"] { background:var(--ld-green); }
 [data-sc-class="ld-sechead"] { display:block; font-weight:700;
@@ -634,10 +645,13 @@ class Parser:
             if ph is not None:
                 t = strip_tags(ph)
                 if t:
-                    # the popup kind is encoded in the class name instead of a
-                    # data attribute -- Yomitan's SC schema rejects unknown keys
-                    # inside data.style, and a raw data-* key is not portable
-                    kids.append(div(t, f"ld-boxhead ld-boxhead-{kind}"))
+                    # ONE class only. Yomitan's generator puts the whole class
+                    # string into data-sc-class, so "ld-boxhead ld-boxhead-wf"
+                    # never matches [data-sc-class="ld-boxhead"] -- the box header
+                    # rendered with a transparent background and invisible text.
+                    # The kind is carried by a separate marker class chosen from a
+                    # fixed set, each of which has its own rule.
+                    kids.append(div(t, f"ld-boxhead-{kind}"))
             # section headings
             for sh in self._all(e, "secheading") + self._all(e, "subheading"):
                 t = strip_tags(sh)
