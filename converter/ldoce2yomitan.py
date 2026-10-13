@@ -2768,87 +2768,133 @@ _COMPACT_OVERRIDES = """
 /* ==========================================================================
    COMPACT VARIANT -- space-frugal, parallel to the standard look.
    Same content, same colour contract, no bands, no boxes, minimal margins.
+
+   NO font-size IS CHANGED ANYWHERE HERE. The reference dictionary
+   (明镜日汉双解) sets font-size:1.0em on every rule: it neither inflates nor
+   shrinks the type. Every pixel saved comes from line-height, margins,
+   padding and the inline flow -- never from making the text smaller.
    ========================================================================== */
 
 /* tighter leading everywhere: this alone removes ~10% of the height */
-[data-sc-class="ld"] { line-height:1.34; }
+[data-sc-class="ld"] { line-height:1.34 }
 [data-sc-class="ld-ex"], [data-sc-class="ld-corpexa"],
 [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"],
 [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"],
-[data-sc-class="ld-corpexa-phrases"] { line-height:1.28; }
+[data-sc-class="ld-corpexa-phrases"] { line-height:1.28 }
 
 /* the head band becomes an inline run: headword + pronunciation + POS flow on
    one line instead of occupying a padded block */
 [data-sc-class="ld-head"] { display:inline; margin:0; padding:0; border:0;
-  background:none; }
-[data-sc-class="ld-hwd-wrap"] { font-size:1.06em; }
-[data-sc-class="ld-hwd"] { font-size:1.06em; }
+  background:none }
+[data-sc-class="ld-hwd-wrap"] { }
+[data-sc-class="ld-hwd"] { }
 [data-sc-class="ld-pron"], [data-sc-class="ld-pron-bre"],
-[data-sc-class="ld-pron-ame"] { font-size:.92em; }
-[data-sc-class="ld-pos"], [data-sc-class="ld-pos-ital"] { font-size:.95em; }
+[data-sc-class="ld-pron-ame"] { }
+[data-sc-class="ld-pos"], [data-sc-class="ld-pos-ital"] { }
 [data-sc-class="ld-freq"], [data-sc-class="ld-freq-oral"],
-[data-sc-class="ld-freq-written"], [data-sc-class="ld-freq-freq"] { font-size:.8em; }
-[data-sc-class="ld-hwd-grp"] { margin:0; }
+[data-sc-class="ld-freq-written"], [data-sc-class="ld-freq-freq"] { }
+[data-sc-class="ld-hwd-grp"] { margin:0 }
 
 /* senses: keep the hanging indent (D44 margin-left scheme) but drop the rule
    above each sense and tighten the gap */
 [data-sc-class~="ld-sense"], [data-sc-class~="ld-sense-cross"],
-[data-sc-class~="ld-sense-merge"] { margin:0 0 3px; padding-top:0; }
+[data-sc-class~="ld-sense-merge"] { margin:0 0 3px; padding-top:0 }
 [data-sc-class~="ld-sense"]::before, [data-sc-class~="ld-sense-cross"]::before,
-[data-sc-class~="ld-sense-merge"]::before { display:none; }
-[data-sc-class="ld-snum"], [data-sc-class="ld-snum-n"] { font-size:.92em; }
+[data-sc-class~="ld-sense-merge"]::before { display:none }
+[data-sc-class="ld-snum"], [data-sc-class="ld-snum-n"] { color:var(--ld-red) }
 
-/* definitions: Chinese on its own line but with almost no gap */
-[data-sc-class="ld-def"] { margin:0; }
-[data-sc-class="ld-defcn"] { display:block; margin:0 0 1px; font-size:.97em; }
-[data-sc-class="ld-defcn-first"] { margin:0 0 1px; }
+/* definitions: the Chinese flows INLINE right after the English, exactly as the
+   reference dictionary does -- its dfcn/exjp/excn rules carry no display:block at
+   all, so the whole sense is one paragraph and only the colour differs:
+      あ ⟨感⟩ ① 驚いたり…あっ。/ 啊，噢，哦。…▲ 「～そうか」噢，是吗…
+   Emitting the Chinese on its own line (the standard look) doubles the height of
+   every sense. */
+[data-sc-class="ld-def"] { margin:0; display:inline }
+[data-sc-class="ld-defcn"] { display:inline; margin:0;
+  font-weight:600; color:var(--ld-zh) !important }
+[data-sc-class="ld-defcn"]::before { content:" " }
+[data-sc-class="ld-defcn-first"] { display:inline; margin:0;
+  font-weight:600; color:var(--ld-zh) !important }
 
-/* examples: tighter, and the bullet costs no horizontal space */
-[data-sc-class="ld-ex"] { margin:0 0 1px; font-size:.93em; }
-[data-sc-class="ld-ex-cn"] { margin:0 0 2px; font-size:.93em; }
-[data-sc-class="ld-exlist"] { margin:1px 0 2px; }
-[data-sc-class="ld-exlist"] > li { margin:0; }
+/* examples: English and Chinese in one run, colour-coded, 1.1em gutter.
+   The real class names are ld-ex / ld-excn (an earlier version guessed
+   "ld-ex-cn", which matches nothing, so the Chinese example kept its
+   display:block from the standard sheet and every example took two lines). */
+[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"],
+[data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"] { display:inline;
+  margin-left:1.1em }
+[data-sc-class="ld-excn"] { display:inline; margin-left:1.1em;
+  color:var(--ld-zh) !important }
+[data-sc-class="ld-excn"]::before { content:" " }
+[data-sc-class="ld-exlist"] { margin:1px 0 2px }
+[data-sc-class="ld-exlist"] > li { margin:0 }
 
 /* grammar / register / signpost chips: inline, no padding blocks */
 [data-sc-class="ld-gram"], [data-sc-class="ld-reg"], [data-sc-class="ld-signpost"],
 [data-sc-class="ld-geo"], [data-sc-class="ld-syntax"], [data-sc-class="ld-infllab"] {
-  display:inline; margin:0 .35em 0 0; padding:0; border:0; background:none;
-  font-size:.9em; }
+  display:inline; margin:0 .35em 0 0; padding:0; border:0; background:none }
 [data-sc-class="ld-syntax-cod"], [data-sc-class="ld-gram-cod"] { padding:0; border:0;
-  background:none; font-size:.9em; }
+  background:none }
 
 /* collocation / example groups: no background, no border, colour only */
 [data-sc-class="ld-collgrp"], [data-sc-class="ld-collgrp-head"] { display:block;
-  margin:2px 0 1px; padding:0; border:0; background:none; }
-[data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { font-size:.97em; }
-[data-sc-class="ld-colloexa"], [data-sc-class="ld-colloexa-cn"] { margin:0;
-  font-size:.93em; }
-[data-sc-class="ld-collo-list"] { margin:1px 0 2px; padding:0; list-style:none; }
-[data-sc-class="ld-collo-list"] > li { margin:0; }
+  margin:2px 0 1px; padding:0; border:0; background:none }
+[data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { }
+/* collocation examples: English and Chinese inline, colour-coded */
+/* collocation examples: English and Chinese inline, colour-coded.
+   The Chinese class here is ld-colloexa-cn only when the converter emitted a
+   separate node; ld-colloexa itself carries the English. */
+[data-sc-class="ld-colloexa"] { display:inline; margin-left:1.1em }
+[data-sc-class="ld-colloexa-cn"] { display:inline; margin-left:1.1em;
+  color:var(--ld-zh) !important }
+[data-sc-class="ld-colloexa-cn"]::before { content:" " }
+[data-sc-class="ld-collo-list"] { margin:1px 0 2px; padding:0; list-style:none }
+[data-sc-class="ld-collo-list"] > li { margin:0 }
 
-/* panels (corpus / word family / etymology / phrases): collapsed by default and
-   the summary is a thin coloured line, not a padded bar */
+/* panels become a wrapping ROW OF CHIPS, like the reference dictionary's
+   WORD ORIGIN / EXAMPLES / THESAURUS / COLLOCATIONS / PHRASES row, instead of a
+   stack of full-width bars. Each is an inline-block <details>, so closed chips sit
+   side by side and wrap; opening one makes it go full width and the rest reflow
+   below it. */
 [data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"],
 [data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"],
-[data-sc-class="ld-panel-online"] { margin:2px 0; }
-[data-sc-class="ld-panel-sum"] { padding:0 0 0 1.0em; font-size:.95em;
-  line-height:1.3; }
+[data-sc-class="ld-panel-online"] { display:inline-block; vertical-align:top;
+  margin:1px 3px 1px 0; max-width:100%; }
+[data-sc-class="ld-panel"][open], [data-sc-class="ld-panel-corpus"][open],
+[data-sc-class="ld-panel-wf"][open], [data-sc-class="ld-panel-etym"][open],
+[data-sc-class="ld-panel-online"][open] { display:block; width:100%;
+  margin:2px 0; }
+[data-sc-class="ld-panel-sum"] { display:inline-block; padding:0 .4em;
+  line-height:1.5; cursor:pointer; list-style:none;
+  border:1px dashed var(--ld-frame); border-radius:3px;
+  color:var(--ld-frame); font-weight:600; }
+[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-online"][open] > [data-sc-class="ld-panel-sum"] {
+  display:block; border-style:solid; }
 [data-sc-class="ld-panel-body"] { border-left:0; border-radius:0; background:none;
   padding:0 0 0 1.0em; margin:1px 0 2px; }
-[data-sc-class="ld-panel-title"] { font-size:.95em; }
-[data-sc-class="ld-panel-title-zh"] { font-size:.85em; }
-[data-sc-class="ld-wf-pos"] { font-size:.88em; }
-[data-sc-class="ld-wf-word"] { font-size:.95em; }
+[data-sc-class="ld-wf-pos"] { }
+[data-sc-class="ld-wf-word"] { }
 
-/* corpus list: no bullets, no indent beyond the hanging gutter */
+/* corpus list: inline like everything else, colour-coded */
 [data-sc-class="ld-corpulist"] { margin:1px 0 2px; padding:0; }
 [data-sc-class="ld-exagroup"] { margin:1px 0; }
-[data-sc-class="ld-exagroup-title"] { font-size:.95em; margin-bottom:0; }
+[data-sc-class="ld-exagroup-title"] { margin-bottom:0; }
 
 /* etymology / topics: thin */
-[data-sc-class="ld-origin"] { font-size:.92em; }
-[data-sc-class="ld-century"] { font-size:.88em; }
+[data-sc-class="ld-origin"] { }
+[data-sc-class="ld-century"] { }
 [data-sc-class="ld-topics"], [data-sc-class="ld-topics-body"] { margin:1px 0; }
+
+/* cross-references at the tail: "-> jump ship at jump(16)" reads as one compact
+   run, matching the reference's arrow-prefixed tail */
+[data-sc-class="ld-crossref"] { display:inline; margin:0; }
+[data-sc-class="ld-crossref"]::before { content:"→ "; color:var(--ld-dim); }
+[data-sc-class="ld-syn"], [data-sc-class="ld-homophone"] { display:inline;
+  margin:0 .5em 0 0; }
 
 /* lists: less indent */
 [data-sc-class="ld-list"] { margin:1px 0 2px 1.0em; }
