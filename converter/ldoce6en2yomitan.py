@@ -224,14 +224,16 @@ def generate_css():
 [data-sc-class="ld-signpost-hd"] { display:block; font-weight:700;
   color:var(--ld-signhd); margin-bottom:4px; }
 
-/* ---- senses: the hanging indent is the source's own margin-left:17px scheme,
-      with the separator rule above each sense kept but the gaps tightened ---- */
-[data-sc-class="ld-sense"] { display:block; margin:0 0 3px; padding-left:1.9em;
-  padding-top:3px; position:relative; }
+/* ---- senses: the hanging indent is the source's own margin-left:17px scheme.
+      The separator rule above each sense is kept (it is part of LDOCE6's look)
+      but the padding is gone -- 409 senses in the 9 measured entries x 3px of
+      padding-top = 1,227px, and the rule already separates them visually. ---- */
+[data-sc-class="ld-sense"] { display:block; margin:0 0 2px; padding-left:1.9em;
+  padding-top:0; position:relative; }
 [data-sc-class="ld-sense"]::before { content:""; display:block;
-  border-top:1px solid var(--ld-rule); margin:0 0 2px -1.9em; }
+  border-top:1px solid var(--ld-rule); margin:0 0 1px -1.9em; }
 [data-sc-class="ld-sense"]:first-child::before { border-top:none; }
-[data-sc-class="ld-snum"] { position:absolute; left:0; top:3px; min-width:1.35em;
+[data-sc-class="ld-snum"] { position:absolute; left:0; top:0; min-width:1.35em;
   font-weight:700; color:var(--ld-brown) }
 /* ld-def is a BLOCK so it always starts at the sense gutter. It used to be a bare
    span: any inline chip before it (ld-gram, ld-reg) carried the definition onto
@@ -247,8 +249,11 @@ def generate_css():
 [data-sc-class="ld-gram"] { display:inline-block; margin-right:.4em;
   color:var(--ld-brown) }
 [data-sc-class="ld-defbold"] { font-weight:700 }
-[data-sc-class="ld-ex"] { display:block; font-style:italic; line-height:1.28;
-  margin:2px 0; color:var(--ld-teal) }
+/* Examples are English-only in this En-En build, so each is already one line.
+   The cost is the per-example margin: 8,301 examples in the 9 measured entries x
+   4px (2px top + 2px bottom) = 33,204px of pure margin. Halve it. */
+[data-sc-class="ld-ex"] { display:block; font-style:italic; line-height:1.26;
+  margin:1px 0; color:var(--ld-teal) }
 [data-sc-class="ld-nodeword"] { font-weight:700; color:var(--ld-node) }
 [data-sc-class="ld-colloinexa"] { font-style:italic; font-weight:700 }
 
