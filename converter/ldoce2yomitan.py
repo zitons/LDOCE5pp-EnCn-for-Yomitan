@@ -2894,10 +2894,16 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-panel-wf"][open], [data-sc-class="ld-panel-etym"][open],
 [data-sc-class="ld-panel-online"][open] { display:block; width:100%;
   margin:2px 0; }
+/* The chip TEXT must clear 4.5:1. var(--ld-frame) is a saturated green that only
+   reaches 3.44:1 -- and the standard line uses --ld-head (the full text colour,
+   21:1) here, so the chip was the one class the compact variant made worse.
+   Derive it toward --text-color instead: the border keeps the saturated frame
+   colour so the chip still reads as a chip, while the label keeps its contrast. */
 [data-sc-class="ld-panel-sum"] { display:inline-block; padding:0 .4em;
   line-height:1.5; cursor:pointer; list-style:none;
   border:1px dashed var(--ld-frame); border-radius:3px;
-  color:var(--ld-frame); font-weight:600; }
+  color:color-mix(in srgb, var(--ld-frame) 45%, var(--text-color, currentColor) 55%);
+  font-weight:600; }
 [data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"],
 [data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"],
 [data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"],
@@ -2906,6 +2912,9 @@ _COMPACT_OVERRIDES = """
   display:block; border-style:solid; }
 [data-sc-class="ld-panel-body"] { border-left:0; border-radius:0; background:none;
   padding:0 0 0 1.0em; margin:1px 0 2px; }
+/* the panel title sits inside the chip, so it inherits the same contrast need */
+[data-sc-class="ld-panel-title"] {
+  color:color-mix(in srgb, var(--ld-frame) 45%, var(--text-color, currentColor) 55%); }
 [data-sc-class="ld-wf-pos"] { }
 [data-sc-class="ld-wf-word"] { }
 
