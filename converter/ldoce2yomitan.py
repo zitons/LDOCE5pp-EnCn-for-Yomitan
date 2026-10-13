@@ -2808,31 +2808,60 @@ _COMPACT_OVERRIDES = """
    all, so the whole sense is one paragraph and only the colour differs:
       あ ⟨感⟩ ① 驚いたり…あっ。/ 啊，噢，哦。…▲ 「～そうか」噢，是吗…
    Emitting the Chinese on its own line (the standard look) doubles the height of
-   every sense. */
-[data-sc-class="ld-def"] { margin:0; display:inline }
-[data-sc-class="ld-defcn"] { display:inline; margin:0;
+   every sense.
+
+   The break goes BEFORE ld-def, not after the preceding chip. On 'back' sense 1
+   the DOM order is ld-signpost, ld-zh, ld-act, ld-act, ld-def, so a break on any
+   one of those chips still left the definition continuing on that line
+   (measured l=359 instead of the l=97 gutter). */
+[data-sc-class="ld-def"] { margin:0; display:inline; white-space:pre-line }
+[data-sc-class="ld-def"]::before { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-defcn"] { display:inline; margin:0; white-space:pre-line;
   font-weight:600; color:var(--ld-zh) !important }
 [data-sc-class="ld-defcn"]::before { content:" " }
-[data-sc-class="ld-defcn-first"] { display:inline; margin:0;
+[data-sc-class="ld-defcn"]::after { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-defcn-first"] { display:inline; margin:0; white-space:pre-line;
   font-weight:600; color:var(--ld-zh) !important }
+[data-sc-class="ld-defcn-first"]::after { content:"\\A"; white-space:pre-line }
 
 /* examples: English and Chinese in one run, colour-coded, 1.1em gutter.
    The real class names are ld-ex / ld-excn (an earlier version guessed
    "ld-ex-cn", which matches nothing, so the Chinese example kept its
-   display:block from the standard sheet and every example took two lines). */
+   display:block from the standard sheet and every example took two lines).
+
+   ld-ex is `inline` so the Chinese follows the English on the SAME line, and
+   `::after { content:"\\A" }` (an escaped newline = a forced line break in CSS
+   white-space:pre-line) closes the run. Without it the next example continues on
+   the same line and its left edge drifts to wherever the previous Chinese
+   ended -- measured on 'back' sense 1: the 2nd example started at l=330 instead
+   of l=86, which is exactly the misalignment class this project keeps hitting.
+
+   ld-gramexa is NOT an example run -- it is a grammar note that CONTAINS its own
+   examples (a propform plus an exlist). Making it inline swallowed them into one
+   73px-tall run ("back in/to/into etc -- Rory plugged the cable back into ..."),
+   which is what broke 'back' sense 3. It stays a BLOCK with its own line. */
 [data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"],
-[data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"] { display:inline;
-  margin-left:1.1em }
+[data-sc-class="ld-ex-bad"] { display:inline;
+  margin-left:1.1em; white-space:pre-line }
+[data-sc-class="ld-ex"]::after, [data-sc-class="ld-ex-good"]::after,
+[data-sc-class="ld-ex-bad"]::after { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-gramexa"] { display:block; margin:2px 0 1px 1.1em }
+[data-sc-class="ld-propform"] { display:inline; font-weight:600 }
+[data-sc-class="ld-propform"]::after { content:"\\A"; white-space:pre-line }
 [data-sc-class="ld-excn"] { display:inline; margin-left:1.1em;
   color:var(--ld-zh) !important }
 [data-sc-class="ld-excn"]::before { content:" " }
 [data-sc-class="ld-exlist"] { margin:1px 0 2px }
 [data-sc-class="ld-exlist"] > li { margin:0 }
 
-/* grammar / register / signpost chips: inline, no padding blocks */
+/* grammar / register / signpost chips: inline, no padding blocks.
+   ld-zh is the Chinese gloss under a signpost -- it also gets a forced break so
+   the following definition starts at the gutter. */
 [data-sc-class="ld-gram"], [data-sc-class="ld-reg"], [data-sc-class="ld-signpost"],
 [data-sc-class="ld-geo"], [data-sc-class="ld-syntax"], [data-sc-class="ld-infllab"] {
   display:inline; margin:0 .35em 0 0; padding:0; border:0; background:none }
+[data-sc-class="ld-zh"] { display:inline; white-space:pre-line }
+[data-sc-class="ld-zh"]::after { content:"\\A"; white-space:pre-line }
 [data-sc-class="ld-syntax-cod"], [data-sc-class="ld-gram-cod"] { padding:0; border:0;
   background:none }
 
@@ -2841,13 +2870,14 @@ _COMPACT_OVERRIDES = """
   margin:2px 0 1px; padding:0; border:0; background:none }
 [data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { }
 /* collocation examples: English and Chinese inline, colour-coded */
-/* collocation examples: English and Chinese inline, colour-coded.
-   The Chinese class here is ld-colloexa-cn only when the converter emitted a
-   separate node; ld-colloexa itself carries the English. */
-[data-sc-class="ld-colloexa"] { display:inline; margin-left:1.1em }
+/* collocation examples: English and Chinese inline, colour-coded, with a forced
+   break after the Chinese so the next collocation starts at the gutter. */
+[data-sc-class="ld-colloexa"] { display:inline; margin-left:1.1em;
+  white-space:pre-line }
 [data-sc-class="ld-colloexa-cn"] { display:inline; margin-left:1.1em;
-  color:var(--ld-zh) !important }
+  color:var(--ld-zh) !important; white-space:pre-line }
 [data-sc-class="ld-colloexa-cn"]::before { content:" " }
+[data-sc-class="ld-colloexa-cn"]::after { content:"\\A"; white-space:pre-line }
 [data-sc-class="ld-collo-list"] { margin:1px 0 2px; padding:0; list-style:none }
 [data-sc-class="ld-collo-list"] > li { margin:0 }
 
