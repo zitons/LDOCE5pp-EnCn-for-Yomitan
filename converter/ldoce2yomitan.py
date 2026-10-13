@@ -2839,9 +2839,17 @@ _COMPACT_OVERRIDES = """
    ld-gramexa is NOT an example run -- it is a grammar note that CONTAINS its own
    examples (a propform plus an exlist). Making it inline swallowed them into one
    73px-tall run ("back in/to/into etc -- Rory plugged the cable back into ..."),
-   which is what broke 'back' sense 3. It stays a BLOCK with its own line. */
-[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"],
-[data-sc-class="ld-ex-bad"] { display:inline;
+   which is what broke 'back' sense 3. It stays a BLOCK with its own line.
+
+   The selectors are deliberately MORE SPECIFIC than the standard rules they
+   override. ld-ex inside a list is an <li>, and the standard line's
+   `ld-exlist > li { margin:0 }` (0-1-1) outranks a bare
+   `[data-sc-class="ld-ex"]` (0-1-0) -- so the compact margin never applied and
+   'back' sense 3's two examples sat 17px apart (l=47 vs l=30). Qualifying with
+   the ancestor raises these to 0-2-0 and makes them win regardless of order. */
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-good"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-bad"] { display:inline;
   margin-left:1.1em; white-space:pre-line }
 [data-sc-class="ld-ex"]::after, [data-sc-class="ld-ex-good"]::after,
 [data-sc-class="ld-ex-bad"]::after { content:"\\A"; white-space:pre-line }
