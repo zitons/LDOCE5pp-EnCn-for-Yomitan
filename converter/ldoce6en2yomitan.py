@@ -182,17 +182,39 @@ def generate_css():
   --ld-rule:   color-mix(in srgb, #ababac 70%, var(--text-color, currentColor) 30%);
   --ld-band:   color-mix(in srgb, #edf4fa 22%, var(--background-color, currentColor) 78%);
   --ld-bandbd: color-mix(in srgb, #80a4be 78%, var(--text-color, currentColor) 22%);
-  --ld-boxbg:  color-mix(in srgb, #EDF4FA 22%, var(--background-color, currentColor) 78%);
-  --ld-boxtx:  color-mix(in srgb, #32648B 45%, var(--text-color, currentColor) 55%);
+  /* The box wash must stay PALE in light and DARK in dark, so it leans hard on
+     --background-color; its text leans the other way so the pair clears 4.5:1 in
+     both. At 22/78 with 45/55 text the dark theme measured 3.63:1 (low). */
+  --ld-boxbg:  color-mix(in srgb, #EDF4FA 18%, var(--background-color, currentColor) 82%);
+  --ld-boxtx:  color-mix(in srgb, #32648B 32%, var(--text-color, currentColor) 68%);
   --ld-sectbg: color-mix(in srgb, #396789 20%, var(--background-color, currentColor) 80%);
   --ld-secttx: color-mix(in srgb, #396789 45%, var(--text-color, currentColor) 55%);
-  --ld-signbg: color-mix(in srgb, #647FB8 70%, var(--background-color, currentColor) 30%);
+  --ld-signbg: transparent;
+  --ld-signbg-tx: color-mix(in srgb, #3d5a8a 55%, var(--text-color, currentColor) 45%);
+  --ld-signbg-bd: color-mix(in srgb, #647FB8 78%, var(--text-color, currentColor) 22%);
   --ld-signhd: color-mix(in srgb, #85a8c4 55%, var(--text-color, currentColor) 45%);
-  --ld-pop:    color-mix(in srgb, #6891b1 70%, var(--background-color, currentColor) 30%);
-  --ld-wf:     color-mix(in srgb, #ffd448 85%, var(--background-color, currentColor) 15%);
+  /* Chips are OUTLINED, not filled: a coloured border plus theme-derived text on
+     a transparent background. Both filled designs failed -- saturated fill with
+     fixed white was BAD in light theme (2.21:1), and a pale wash mixed with
+     --background-color inverted in dark theme (1.45:1). An outline has no
+     background to collide with, so the text keeps its full contrast in both.
+     The text mix leans further toward --text-color than the other accents (55/45
+     rather than 72/28) so the chip labels clear 4.5:1 in dark theme too, where
+     72/28 measured 3.94:1. */
+  --ld-pop:    transparent;
+  --ld-pop-tx: color-mix(in srgb, #20558E 55%, var(--text-color, currentColor) 45%);
+  --ld-pop-bd: color-mix(in srgb, #6891b1 78%, var(--text-color, currentColor) 22%);
+  --ld-wf:     transparent;
+  --ld-wf-tx:  color-mix(in srgb, #20558E 55%, var(--text-color, currentColor) 45%);
+  --ld-wf-bd:  color-mix(in srgb, #c9a227 82%, var(--text-color, currentColor) 18%);
+  --ld-purple: transparent;
+  --ld-purple-tx: color-mix(in srgb, #5a189a 55%, var(--text-color, currentColor) 45%);
+  --ld-purple-bd: color-mix(in srgb, #7d26cd 78%, var(--text-color, currentColor) 22%);
+  --ld-green-chip: transparent;
+  --ld-green-chip-tx: color-mix(in srgb, #1b6b3a 55%, var(--text-color, currentColor) 45%);
+  --ld-green-chip-bd: color-mix(in srgb, #27A058 78%, var(--text-color, currentColor) 22%);
   --ld-node:   color-mix(in srgb, #2a4d66 55%, var(--text-color, currentColor) 45%);
   --ld-red:    color-mix(in srgb, #d0021b 55%, var(--text-color, currentColor) 45%);
-  --ld-purple: color-mix(in srgb, #7d26cd 70%, var(--background-color, currentColor) 30%);
   --ld-onband: #ffffff;
 }
 
@@ -217,12 +239,15 @@ def generate_css():
 /* ---- signpost band (the original's .spokensect / .signpost) ---- */
 [data-sc-class="ld-signpost"] { display:block; background:var(--ld-band);
   border-top:1px solid var(--ld-rule); border-bottom:1px solid var(--ld-rule);
-  padding:3px 6px; margin:1ex 0; }
-[data-sc-class="ld-signpost-h"] { display:inline-block; background:var(--ld-signbg);
-  color:var(--ld-onband); font-weight:700; text-transform:uppercase;
-  border-radius:5px; padding:1px 5px; font-size:.85em; }
+  padding:2px 6px; margin:4px 0; }
+/* the signpost pill uses the same outline treatment */
+[data-sc-class="ld-signpost-h"] { display:inline-block;
+  background:var(--ld-signbg); color:var(--ld-signbg-tx);
+  border:1px solid var(--ld-signbg-bd);
+  font-weight:700; text-transform:uppercase;
+  border-radius:5px; padding:0 5px; font-size:.85em; }
 [data-sc-class="ld-signpost-hd"] { display:block; font-weight:700;
-  color:var(--ld-signhd); margin-bottom:4px; }
+  color:var(--ld-signhd); margin-bottom:2px; }
 
 /* ---- senses: the hanging indent is the source's own margin-left:17px scheme.
       The separator rule above each sense is kept (it is part of LDOCE6's look)
@@ -272,21 +297,30 @@ def generate_css():
 [data-sc-class="ld-box"] > summary { list-style:none; cursor:pointer; }
 [data-sc-class="ld-box"] > summary::-webkit-details-marker { display:none; }
 /* ONE class per element: Yomitan puts the whole class string into data-sc-class,
-   so a combined value never matches [data-sc-class="ld-boxhead"]. */
+   so a combined value never matches [data-sc-class="ld-boxhead"].
+   Chips are a pale wash of their hue with theme-derived text, so they read in
+   both themes (a fixed white was BAD at 2.21:1 in light). */
 [data-sc-class="ld-boxhead-collo"], [data-sc-class="ld-boxhead-exa"],
 [data-sc-class="ld-boxhead-thes"], [data-sc-class="ld-boxhead-etym"],
 [data-sc-class="ld-boxhead-wf"], [data-sc-class="ld-boxhead-phrase"] {
-  display:block; font-weight:700; color:var(--ld-onband);
-  background:var(--ld-pop); padding:2px 6px;
-  font-variant:small-caps; text-transform:uppercase; font-size:.85em; }
+  display:inline-block; vertical-align:top;
+  font-weight:700; border-radius:3px; padding:0 5px; margin:1px 4px 1px 0;
+  font-variant:small-caps; text-transform:uppercase; font-size:.85em;
+  background:var(--ld-pop); }
+[data-sc-class="ld-boxhead-collo"], [data-sc-class="ld-boxhead-exa"],
+[data-sc-class="ld-boxhead-thes"] { color:var(--ld-pop-tx);
+  border:1px solid var(--ld-pop-bd); }
+[data-sc-class="ld-boxhead-etym"] { color:var(--ld-green-chip-tx);
+  border:1px solid var(--ld-green-chip-bd); }
+[data-sc-class="ld-boxhead-wf"] { color:var(--ld-wf-tx);
+  border:1px solid var(--ld-wf-bd); }
+[data-sc-class="ld-boxhead-phrase"] { color:var(--ld-purple-tx);
+  border:1px solid var(--ld-purple-bd); }
 [data-sc-class="ld-boxhead-collo"]::after, [data-sc-class="ld-boxhead-exa"]::after,
 [data-sc-class="ld-boxhead-thes"]::after, [data-sc-class="ld-boxhead-etym"]::after,
 [data-sc-class="ld-boxhead-wf"]::after, [data-sc-class="ld-boxhead-phrase"]::after {
   content:" ▸"; float:right; font-size:.8em; opacity:.85; }
 [data-sc-class="ld-box"][open] > summary::after { content:" ▾"; }
-[data-sc-class="ld-boxhead-wf"] { background:var(--ld-wf); color:#20303f; }
-[data-sc-class="ld-boxhead-phrase"] { background:var(--ld-purple); }
-[data-sc-class="ld-boxhead-etym"] { background:var(--ld-green); }
 [data-sc-class="ld-sechead"] { display:block; font-weight:700;
   background:var(--ld-sectbg); color:var(--ld-secttx); font-variant:small-caps;
   text-transform:uppercase; padding:1px 5px; margin:4px 0 2px; font-size:.9em }
