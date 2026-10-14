@@ -188,7 +188,22 @@ check("A5 mono headings free of CJK (was 243 records)",
 
 check("CSS defines ld-infl-pron",
       '[data-sc-class="ld-infl-pron"]' in css)
-check("CSS matches current generate_css()", css == M.generate_css())
+# This gate predates --css-variant, so it compared the package against
+# generate_css()'s DEFAULT (standard) sheet and reported FAIL for every compact
+# build. Accept the package if its sheet equals ANY variant the CLI can emit; the
+# per-variant sheets are themselves covered by `inline_css` / `css_fallback` in
+# the 09_14 suite, so this check's job is only "the sheet is the current output",
+# not "the sheet is the standard one".
+_variants = {}
+for _v in ("standard", "compact"):
+    try:
+        _variants[_v] = M.generate_css(_v)
+    except TypeError:                       # older signature: no variant arg
+        _variants = {"standard": M.generate_css()}
+        break
+matched = [k for k, v in _variants.items() if v == css]
+check("CSS matches current generate_css()",
+      bool(matched), f"matches {matched[0] if matched else 'no variant'}")
 
 print()
 if FAILURES:

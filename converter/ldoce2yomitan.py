@@ -187,6 +187,78 @@ def merge_adjacent_text(nodes):
     return out
 
 
+def drop_tight_duplicates(nodes):
+    """Remove an element that is immediately followed by an identical one.
+
+    A scan of 119 rendered entries found 29 places where the SAME element with
+    the SAME text sat directly beside itself with nothing but whitespace between:
+    an ACTIV chip twice ('back' -> RETURN RETURN, 11 across the sample) and whole
+    example groups twice ('break' -> the 'break from' group, 15). Both reproduce
+    from the source markup, where the link/group is literally written twice:
+
+        <a href="entry://ACTIV:RETURN"><span class="ACTIV">RETURN</span></a>
+        <a href="entry://ACTIV:RETURN"><span class="ACTIV">RETURN</span></a>
+
+    The condition is deliberately narrow -- same tag, same class, same
+    textContent, and only whitespace in between -- so it can only ever remove a
+    verbatim repeat. Two different 'break a habit' / 'break a record' groups, or
+    the two syllable dots of 'ab·an·don' (which have 'an' between them), are left
+    alone; those were false positives of the first scan and are why the
+    intervening-text test exists.
+    """
+    out = []
+    i = 0
+    n = len(nodes)
+    while i < n:
+        node = nodes[i]
+        out.append(node)
+        if isinstance(node, dict) and node.get("tag"):
+            # skip forward over every identical repeat, so a run of three
+            # collapses to one rather than two
+            j = i + 1
+            while True:
+                k = j
+                gap = True
+                while k < n and isinstance(nodes[k], str):
+                    if nodes[k].strip():
+                        gap = False
+                        break
+                    k += 1
+                if (gap and k < n and isinstance(nodes[k], dict)
+                        and nodes[k].get("tag") == node.get("tag")
+                        and (nodes[k].get("data") or {}).get("class")
+                        == (node.get("data") or {}).get("class")
+                        and _plain_text(nodes[k]) == _plain_text(node)):
+                    j = k + 1
+                    continue
+                break
+            i = j
+            continue
+        i += 1
+    return out
+
+
+def _plain_text(node):
+    """textContent of a built SC node, for the duplicate comparison."""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return "".join(_plain_text(x) for x in node)
+    if isinstance(node, dict):
+        return _plain_text(node.get("content"))
+    return ""
+
+
+def drop_dups_in_tree(node):
+    """Apply drop_tight_duplicates at every level of a built SC tree."""
+    if isinstance(node, list):
+        return drop_tight_duplicates([drop_dups_in_tree(x) for x in node])
+    if isinstance(node, dict) and node.get("content") is not None:
+        node = dict(node)
+        node["content"] = drop_dups_in_tree(node["content"])
+    return node
+
+
 def strip_leading_bullet(nodes):
     if not nodes:
         return
@@ -1425,7 +1497,21 @@ class LdoceRenderer:
                     out.append(sc("span", " \u00b7 ", cls="ld-sep"))
                     out.extend(inner)
             elif "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
-                pron_text = sc_text(child.get_text("", strip=True))
+                # strip=True on each span removed the whitespace that SEPARATES
+                # consecutive head spans, so they ran together: 'the' came out as
+                # "/ðə;before vowelsði;strongðiː/" -- the source is
+                #   <span class="PRON">ðə</span>
+                #   <span class="STRONG">; before vowels</span>
+                #   <span class="PRON"> ði</span>          <- leading space
+                #   <span class="STRONG">; strong</span>
+                #   <span class="PRON"> ðiː</span>         <- leading space
+                # The leading space of each following span is the only thing that
+                # keeps the segments apart, so keep it when something was already
+                # emitted.
+                raw = child.get_text("", strip=False)
+                pron_text = sc_text(raw)
+                if pron_text and out and raw[:1].isspace():
+                    pron_text = " " + pron_text
                 if pron_text:
                     flush_hwd()
                     pron_cls = "ld-pron-amevar" if "AMEVARPRON" in cls else "ld-pron"
@@ -1745,7 +1831,15 @@ class LdoceRenderer:
             # belongs to the form that precedes it, and two forms may share one
             # pronunciation string.
             if "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
-                pron = sc_text(child.get_text("", strip=True))
+                # Same separator problem as the head path: strip=True removes the
+                # leading space that keeps consecutive PRON / STRONG segments
+                # apart, so an inflected form's pronunciation glued together the
+                # same way. push_sep() already inserts a separator between forms,
+                # so only the intra-pronunciation gap is restored here.
+                raw = child.get_text("", strip=False)
+                pron = sc_text(raw)
+                if pron and nodes and raw[:1].isspace():
+                    pron = " " + pron
                 if pron:
                     push_sep()
                     nodes.append(sc("span", pron, cls="ld-infl-pron"))
@@ -2450,6 +2544,13 @@ def generate_css(variant="standard"):
   --ld-geo:   #8f67d8;
   --ld-warn:  #d35748;
   --ld-level: #b0851b;
+  /* The sense-number accent. --ld-red was REFERENCED (ld-snum / ld-snum-n) but
+     never defined, so `color:var(--ld-red)` was invalid at computed-value time
+     and the number fell back to the inherited body colour -- measured
+     rgb(232,232,232) on a dark host, i.e. no accent at all and no way to tell a
+     sense number from the text beside it. Defined here (static) and in the
+     @supports block (theme-adaptive) like every other accent. */
+  --ld-red:   #b03a2e;
   /* neutrals: the de-emphasised text tiers. With color-mix() available they are
      derived from --text-color further down, so they track the theme. Without it
      there is NO way to dim relative to the theme, and a fixed grey cannot stand
@@ -2488,6 +2589,7 @@ def generate_css(variant="standard"):
     --ld-field: color-mix(in srgb, #7f8c2f 68%, var(--text-color, currentColor) 32%);
     --ld-geo:   color-mix(in srgb, #9163e6 68%, var(--text-color, currentColor) 32%);
     --ld-warn:  color-mix(in srgb, #e0503f 68%, var(--text-color, currentColor) 32%);
+    --ld-red:   color-mix(in srgb, #c0392b 62%, var(--text-color, currentColor) 38%);
     --ld-level: color-mix(in srgb, #b8860b 68%, var(--text-color, currentColor) 32%);
     --ld-text2: color-mix(in srgb, var(--text-color, currentColor) 88%, transparent);
     --ld-dim:   color-mix(in srgb, var(--text-color, currentColor) 70%, transparent);
@@ -2775,8 +2877,15 @@ _COMPACT_OVERRIDES = """
    padding and the inline flow -- never from making the text smaller.
    ========================================================================== */
 
-/* tighter leading everywhere: this alone removes ~10% of the height */
-[data-sc-class="ld"] { line-height:1.34 }
+/* tighter leading everywhere: this alone removes ~10% of the height.
+
+   overflow-wrap is set here because nothing in either sheet declared one, and a
+   long unbreakable collocation ran past the popup edge in a scan of 49 entries:
+   'thing' carries a bold ld-collo reading
+   "make things worse/easier/difficult", which measured 159px wide ending 21px
+   beyond the 430px container. break-word lets such a run wrap instead of
+   overflowing, and cannot affect text that already fits. */
+[data-sc-class="ld"] { line-height:1.34; overflow-wrap:break-word }
 [data-sc-class="ld-ex"], [data-sc-class="ld-corpexa"],
 [data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"],
 [data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"],
@@ -2869,15 +2978,81 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before,
 [data-sc-class="ld-colloexa"]::before, [data-sc-class="ld-corpexa"]::before {
   content:none }
-/* English-to-Chinese gap: 1.1em measured 15.7-16.2px, which reads as a wide
-   gulf between the sentence and its translation. A quarter em plus the existing
-   single-space ::before lands near 8px -- close enough to read as one run, far
-   enough to see where the language changes. */
-[data-sc-class="ld-excn"] { display:inline; margin-left:.25em;
+/* The English-to-Chinese gap. Two contributors, and the bigger one was invisible:
+
+     1. padding-left: the STANDARD sheet indents ld-excn by 1.6em, which is right
+        when the Chinese is a display:block on its own line under the English.
+        This variant makes ld-excn inline so it follows on the SAME line, and the
+        1.6em (22.1px, measured) then becomes pure blank space mid-line. It has to
+        be reset here -- overriding display without also overriding padding was
+        the whole bug, and it is what the "wide gap" actually was.
+     2. margin-left: previously 1.1em (16.2px) on top of that. A quarter em is
+        enough once the padding is gone.
+
+   Measured after the fix: gap 3.2px -> 1.9px, padding-left 22.1px -> 0.
+   The same padding reset is applied to every class that the standard sheet
+   indents but this variant flows inline, so none of them carry invisible space. */
+[data-sc-class="ld-excn"] { display:inline; margin-left:.25em; padding-left:0;
   color:var(--ld-zh) !important }
 [data-sc-class="ld-excn"]::before { content:" " }
+[data-sc-class="ld-defcn"], [data-sc-class="ld-zh"], [data-sc-class="ld-def"],
+[data-sc-class="ld-ex"] { padding-left:0; text-indent:0 }
 [data-sc-class="ld-exlist"] { margin:1px 0 2px }
 [data-sc-class="ld-exlist"] > li { margin:0 }
+
+/* ---- example hierarchy -------------------------------------------------
+   Measured on a rendered 'ship': an example and the definition above it sat only
+   16px apart (the gutter is 31px, so the step was half a level and the eye could
+   not read it), at the same colour, so the two ran together. Two changes:
+
+     1. ONE FULL GUTTER STEP PER LEVEL. The example indent goes 1.1em -> 1.9em,
+        making every level a multiple of the sense gutter:
+            0        sense number
+            1.9em    definition
+            3.8em    examples
+            5.7em    an example's own sub-examples
+        Measured step: 16px -> 27px. Height is 2382 vs 2368 for the old build,
+        i.e. +0.6%.
+
+     2. display:block ON THE EXAMPLE. An inline box takes margin-left on its
+        first line box alone, so a wrapped example dropped back to the
+        definition's indent --
+            ◻ They're now shipping their long-awaited new anti-   (indented)
+            virus software. ...                                   (left edge)
+        A block box indents every line. ld-excn stays inline inside, so the
+        Chinese still follows the English on the SAME line and the height does
+        not grow.
+        ld-def is deliberately NOT made a block: that pushes its Chinese onto its
+        own line and doubles the entry height. Its first line therefore stays
+        ~13px right of its own wrap, which is the lesser evil.
+
+   No colour is changed here. An earlier draft dimmed the examples to a grey; the
+   user asked for that to be removed, so the hierarchy is carried by indent, the
+   marker and the phrase rule only. */
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-good"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-bad"] {
+  display:block; margin-left:1.9em }
+[data-sc-class="ld-exlist"] > li > [data-sc-class="ld-ex"]::before,
+[data-sc-class="ld-exlist"] > li[data-sc-class="ld-ex"]::before {
+  content:"\\25fb"; font-size:60%; padding-right:.35em; vertical-align:2px;
+  color:var(--ld-zh); margin-left:-1.1em }
+/* ld-gramexa / ld-colloexa need the SAME ancestor qualification as ld-ex above.
+   They are <li> children of ld-exlist too, and the standard sheet's
+   `ld-exlist > li { margin:0 }` is specificity 0-1-1 against their bare 0-1-0 --
+   so their margin-left was discarded and the phrase lines sat flush at the
+   definition's edge. Measured on 'set': computed margin-left 16px but the box
+   rendered at the container edge, with wrapped lines scattering to 29/45/55. */
+[data-sc-class="ld-exlist"] [data-sc-class="ld-gramexa"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-colloexa"] {
+  display:block; margin-left:1.9em }
+[data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
+  display:block; margin-left:1.9em }
+/* the phrase line that introduces a group of examples gets the bar the original
+   screenshot shows, so the group reads as belonging together */
+[data-sc-class="ld-phrase"] { display:block; font-weight:700;
+  border-left:3px solid color-mix(in srgb, var(--text-color, currentColor) 26%,
+  transparent); padding-left:.5em; margin:4px 0 2px 1.9em }
 
 /* grammar / register / signpost chips: inline, no padding blocks.
    ld-zh is the Chinese gloss under a signpost -- it also gets a forced break so
@@ -2954,9 +3129,15 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-topics"], [data-sc-class="ld-topics-body"] { margin:1px 0; }
 
 /* cross-references at the tail: "-> jump ship at jump(16)" reads as one compact
-   run, matching the reference's arrow-prefixed tail */
+   run, matching the reference's arrow-prefixed tail.
+
+   NO ::before arrow here. The SC already carries the arrow as the crossref's
+   first child -- {"class":"ld-crossref","content":[" →", ...]} -- so adding
+   one with generated content painted two in a row: "→→improve on/upon
+   something". The standard sheet does not add one either (it only sets
+   display/margin/colour), so removing this also puts the two variants back in
+   agreement. */
 [data-sc-class="ld-crossref"] { display:inline; margin:0; }
-[data-sc-class="ld-crossref"]::before { content:"→ "; color:var(--ld-dim); }
 [data-sc-class="ld-syn"], [data-sc-class="ld-homophone"] { display:inline;
   margin:0 .5em 0 0; }
 
@@ -3720,7 +3901,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         if freq_tokens:
             freq_meta[k] = list(dict.fromkeys(freq_tokens))
         gloss = [{"type": "structured-content",
-                  "content": sc("div", nodes, cls="ld")}]
+                  "content": drop_dups_in_tree(sc("div", nodes, cls="ld"))}]
         term_bank.append([k, "", tags, rules, ENTRY_SCORE, gloss, sequence, ""])
         written_exprs.add(k)
         sequence += 1
