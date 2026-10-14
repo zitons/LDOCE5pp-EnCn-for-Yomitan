@@ -131,38 +131,6 @@ def sc_text(text):
     return strip_invisible(collapse_ws(str(text)))
 
 
-# The source marks an American-variant pronunciation with a literal "$" inside a
-# neutral span: <span class="PRON">wɜːs</span><span class="AMEVARPRON"> $ wɜːrs
-# </span>. 17,246 entries carry it, and emitted verbatim it reads as a stray
-# dollar sign in the middle of the IPA ("/əbˈhɔː$əbˈhɔːr, æb-/"). LDOCE's own
-# rendering separates the variants with a semicolon, so map it to that.
-_PRON_VARIANT_SEP = re.compile(r"\s*\$\s*")
-
-
-def sc_pron_text(text):
-    return _PRON_VARIANT_SEP.sub("; ", sc_text(text)).strip("; ").strip()
-
-
-def _normalize_pron_nodes(nodes):
-    """Replace the '$' variant separator inside already-built pron nodes.
-
-    The separator arrives as a standalone text node (from the nested
-    <span class="neutral span"> $ </span>), so it has to be rewritten in place
-    rather than through a regex on a flat string.
-    """
-    if isinstance(nodes, str):
-        return _PRON_VARIANT_SEP.sub("; ", nodes)
-    if isinstance(nodes, list):
-        out = []
-        for item in nodes:
-            if isinstance(item, str):
-                out.append(_PRON_VARIANT_SEP.sub("; ", item))
-            else:
-                out.append(item)
-        return out
-    return nodes
-
-
 def sc_has_text(value):
     if isinstance(value, str):
         return bool(value.strip())
@@ -1457,7 +1425,7 @@ class LdoceRenderer:
                     out.append(sc("span", " \u00b7 ", cls="ld-sep"))
                     out.extend(inner)
             elif "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
-                pron_text = sc_pron_text(child.get_text("", strip=True))
+                pron_text = sc_text(child.get_text("", strip=True))
                 if pron_text:
                     flush_hwd()
                     pron_cls = "ld-pron-amevar" if "AMEVARPRON" in cls else "ld-pron"
@@ -1777,7 +1745,7 @@ class LdoceRenderer:
             # belongs to the form that precedes it, and two forms may share one
             # pronunciation string.
             if "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
-                pron = sc_pron_text(child.get_text("", strip=True))
+                pron = sc_text(child.get_text("", strip=True))
                 if pron:
                     push_sep()
                     nodes.append(sc("span", pron, cls="ld-infl-pron"))
@@ -2313,13 +2281,6 @@ class LdoceRenderer:
                 inner = self._children_blocks(el)
                 if not sc_has_text(inner):
                     return []
-                if map_cls in _PRON_BLOCK_CLASSES:
-                    # The '$' variant separator lives in a nested
-                    # <span class="neutral span"> $ </span>, and this path goes
-                    # through _children_blocks rather than sc_pron_text -- so the
-                    # head and inflections paths were fixed but this one still
-                    # emitted "/ˌwʌn əʊ ˈwʌn$-oʊ-/". Normalise the text nodes.
-                    inner = _normalize_pron_nodes(inner)
                 lang = "zh" if flags.get("zh") else None
                 title = strip_invisible(el.get("title") or "") or None
                 return [sc("span", inner, cls=map_cls, lang=lang, title=title)]
