@@ -2856,7 +2856,24 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-gramexa"] { display:block; margin:2px 0 1px 1.1em }
 [data-sc-class="ld-propform"] { display:inline; font-weight:600 }
 [data-sc-class="ld-propform"]::after { content:"\\A"; white-space:pre-line }
-[data-sc-class="ld-excn"] { display:inline; margin-left:1.1em;
+/* The en dash before an example is dropped in compact. It is not decoration the
+   reader asked for -- it is a stand-in for a rule, and the hanging indent plus
+   the italic + colour already separate an example from the definition. The
+   reference dictionary does the same: its `exam` rule carries no marker at all.
+   The ✓/✗ on ld-ex-good / ld-ex-bad stay: those carry meaning (a correct vs an
+   incorrect usage), unlike the neutral dash.
+
+   The marker itself still exists in the DOM as an ld-mark span (so a host with
+   no stylesheet keeps it) and the standard stylesheet hides that span, so this
+   only switches off the ::before that paints it. */
+[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before,
+[data-sc-class="ld-colloexa"]::before, [data-sc-class="ld-corpexa"]::before {
+  content:none }
+/* English-to-Chinese gap: 1.1em measured 15.7-16.2px, which reads as a wide
+   gulf between the sentence and its translation. A quarter em plus the existing
+   single-space ::before lands near 8px -- close enough to read as one run, far
+   enough to see where the language changes. */
+[data-sc-class="ld-excn"] { display:inline; margin-left:.25em;
   color:var(--ld-zh) !important }
 [data-sc-class="ld-excn"]::before { content:" " }
 [data-sc-class="ld-exlist"] { margin:1px 0 2px }
