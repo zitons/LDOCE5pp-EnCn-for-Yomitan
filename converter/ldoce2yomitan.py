@@ -2736,21 +2736,38 @@ def generate_css(variant="standard"):
 [data-sc-class="ld-panel-online"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-dim); }
 
 /* ---- examples ---------------------------------------------------------- */
-/* Hanging indent via margin-left, NOT text-indent.
-   text-indent is inherited, so a negative value leaks into every descendant
-   that opens a block container -- that mechanism caused the misalignment
-   defects in REVIEW D42/D43 and TYPOGRAPHY T9, and needed an 11-selector
-   descendant reset to contain. margin-left applies to this element's own box
-   and does not inherit, which is what the original stylesheet does (684
-   rules, zero negative text-indent).
-   Geometry is unchanged: the block's border box moves right by the indent,
-   and the bullet's negative margin-left pulls it back out, so the bullet
-   sits where the dash used to and wrapped lines still start at the indent. */
-[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px 1.6em; color:var(--ld-text2); font-size:.97em; }
-[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; margin-left:-1.6em; }
-[data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; margin-left:-1.6em; }
-[data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; margin-left:-1.6em; }
-[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-bottom:2px; }
+/* Hanging indent: the block is padded, and the bullet is an IN-FLOW
+   inline-block of exactly that width pulled back by the same amount.
+
+       padding-left:1.6em                 every line starts at the padding edge
+       ::before { inline-block; width:1.6em; margin-left:-1.6em }
+                                          the bullet occupies the gutter, and
+                                          because it is a fixed-width box IN THE
+                                          FLOW, the text after it resumes at
+                                          exactly the padding edge
+
+   Three other forms were measured and rejected:
+
+   1. margin-left:1.6em + ::before{margin-left:-1.6em} with no fixed width.
+      The negative margin shifts the whole START of the first line left, so the
+      first line's text began at 43 while the wrapped line began at 55 -- one
+      example's two lines 12px out of line.
+
+   2. padding-left + text-indent:-1.6em + inline-block bullet. Aligns the lines,
+      but the inline-block sits at the text-indent edge, so the bullet is pushed
+      to the padding edge and a large gap opens between bullet and text.
+
+   3. ::before { position:absolute; left:-1.6em }. Out of flow, so it cannot
+      shift the first line -- but text no longer follows the bullet either, and
+      a 1.6em void opened between the dash and the example.
+
+   Form 4 below is the only one where the bullet both stays next to the text and
+   leaves the first line aligned with the wrapped lines. */
+[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px; padding-left:1.6em; color:var(--ld-text2); font-size:.97em; }
+[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex-good"]::before { content:"\\2713"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex-bad"]::before { content:"\\2717"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-warn); font-weight:700; }
+[data-sc-class="ld-excn"] { display:inline; padding-left:0; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-left:.25em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
 [data-sc-class="ld-hint-inline"] { color:var(--ld-level); font-style:italic; }
