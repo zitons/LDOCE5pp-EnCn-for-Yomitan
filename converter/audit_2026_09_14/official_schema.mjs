@@ -27,12 +27,16 @@ if (validators.dictionaryTermBankV3(wrongSequence)) throw new Error('Sequence ty
 const result = {validator_sha256: sha(fs.readFileSync(path.join(root, 'yomitan-ext/lib/validate-schemas.js'))),
   controls: {valid: true, illegal_style_rejected: true, wrong_sequence_type_rejected: true}, packages: []};
 const args = process.argv.slice(2);
-let outputPath = path.join(here, 'results/official_schema.json');
+// One report per PACKAGE (keyed by content hash), not one shared file: the
+// default name was overwritten on every invocation, so a four-package run left
+// only the last package's report on disk (PR #10 review round).
+let outputPath = null;
 if (args[0] === '--output') {
   if (args.length < 3) throw new Error('--output needs a filename and package paths');
   outputPath = path.resolve(args[1]); args.splice(0, 2);
 }
-if (!outputPath.startsWith(path.join(here, 'results') + path.sep)) throw new Error('Schema results must stay under audit results/');
+if (outputPath && !outputPath.startsWith(path.join(here, 'results') + path.sep))
+  throw new Error('Schema results must stay under audit results/');
 const packages = args;
 if (packages.length === 0) throw new Error('Provide explicit package paths');
 for (const packageName of packages) {
@@ -56,8 +60,12 @@ for (const packageName of packages) {
   } finally { await reader.close(); }
   rec.seconds = +(performance.now() - started).toFixed(1) / 1000;
   result.packages.push(rec);
-  fs.mkdirSync(path.dirname(outputPath), {recursive: true});
-  fs.writeFileSync(outputPath, JSON.stringify(result, null, 2) + '\n');
+  // per-package report: <name>_<sha8>.json, so four packages leave four files
+  const outPath = outputPath ?? path.join(here, 'results',
+    `official_schema_${path.basename(filename, '.zip')}_${rec.sha256.slice(0, 8)}.json`);
+  fs.mkdirSync(path.dirname(outPath), {recursive: true});
+  fs.writeFileSync(outPath, JSON.stringify(result, null, 2) + '\n');
+  console.log('schema report:', path.basename(outPath));
 }
 console.log('Schema failures:', result.packages.reduce((n, p) => n + p.failures.length, 0));
 if (result.packages.some(p => p.failures.length)) process.exitCode = 1;

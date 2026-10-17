@@ -187,6 +187,12 @@ def merge_adjacent_text(nodes):
     return out
 
 
+def _serialised(node):
+    """Canonical JSON of a built SC node -- used for auditing, not for the
+    duplicate comparison (see the docstring of drop_tight_duplicates)."""
+    return json.dumps(node, sort_keys=True, ensure_ascii=False)
+
+
 def drop_tight_duplicates(nodes):
     """Remove an element that is immediately followed by an identical one.
 
@@ -199,12 +205,26 @@ def drop_tight_duplicates(nodes):
         <a href="entry://ACTIV:RETURN"><span class="ACTIV">RETURN</span></a>
         <a href="entry://ACTIV:RETURN"><span class="ACTIV">RETURN</span></a>
 
-    The condition is deliberately narrow -- same tag, same class, same
-    textContent, and only whitespace in between -- so it can only ever remove a
-    verbatim repeat. Two different 'break a habit' / 'break a record' groups, or
-    the two syllable dots of 'ab·an·don' (which have 'an' between them), are left
-    alone; those were false positives of the first scan and are why the
-    intervening-text test exists.
+    The comparison is TEXT equality (plain textContent), NOT structural
+    equality.  A structural key (serialised JSON) was tried and reverted: it
+    kept BOTH copies of 8 adjacent same-text siblings across 4 entries, so a
+    reader saw the same example group twice ('act a part/role' rendered twice
+    back to back).  Against a no-dedup baseline those 8 cover only 4 of the 211
+    adjacent same-text siblings / 190 entries that exist in the source -- text
+    equality removes the other 207.  Text equality never merged the wrong pair:
+    'break a habit' / 'break a record' differ in text, and the syllable dots of
+    'ab.an.an' have 'an' between them.
+
+    Text equality CAN collapse two copies that are not structurally identical.
+    An audit of the one case where that happens in practice ('act' sense: the
+    surviving copy wraps a few words in <a href> where the dropped copy used
+    plain spans) found that BOTH copies carry the same ld-nodew boldings and
+    the surviving copy keeps every link -- so nothing recoverable is lost, and
+    no attempt is made to merge markup from the dropped copy.  A first version
+    did try to carry ld-nodew over; it was deleted because it could never fire
+    (the boldings are always identical on both copies) and its replacement step
+    would have swapped an <a href> node for a bare span, i.e. destroyed a link,
+    had it ever fired.
     """
     out = []
     i = 0
@@ -226,8 +246,6 @@ def drop_tight_duplicates(nodes):
                     k += 1
                 if (gap and k < n and isinstance(nodes[k], dict)
                         and nodes[k].get("tag") == node.get("tag")
-                        and (nodes[k].get("data") or {}).get("class")
-                        == (node.get("data") or {}).get("class")
                         and _plain_text(nodes[k]) == _plain_text(node)):
                     j = k + 1
                     continue
@@ -236,17 +254,6 @@ def drop_tight_duplicates(nodes):
             continue
         i += 1
     return out
-
-
-def _plain_text(node):
-    """textContent of a built SC node, for the duplicate comparison."""
-    if isinstance(node, str):
-        return node
-    if isinstance(node, list):
-        return "".join(_plain_text(x) for x in node)
-    if isinstance(node, dict):
-        return _plain_text(node.get("content"))
-    return ""
 
 
 def drop_dups_in_tree(node):
@@ -1510,7 +1517,15 @@ class LdoceRenderer:
                 # emitted.
                 raw = child.get_text("", strip=False)
                 pron_text = sc_text(raw)
-                if pron_text and out and raw[:1].isspace():
+                # Only a segment that FOLLOWS another pronunciation segment
+                # needs its leading space restored -- a segment right after the
+                # headword must not gain one, or every pronunciation node starts
+                # with a space ('/ əˈbændən/').  Re-add the space exactly when
+                # the previous emitted node is itself a pronunciation span.
+                prev_is_pron = bool(out) and isinstance(out[-1], dict) \
+                    and (out[-1].get("data") or {}).get("class") in (
+                        "ld-pron", "ld-pron-amevar")
+                if pron_text and prev_is_pron and raw[:1].isspace():
                     pron_text = " " + pron_text
                 if pron_text:
                     flush_hwd()
@@ -1838,7 +1853,12 @@ class LdoceRenderer:
                 # so only the intra-pronunciation gap is restored here.
                 raw = child.get_text("", strip=False)
                 pron = sc_text(raw)
-                if pron and nodes and raw[:1].isspace():
+                # Same rule as the head path: restore the leading space only when
+                # the PREVIOUS node is itself a pronunciation segment -- never on
+                # the first segment of a form's pronunciation.
+                prev_is_pron = bool(nodes) and isinstance(nodes[-1], dict) \
+                    and (nodes[-1].get("data") or {}).get("class") == "ld-infl-pron"
+                if pron and prev_is_pron and raw[:1].isspace():
                     pron = " " + pron
                 if pron:
                     push_sep()
@@ -3507,7 +3527,7 @@ def collect_style_keys(node, bad, used):
 
 
 def validate_package(zip_path, term_index, revision, mode, full_rows=True,
-                     known_exprs=None):
+                     known_exprs=None, css_variant="standard"):
     """Structural validation of the finished package.
 
     Each bank is decompressed and parsed exactly once. The "target must be a
@@ -3539,6 +3559,16 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
         expect_target = "zh" if mode == "bilingual" else "en"
         if index.get("targetLanguage") != expect_target:
             errors.append(f"index.targetLanguage must be {expect_target}")
+        # The title IS Yomitan's CSS scope attribute: addScopeToCss wraps the
+        # whole stylesheet in [data-dictionary="<title>"].  The validator only
+        # checks the SAFETY property -- non-empty, and for a mono package free
+        # of CJK -- because fixtures legitimately use their own titles.  The
+        # per-variant title contract ("LDOCE5++ (LM5pp)" with the variant
+        # suffix) is asserted in the build path, where the intended variant is
+        # actually known.
+        title = index.get("title", "")
+        if not title.strip():
+            errors.append("index.title must not be empty")
         if str(index.get("revision")) != str(revision):
             errors.append("index.revision mismatch")
         banks = sorted(n for n in names if re.fullmatch(r"term_bank_\d+\.json", n))
@@ -3736,7 +3766,16 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     gc.set_threshold(50000, 100, 100)
 
     ui_zh = mode == "bilingual"
+    # A non-standard variant MUST be distinguishable on disk and in Yomitan's
+    # dictionary list: before this suffix a compact build overwrote the
+    # standard package sitting in the same directory (the --limit class of
+    # defect), and after import both variants showed the same title.  The
+    # STANDARD name and title are untouched -- Yomitan scopes imported CSS with
+    # [data-dictionary="<title>"], so renaming the standard title would break
+    # every existing user's custom CSS.
+    variant_tag = "" if css_variant == "standard" else f"_{css_variant}"
     zip_name = (f"LDOCE5pp_Yomitan_{date.today().strftime('%Y.%m.%d')}"
+                + variant_tag
                 + ("" if ui_zh else "_EN") + ("_DEBUG" if partial else "") + ".zip")
     zip_path = os.path.join(output_dir, zip_name)
     zip_tmp = zip_path + ".part"
@@ -4016,7 +4055,12 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     if source_revision:
         desc_bits.append(f"source {source_revision}")
     index_data = {
-        "title": "LDOCE5++ (LM5pp)",
+        # The title doubles as Yomitan's CSS scope attribute
+        # ([data-dictionary="<title>"]).  Keep the standard title byte-stable;
+        # only non-standard variants get a suffix, so their CSS is scoped
+        # separately and the two can coexist in one profile.
+        "title": "LDOCE5++ (LM5pp)" + ("" if css_variant == "standard"
+                                       else f" ({css_variant})"),
         "format": 3,
         "revision": revision,
         "sequenced": True,
@@ -4071,7 +4115,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         errors, vstats = validate_package(
             zip_tmp, term_index, revision, mode,
             full_rows=debug is False and limit is None,
-            known_exprs=written_exprs)
+            known_exprs=written_exprs, css_variant=css_variant)
         print(f"[*] Validator: rows={vstats['rows']} banks={vstats['term_banks']} "
               f"query_links={vstats['query_links']} dangling={vstats['dangling_links']} "
               f"redirect_items={vstats['redirect_items']} "
@@ -4093,6 +4137,20 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
 
     os.replace(zip_tmp, zip_path)          # atomic: *.part -> real name
     print(f"[*] Compressed {zip_name}")
+
+    # The title doubles as Yomitan's CSS scope attribute, so it must carry the
+    # variant suffix exactly when the build is a non-standard variant.  This is
+    # asserted HERE, in the build path where css_variant is actually known --
+    # not in validate_package(), whose fixtures legitimately use their own
+    # titles.  (Review round PR #10: a hard-coded title check there rejected
+    # every audit fixture and broke the sequence gates.)
+    expected_title = ("LDOCE5++ (LM5pp)" if css_variant == "standard"
+                      else f"LDOCE5++ (LM5pp) ({css_variant})")
+    with zipfile.ZipFile(zip_path) as zf:
+        built_title = json.loads(zf.read("index.json").decode("utf-8"))["title"]
+    if built_title != expected_title:
+        reject_package([f"index.title must be {expected_title!r} for the "
+                        f"{css_variant} variant (built {built_title!r})"])
 
     if not keep_json:
         for path in list(generated):
