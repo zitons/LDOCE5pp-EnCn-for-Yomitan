@@ -25,28 +25,82 @@ import argparse
 # D42/D43 fix. Test the SUBSTANCE, not one specific rule: the original marker was
 # the D42 descendant reset (`ld-colloexa *`), which D44 then deleted as unnecessary
 # -- so a rule-literal marker silently rejected every post-D44 package and fell
-# back to the previous one. These properties hold for both the D42 patch and the
-# D44 rewrite: no negative text-indent anywhere, and the hanging classes use a
-# positive margin-left.
-FIX_MARK=re.compile(r'text-indent\s*:\s*-')
-HANGING_MARK=re.compile(r'\[data-sc-class="ld-ex"\][^{]*\{[^}]*margin[^;}]*1\.6em')
+# Alignment-fix eligibility, PR #10 review round.  Two hard lessons are built
+# into this checker:
+#
+# 1. STRIP COMMENTS BEFORE MATCHING.  The stylesheet now carries a
+#    documentation block ("three other forms were measured and rejected: ...
+#    text-indent:-1.6em ..."), and a raw-substring match reads that prose as a
+#    live declaration -- FIX_MARK matched the comment and rejected every correct
+#    package on disk, which silently SKIPped both alignment gates while the
+#    suite stayed green.
+# 2. JUDGE BY SELECTOR + PROPERTY, not by substring.  The hang may be built
+#    with margin-left (D44) or padding-left + an in-flow fixed-width bullet
+#    (PR #10); both are geometrically equivalent.  What must hold is: the five
+#    hanging classes resolve a left indent of the expected size, their ::before
+#    hangs out to the left, and NO hanging class uses text-indent (it inherits,
+#    which is the mechanism behind D42/D43).
+_HANGING_CLASSES=['ld-ex','ld-ex-good','ld-ex-bad','ld-gramexa','ld-colloexa']
+_HANGING_INDENT={'ld-ex':'1.6em','ld-ex-good':'1.6em','ld-ex-bad':'1.6em',
+                 'ld-gramexa':'1.6em','ld-colloexa':'1.6em'}
+
+def _css_rules(css):
+ flat=re.sub(r'/\*.*?\*/','',css,flags=re.S)
+ return [(re.sub(r'\s+',' ',a).strip(),b)
+         for a,b in re.findall(r'([^{}]+)\{([^{}]*)\}',flat)]
+
+def _left_indent(body):
+ for prop in ('margin-left','padding-left'):
+  m=re.search(rf'(?<![-\w]){prop}\s*:\s*([^;]+)',body)
+  if m: return m.group(1).strip()
+ for shorthand in ('margin','padding'):
+  m=re.search(rf'(?<![-\w]){shorthand}\s*:\s*([^;]+)',body)
+  if m:
+   parts=m.group(1).split()
+   if len(parts)==4: return parts[3]
+   if len(parts) in (2,3): return parts[1]
+   if len(parts)==1: return parts[0]
+ return None
 
 def has_alignment_fix(pkg):
  try:
   css=zipfile.ZipFile(pkg).read('styles.css').decode('utf-8','replace')
  except Exception:
   return False
- if FIX_MARK.search(css):
-  return False          # still on the fragile text-indent scheme
- return bool(HANGING_MARK.search(css))
+ rules=_css_rules(css)
+ for cls in _HANGING_CLASSES:
+  base=[b for sel,b in rules
+        if re.search(rf'\[data-sc-class="{cls}"\]',sel) and '::before' not in sel]
+  if not base:
+   return False
+  left=_left_indent(base[0])
+  if not left or not left.startswith(_HANGING_INDENT[cls].split('em')[0]):
+   return False
+  before=[b for sel,b in rules if f'[data-sc-class="{cls}"]::before' in sel]
+  if not before:
+   return False
+  b=before[0]
+  ml=re.search(r'(?<![-\w])margin-left\s*:\s*([^;]+)',b)
+  pos=re.search(r'(?<![-\w])position\s*:\s*([^;]+)',b)
+  leftpos=re.search(r'(?<![-\w])left\s*:\s*([^;]+)',b)
+  hangs=((ml and ml.group(1).strip().startswith('-'))
+         or (pos and pos.group(1).strip()=='absolute'
+             and leftpos and leftpos.group(1).strip().startswith('-')))
+  if not hangs:
+   return False
+  ti=re.search(r'(?<![-\w])text-indent\s*:\s*([^;]+)',b)
+  if ti and ti.group(1).strip() not in ('0','0px'):
+   return False
+ return True
 
 def newest_fixed_package(mode):
- """Newest non-DEBUG package whose stylesheet carries the D42/D43 fix.
+ """Newest non-DEBUG package whose stylesheet carries the alignment fix.
 
  Selecting by the fix itself -- rather than by directory name or mtime alone -- stays
  correct across rebuilds and renames: a pre-fix package is simply never eligible.
- The marker tests the substance (no negative text-indent + margin-left indents), so
- it keeps matching after the D44 rewrite replaced the original D42 band-aid rule.
+ The marker judges the GEOMETRY (left indent + hanging bullet, no text-indent on
+ a hanging class), so it matches both the D44 margin-left scheme and the PR #10
+ padding/bullet scheme.
  """
  for p in newest_first(mode):
   if has_alignment_fix(p):
@@ -80,6 +134,12 @@ ap.add_argument('--alignment-bilingual',type=Path,default=None,
 ap.add_argument('--alignment-mono',type=Path,default=None,
                 help='package WITH the D42/D43 fix (default: auto-discovered)')
 args=ap.parse_args()
+# A FIXED output name means the second run of the day either clobbers the first
+# run's evidence or refuses to start (mkdir(exist_ok=False)) -- the PR #10 round
+# produced exactly that: the standard line's results.json was overwritten by a
+# compact re-run and could not be told apart afterwards.  Timestamp every run.
+if args.output == Path(__file__).resolve().parent/'results/regressions':
+ args.output=args.output.parent/f"regressions_{time.strftime('%Y%m%d_%H%M%S')}"
 OUT=args.output.resolve()
 if not OUT.is_relative_to((Path(__file__).resolve().parent/'results').resolve()):
  raise SystemExit('Logs must stay under this audit results/ directory')
@@ -91,6 +151,17 @@ align_mo=args.alignment_mono or newest_fixed_package('mono')
 align_bi=align_bi.resolve() if align_bi else None
 align_mo=align_mo.resolve() if align_mo else None
 print('alignment packages:',align_bi or '(none found)',align_mo or '(none found)',flush=True)
+# A missing alignment package is NOT a silent skip: has_alignment_fix() is the
+# gate that decides whether the two most important checks run at all, and the
+# PR #10 round proved it can reject every package on disk while the suite stays
+# green.  Say so loudly and fail, unless the caller passed packages explicitly
+# (then a wrong --alignment-* argument is the caller's responsibility and the
+# run proceeds).
+if args.alignment_bilingual is None and align_bi is None:
+ print('FAIL: no package on disk carries the alignment fix -- both alignment '
+       'gates would be skipped. Rebuild, or pass --alignment-bilingual/--alignment-mono.',
+       flush=True)
+ raise SystemExit(1)
 SKIP_CODE=2
 # exit 2 means "prerequisite missing" and only these steps may turn it into a skip
 SKIP_OK={'bilingual_alignment','mono_alignment','hanging_indent'}

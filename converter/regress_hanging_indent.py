@@ -1,4 +1,17 @@
-"""Regression gate: the hanging indent must stay margin-left based.
+"""Regression gate: the hanging indent must HOLD GEOMETRICALLY.
+
+   Implementation-agnostic since PR #10: the hang may be built with
+   margin-left + a hanging bullet, or padding-left + an in-flow
+   inline-block bullet of the same width. What the gate checks is the
+   RESULT: every line of an example starts at the same left edge, and the
+   bullet hangs into the gutter to the left of that edge.
+
+   WHY not margin-left specifically: text-indent is INHERITED, so a hang
+   built with text-indent leaks into every descendant that opens a block
+   container (the mechanism behind REVIEW D42/D43 and TYPOGRAPHY T9).
+   That hazard is checked directly (no text-indent on a hanging class or
+   its descendants) instead of by forbidding one implementation in favour
+   of another.
 
 REVIEW D42/D43 and TYPOGRAPHY T9 all trace back to one mechanism: a negative
 `text-indent` used for a hanging indent. `text-indent` is INHERITED, so it leaks
@@ -76,16 +89,48 @@ def _margin_left(body):
     return None
 
 
+def _decl(body, prop):
+    m = re.search(rf"(?<![-\w]){re.escape(prop)}\s*:\s*([^;]+)", body)
+    return m.group(1).strip() if m else None
+
+
+def _left_indent(body):
+    """The effective LEFT indent of a declaration block (margin or padding,
+    longhand or shorthand), or None."""
+    for prop in ("margin-left", "padding-left"):
+        v = _decl(body, prop)
+        if v:
+            return v
+    for shorthand in ("margin", "padding"):
+        m = re.search(rf"(?<![-\w]){shorthand}\s*:\s*([^;]+)", body)
+        if m:
+            parts = m.group(1).split()
+            if len(parts) == 4:
+                return parts[3]
+            if len(parts) in (2, 3):
+                return parts[1]
+            if len(parts) == 1:
+                return parts[0]
+    return None
+
+
 def check_static(css):
+    """Verify the hang GEOMETRICALLY, whatever mechanism builds it."""
     fails = []
     rules = _rules(css)
 
-    neg = [sel for sel, body in rules if re.search(r"text-indent\s*:\s*-", body)]
+    # S1/S4: no text-indent anywhere in a hanging block or its descendants.
+    # text-indent inherits, so ANY value on a hanging class leaks into block
+    # descendants; the hang must be built with box geometry instead.
+    # text-indent:0 is a RESET (it stops the leak) and is not only allowed but
+    # required on any hanging class whose sheet sets an inherited indent
+    # elsewhere -- only a NON-ZERO value can create the hang.
+    neg = [sel for sel, body in rules
+           if any(f'"{cls}"' in sel for cls in HANGING)
+           and re.search(r"text-indent\s*:\s*(?!0\s*[;}])(?!0px\s*[;}])[^;]+", body)]
     if neg:
-        fails.append(f"negative text-indent still declared: {neg[:4]}")
+        fails.append(f"text-indent declared on a hanging class: {neg[:4]}")
 
-    # every hanging class must have a positive margin-left, and its ::before a
-    # matching negative one
     for cls, indent in HANGING.items():
         base = [b for sel, b in rules
                 if re.search(rf'\[data-sc-class="{cls}"\]', sel)
@@ -93,18 +138,27 @@ def check_static(css):
         if not base:
             fails.append(f"{cls}: no base rule found")
             continue
-        ml = _margin_left(base[0])
-        if not ml or not ml.startswith(("1.6em", "1.2em")):
-            fails.append(f"{cls}: margin-left is {ml or 'absent'}, expected {indent}")
+        left = _left_indent(base[0])
+        if not left or not left.startswith(indent.split("em")[0]):
+            fails.append(f"{cls}: left indent is {left or 'absent'}, "
+                         f"expected {indent}")
         before = [b for sel, b in rules
                   if f'[data-sc-class="{cls}"]::before' in sel]
         if not before:
             fails.append(f"{cls}: no ::before rule")
             continue
-        bml = _margin_left(before[0])
-        if not bml or not bml.startswith("-"):
-            fails.append(f"{cls}: ::before margin-left is {bml or 'absent'} "
-                         f"(the bullet would not hang out)")
+        b = before[0]
+        ml = _decl(b, "margin-left")
+        msh = _left_indent(b) if (ml is None and _decl(b, "padding-left") is None) else None
+        pos = _decl(b, "position")
+        leftpos = _decl(b, "left")
+        hangs = (
+            (ml and ml.startswith("-"))
+            or (pos == "absolute" and leftpos and leftpos.startswith("-"))
+        )
+        if not hangs:
+            fails.append(f"{cls}: ::before does not hang out "
+                         f"(margin-left {ml}, position {pos} {leftpos})")
     return fails
 
 
@@ -235,7 +289,9 @@ def main():
     if skips:
         print("HANGING INDENT GATE: PASS (static only; dynamic skipped)")
         return 0
-    print("HANGING INDENT GATE: PASS  (margin-left scheme intact)")
+    print("HANGING INDENT GATE: PASS  (hanging geometry intact: each hanging "
+          "class indents 1.6em on the left, its bullet hangs out, and no "
+          "hanging class uses text-indent)")
     return 0
 
 
