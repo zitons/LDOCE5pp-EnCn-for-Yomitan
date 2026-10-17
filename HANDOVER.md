@@ -5,6 +5,124 @@
 
 ---
 
+## 当前工作区补充（2026.10.17 · 悬挂缩进重写 / 中文例句行内化 / 去重与音标）
+
+> ⚠️ **本条取代 2026-09-14 补充成为最新状态**（后者与 09-13 补充均为历史）。
+> 全部内容已过 14 项门禁（standard/compact 两线各 14/14、0 FAIL），已提交推送，
+> **Release 尚未发布**（见本节末「发布待办」）。
+
+### 本轮改了什么（回应 PR #10 审查的 8 条意见）
+
+**CSS 层（generate_css）**
+
+1. **例句悬挂缩进重写（第四方案）**。旧实现 margin-left:1.6em +
+   ::before{margin-left:-1.6em}，负 margin 把整个首行开头拉出去 ——
+   实测块盒子 55、首行文字 43、折行 55，同一句话两行差 12px。
+   新实现：块上 padding-left:1.6em，破折号是**流内** inline-block、
+   width 恰为 1.6em、再用同值负 margin 拉回 gutter。width 与 margin-left
+   在同一元素同一字号上，1.6em 必然相等、精确抵消 —— 首行/折行对齐、
+   破折号紧贴文字，**无补偿数**。实测（ship，真实标准样式表）：
+   盒子 29 + padding 23.28 = 52.28 → 首行文字 52；::before 23.27 = -23.27px。
+
+2. **中文例句行内化**：ld-excn 从 display:block 改 inline（margin-left:.25em），
+   译文放到破折号后面同一行（用户明确要求）。standard 的 ld-defcn
+   （中文释义）保持独立成行 —— 用户裁决为设计取舍，保留。
+
+3. compact 根节点补 overflow-wrap:break-word：此前两份表一条 word-break
+   都没有，'thing' 的加粗搭配 "make things worse/easier/difficult"
+   实测越界 21px。
+
+**数据层**
+
+4. **drop_tight_duplicates 判据两换其三，最终回退文本等值**。
+   v1 文本等值（tag+class+textContent）→ 审查者抓出 6/138 误删
+   （可见文本不丢但链接/标注丢失）；v2 改结构等值（序列化 JSON）→
+   复核发现更糟：4 个词条把同一例句组连排两遍（act a part/role 连出
+   两次），211 处源重复只覆盖 4 处；**v3 回退文本等值**（break a habit /
+   break a record 文本不同不会误合，ab·an·don 有 an 隔开也不会），
+   并删除 _carry_nodew —— 复核证明两份副本的 ld-nodew 完全同一组、
+   按构造永不触发，且其 replace 语义会把 <a href> 换成裸 span（毁链接）。
+   **教训：改判据前先想清楚"误判的可见后果"，并做干净 A/B
+   （只回退一个 hunk，其余两边一致）。**
+
+5. **音标分段分隔条件收窄**（prev_is_pron）：只在上一发出的节点也是
+   音标分段时补前导空格。复核确认它修掉了 PR head 上 129 个双前导
+   空格节点（120 词条）。源端 `<span class="neutral span"> /</span>` 的
+   单个前导空格是必要的排版分隔，正确不变量是 **0 < 前导空格 ≤ 1**，
+   不是"首字符非空白"（加了会让全库 ~37k 音标节点全崩）。
+
+**门禁层（audit_2026_09_14 / audit_2026_09_12）**
+
+6. **has_alignment_fix 重写**（regression_suite.py）：先剥 CSS 注释再匹配
+   —— 旧 FIX_MARK 命中代码里"三种被否决方案"的文档文字，把磁盘上全部
+   正确包判成未修复，两条 alignment 门禁静默 SKIP 而套件仍绿；按精确
+   selector + 属性值判定（五个悬挂类各验 left indent 1.6em + ::before
+   向左挂出 + 无非零 text-indent），兼容 D44 margin-left 与本轮
+   padding+定宽子弹两种实现；newest_fixed_package() 返回 None 且未
+   显式传 --alignment-* 时 **FAIL 退出 1**，不再静默跳过。
+
+7. **regress_hanging_indent.py 判据同步**为同一几何判据（原先硬编码
+   margin-left 写法，对新实现报 5 项 FAIL）；成功文案改为几何描述。
+
+8. **输出留痕**：regression_suite 输出目录默认加时间戳（同日二跑不再
+   覆盖/拒绝）；official_schema.mjs 改**每包一份报告**
+   （official_schema_<名>_<sha8>.json），此前四包共用一文件只剩最后一份。
+
+**打包层**
+
+9. **变体命名**：非 standard 变体 zip 名加 `_compact`、index.title 加
+   `(compact)`；**standard 名与 title 逐字节不变** —— Yomitan 用
+   [data-dictionary="<title>"] 作用域隔离 CSS，改标准 title 会毁掉
+   老用户的自定义 CSS。变体 title 契约在**构建路径**断言（validator 只查
+   非空 —— 硬编码进 validator 会拒绝测试夹具，A6 五个夹具全挂）。
+
+### 走过的弯路（血泪，接手必读）
+
+- **测哪个变体，就必须加载那个变体的样式表**。悬挂缩进前 5 次尝试
+  "各有缺陷"的真正原因：验证页加载了紧凑包 styles.css，其中
+  ld-exlist > li > ld-ex::before（font-size:60%、特异度 0-2-1）把
+  所有扁平规则顶掉 —— 改的东西根本没生效。改测
+  generate_css('standard') 后，流内定宽方案第一次就正确。
+- 曾拍脑袋用 padding-right:2.6667em 补偿字号差 —— 撤回。正确答案
+  不需要补偿，需要的是让两个值在同一元素同一字号上解析。
+- PowerShell 的 -replace / Set-Content 会毁 UTF-8 中文（本轮毁过 4 次）。
+  **凡涉及非 ASCII 的文件改写一律用 Python io.open(..., newline='\n')。**
+- 整文件行尾从 LF 漂成 CRLF 会让提交长成 +4186/−4167 单一大 hunk，
+  真实改动全被淹没。已加 **.gitattributes**（*.py text eol=lf 等）钉死。
+- "13/13 全绿"可能是假象：门禁缺前置时 return 0 + 打印 PASS 比SKIP
+  更隐蔽。**看 results.json 里每道的 skipped 字段，别只看退出码。**
+
+### 交付物（2026.10.17，未发布）
+
+| 路径 | 说明 |
+|---|---|
+| yomitan_fixed/2026-10-09-margin-left/bilingual/LDOCE5pp_Yomitan_2026.10.17.zip | standard 双语（63.7 MB，rev 2026.10.17） |
+| yomitan_fixed/2026-10-09-margin-left/mono/LDOCE5pp_Yomitan_2026.10.17_EN.zip | standard 纯英文 |
+| yomitan_fixed/2026-10-12-compact/bilingual/LDOCE5pp_Yomitan_2026.10.17_compact.zip | **compact 双语**（文件名带变体后缀） |
+| yomitan_fixed/2026-10-12-compact/mono/LDOCE5pp_Yomitan_2026.10.17_compact_EN.zip | compact 纯英文 |
+
+验证：官方 Schema 每包一份报告（official_schema_<名>_<sha8>.json）0 failures；
+套件 14 门 standard/compact 两线各 14/14、0 FAIL、exit 0（alignment 两门
+真跑了，不再 SKIP）；批 A 不变量（相邻同文本兄弟 0；音标前导空格恰 1）。
+standard 与 compact 的 term bank 逐字节相同（be5d808c… / 9392b7c0…）——
+compact 只差 CSS + title，10.16 那次跨天构建与其余同代码状态。
+
+### 发布待办
+
+1. REL_TAG=v2026.10.17、REL_NAME、REL_ASSETS=<四份 zip 分号分隔> 跑
+   converter/_make_release.py（compact 两份不在默认列表，必须显式传）
+2. 重写 _release_notes.md（现仍是 10.12 的）
+3. 【未做】#3 六处工具变体感知：check_state / final_report /
+   3×package_probe / verify_fixed 都调 generate_css() 无参，对 compact 包
+   会误报 CSS 不匹配（方法：照 regress_content 的 _variants 循环，
+   按包内 title 判变体）
+4. 产物目录语义：standard 包在 2026-10-09-margin-left/ 下是历史名，
+   newest_fixed_package() 按包内 CSS 判不受影响，但人看目录会误判；
+   建议发布目录改 yomitan_fixed/<发布日>/<variant>/
+5. 产物已在 feature 分支提交推送（c866e46），PR #10 分支停在 9fc6a27
+
+---
+
 ## 当前工作区补充（2026-09-14 · N1–N3）
 
 > ⚠️ **本条已被 2026.10.03 取代。** 本轮（N1–N3）的成品后来已并入
