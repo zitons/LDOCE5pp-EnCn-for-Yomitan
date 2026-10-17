@@ -51,11 +51,21 @@ TOL = 0.6          # px
 # classes that draw a hanging bullet, and the indent each one uses
 HANGING = {
     "ld-ex": "1.6em", "ld-ex-good": "1.6em", "ld-ex-bad": "1.6em",
-    "ld-gramexa": "1.6em", "ld-colloexa": "1.6em",
     "ld-corpexa": "1.2em", "ld-corpexa-corpus": "1.2em",
     "ld-corpexa-dics": "1.2em", "ld-corpexa-encyc": "1.2em",
     "ld-corpexa-online": "1.2em", "ld-corpexa-phrases": "1.2em",
 }
+
+# Group heads (grammar pattern / collocation) are NOT hanging bullets: they are
+# one bold line that CONTAINS its examples. They used to be listed in HANGING
+# because they were rendered as example items -- with a dash and a 1.6em indent
+# -- and their own <ul> then indented the examples one level further. The gate
+# now locks the corrected shape instead:
+#   * the head is a block at a 1.1em step (the original uses 18px against the
+#     example's 42px), with NO ::before -- a head is not an example line;
+#   * the head's own example list is pulled back by the same 1.1em, so its
+#     examples land on the ordinary example column, not one level below it.
+GROUPS = {"ld-gramexa": "1.1em", "ld-colloexa": "1.1em"}
 
 
 def _rules(css):
@@ -159,6 +169,36 @@ def check_static(css):
         if not hangs:
             fails.append(f"{cls}: ::before does not hang out "
                          f"(margin-left {ml}, position {pos} {leftpos})")
+
+    # Group heads: block at a small step, no bullet, and their own list pulled
+    # back so the contained examples keep the ordinary example column.
+    for cls, step in GROUPS.items():
+        base = [b for sel, b in rules
+                if re.search(rf'\[data-sc-class="{cls}"\]', sel)
+                and "::before" not in sel and ">" not in sel]
+        if not base:
+            fails.append(f"{cls}: no base rule found")
+            continue
+        last = base[-1]                      # cascade order: the last one wins
+        left = _left_indent(last)
+        if not left or left != step:
+            fails.append(f"{cls}: head indent is {left or 'absent'}, expected {step}")
+        if not re.search(r"display\s*:\s*block", last):
+            fails.append(f"{cls}: head is not a block ({last[:60]})")
+        if re.search(rf'\[data-sc-class="{cls}"\]::before', " ".join(
+                sel for sel, _ in rules)):
+            fails.append(f"{cls}: still draws an example bullet (::before)")
+        pull = [b for sel, b in rules
+                if re.search(rf'\[data-sc-class="{cls}"\]\s*>\s*'
+                             rf'\[data-sc-class="ld-exlist"\]', sel)]
+        if not pull:
+            fails.append(f"{cls}: its inner example list is not pulled back -- "
+                         f"examples would sit one level too deep")
+        else:
+            ml = _decl(pull[-1], "margin-left")
+            if ml != "-" + step:
+                fails.append(f"{cls}: inner list margin-left is {ml}, "
+                             f"expected -{step}")
     return fails
 
 

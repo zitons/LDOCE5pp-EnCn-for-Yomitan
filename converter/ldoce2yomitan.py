@@ -473,8 +473,9 @@ FREQ_VALUE = {"S1": 1000, "W1": 1000, "S2": 2000, "W2": 2000, "S3": 3000, "W3": 
 # stands in for.
 SCHEME_B_MARKERS = {
     "ld-ex":            "\u2013\u00a0",   # - (en dash, like the ::before content)
-    "ld-gramexa":       "\u2013\u00a0",
-    "ld-colloexa":      "\u2013\u00a0",
+    # No marker for ld-gramexa / ld-colloexa: they are group heads, not example
+    # lines. The source draws no dash before the pattern ("set something (down)
+    # on something"); the dash came from treating the head as one more example.
     "ld-ex-good":       "\u2713\u00a0",   # check
     "ld-ex-bad":        "\u2717\u00a0",   # cross
     "ld-corpexa":       "\u2022\u00a0",   # bullet
@@ -743,11 +744,22 @@ SEMANTIC_INLINE_STYLES = {
     "ld-wf-pos": {"fontStyle": "italic"},
 }
 
-# classes that are a list member at their level
-SENSE_ITEM_CLASSES = frozenset({"ld-sense", "ld-sense-cross", "ld-sense-merge",
-                                "ld-subsense"})
-EXAMPLE_ITEM_CLASSES = frozenset({"ld-ex", "ld-ex-good", "ld-ex-bad",
-                                  "ld-gramexa", "ld-colloexa"})
+# Classes that are a list member at their own level.
+#
+# ld-subsense is deliberately NOT here. A subsense is a labelled sub-block
+# ("a) ...", "b) ..."), not an item of the parent's sense list: wrapping it in
+# <ol class="ld-senselist"><li> added a list level the source never had, and a
+# host without our stylesheet numbered those items 1. 2. 3. on top of the a)/b)
+# labels the subsense already carries. It now stays a plain <div> inside the
+# parent <li>, exactly as the source nests div.Subsense.
+#
+# ld-gramexa / ld-colloexa are NOT list members either -- they are group HEADS
+# that CONTAIN their examples (span.PROPFORM + one or more div.EXAMPLE). As list
+# members they were wrapped in a classless <li>, got the example dash and the
+# example indent, and then indented their own <ul> a second time: two levels for
+# what is one. See the group rules in generate_css().
+SENSE_ITEM_CLASSES = frozenset({"ld-sense", "ld-sense-cross", "ld-sense-merge"})
+EXAMPLE_ITEM_CLASSES = frozenset({"ld-ex", "ld-ex-good", "ld-ex-bad"})
 
 
 def add_inline_semantics(node):
@@ -2783,10 +2795,37 @@ def generate_css(variant="standard"):
 
    Form 4 below is the only one where the bullet both stays next to the text and
    leaves the first line aligned with the wrapped lines. */
-[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px; padding-left:1.6em; color:var(--ld-text2); font-size:.97em; }
-[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"] { display:block; margin:1px 0 3px; padding-left:1.6em; color:var(--ld-text2); font-size:.97em; }
+[data-sc-class="ld-ex"]::before { content:"\\2013"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-good"]::before { content:"\\2713"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
 [data-sc-class="ld-ex-bad"]::before { content:"\\2717"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-warn); font-weight:700; }
+/* ---- example groups: grammar pattern / collocation head -----------------
+   A group is ONE head line plus the examples that belong to it:
+
+       set something (down) on something          <- ld-gramexa (head)
+       – She set the tray down on a table ...     <- its examples, SAME column
+       – Mark filled the pan and set it on ...       as every other example
+
+   It used to be a list member itself, so the head was wrapped in a classless
+   <li>, got the example dash and the example indent (1.6em), and then its own
+   <ul> added a second 1.6em on top: the examples under a head sat one full
+   level deeper than the examples beside it (measured l=106 vs l=81 on 'run',
+   and 22,279 nested ld-exlist overall).
+
+   The original does it with one small step for the head and the ordinary
+   example column for its examples:
+       .ldoceEntry .GramExa            { margin-left: 18px  }
+       .ldoceEntry .GramExa .EXAMPLE   { margin-left: 24px  }  -> 84 = the
+       .ldoceEntry .EXAMPLE            { margin-left: 42px  }      same column
+
+   So: the group takes a 1.1em step for the head, and the reset below pulls its
+   own list back to the parent column, which puts the examples exactly where a
+   plain example sits (their own padding/margin then applies as usual). No dash
+   on the head -- it is a head, not an example line. */
+[data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
+  display:block; margin:2px 0 3px 1.1em; }
+[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
+[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em; }
 [data-sc-class="ld-excn"] { display:inline; padding-left:0; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-left:.25em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
@@ -3074,17 +3113,15 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-exlist"] > li[data-sc-class="ld-ex"]::before {
   content:"\\25fb"; font-size:60%; padding-right:.35em; vertical-align:2px;
   color:var(--ld-zh); margin-left:-1.1em }
-/* ld-gramexa / ld-colloexa need the SAME ancestor qualification as ld-ex above.
-   They are <li> children of ld-exlist too, and the standard sheet's
-   `ld-exlist > li { margin:0 }` is specificity 0-1-1 against their bare 0-1-0 --
-   so their margin-left was discarded and the phrase lines sat flush at the
-   definition's edge. Measured on 'set': computed margin-left 16px but the box
-   rendered at the container edge, with wrapped lines scattering to 29/45/55. */
-[data-sc-class="ld-exlist"] [data-sc-class="ld-gramexa"],
-[data-sc-class="ld-exlist"] [data-sc-class="ld-colloexa"] {
-  display:block; margin-left:1.9em }
+/* example groups: one 1.1em step for the head, its own list pulled back to the
+   parent column (see the standard-sheet note). The ancestor-qualified 1.9em
+   rules that used to live here matched because the group was an <li> of the
+   example list; now that it is a sibling block they would only ever be dead
+   weight, and 1.9em would put the head BELOW its own examples. */
 [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
-  display:block; margin-left:1.9em }
+  display:block; margin-left:1.1em }
+[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
+[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em }
 /* the phrase line that introduces a group of examples gets the bar the original
    screenshot shows, so the group reads as belonging together */
 [data-sc-class="ld-phrase"] { display:block; font-weight:700;

@@ -174,6 +174,12 @@ steps=[
  ('publication_and_sequence','audit_2026_09_12/regress_gates.py',None),
  ('bilingual_lists','regress_list_validity.py',bilingual),
  ('mono_lists','regress_list_validity.py',mono),
+ # Hierarchy: a node can be valid on its own and still sit one level too deep.
+ # No earlier gate looked at "is this item at the right level", so 47,611
+ # wrapper <li>, 23,930 subsenses inside an <ol> and 22,279 nested example
+ # lists all passed 14/14. See regress_hierarchy.py.
+ ('bilingual_hierarchy','regress_hierarchy.py',bilingual),
+ ('mono_hierarchy','regress_hierarchy.py',mono),
  ('bilingual_head_separation','regress_head_separation.py',bilingual),
  ('mono_head_separation','regress_head_separation.py',mono),
  ('inline_css','regress_inline_vs_css.py',bilingual),

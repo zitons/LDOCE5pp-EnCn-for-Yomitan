@@ -5,6 +5,89 @@
 
 ---
 
+## 当前工作区补充（2026.10.17 晚 · 例证层级修复）
+
+> ⚠️ **本条为最新状态**，与下面同日的「悬挂缩进重写」节叠加阅读：那一节讲的是
+> 例句**首行/折行如何对齐**，本节讲的是**谁该缩进、缩进几级**。两者互不冲突，
+> 但 CSS 段落已被本节改过（组头规则整段替换）。
+
+### 症状（Chrome 实测 `getBoundingClientRect().left`，不是看代码猜的）
+
+以 `run`（standard，mono）为例，同一屏内的例句：
+
+| 节点 | 修前 | 修后 | 原版 |
+|---|---:|---:|---:|
+| 子义项 a) 的释义 | 56 | 56 | 52 |
+| 普通例句文字 | 81 | 80 | 84 |
+| **例句组内的例句** | **106** | **80** | **84** |
+
+组头自己也被当成一条例句：带 `–` 破折号、占 1.6em 的一级。全量统计：
+
+- 47,611 个**无类名** `<li>`（都是给 subsense / gramexa / colloexa 套的包装）
+- 22,279 个**嵌套** `ld-exlist`
+- 23,930 个子义项被塞进 `<ol class="ld-senselist">` → 无样式宿主（Anki、纯 HTML）
+  会把 a)/b)/c) 再套一层 UA 编号 1. 2. 3.
+
+### 根因
+
+`EXAMPLE_ITEM_CLASSES` 同时收了 `ld-gramexa` / `ld-colloexa`。但这两个类
+是**组头**，不是例句：源里是
+
+```html
+<div class="GramExa"><span class="PROPFORM">set something down/aside</span>
+  <div class="EXAMPLE">…</div><div class="EXAMPLE">…</div></div>
+```
+
+当成例句项后：`group_into_list` 给它套 `<li>`（类名留在内层，li 无类名）→
+渲染器把组头当例句，补破折号 + `padding-left:1.6em` → 它自己的 `<ul>` 再叠
+1.6em。一级的事变成两级。
+
+`ld-subsense` 同理：它是「a) …」这样的子块，不是父级义项列表的成员。
+
+### 修法（数据层 + 两套 CSS）
+
+1. `SENSE_ITEM_CLASSES` 去掉 `ld-subsense`：子义项留在父 `<li>` 里当普通 div，
+   与源里的 `div.Subsense` 一致。
+2. `EXAMPLE_ITEM_CLASSES` 去掉 `ld-gramexa` / `ld-colloexa`：组头成为独立块。
+3. 组头 CSS 按原版比例重写（原版 `.GramExa{margin-left:18px}` /
+   `.GramExa .EXAMPLE{margin-left:24px}` / `.EXAMPLE{margin-left:42px}`）：
+   组头 `margin-left:1.1em`、**没有** `::before` 破折号；它自己那张
+   `ld-exlist` 用 `margin-left:-1.1em` 拉回父列，于是组内例句落在与普通例句
+   **完全相同**的列上。standard / compact 同步（compact 原来在 1.9em）。
+4. `SCHEME_B_MARKERS` 去掉 gramexa / colloexa：无样式宿主不再看到组头前的 `– `。
+
+### 验证
+
+- 全量 mono 重建：957.0 s，245,933 行，49 bank，`[OK] Validation passed.`
+- 新门禁 `converter/regress_hierarchy.py`（无浏览器，纯结构）：
+
+  | 指标 | 旧包 | 新包 |
+  |---|---:|---:|
+  | wrapper `<li>` | 47,611 | **0** |
+  | senselist 里的非义项项 | 23,930 | **0** |
+  | 嵌套 `ld-exlist` | 22,279 | **0** |
+  | `<li>` 总数 | 833,626 | 786,015 |
+
+  旧包上 exit 1（阳性对照成立），已注册进套件
+  （`bilingual_hierarchy` / `mono_hierarchy`）。
+- 几何复测（Chrome，standard 与 compact 各自加载自己的 styles.css）：
+  `set` 组头 48、组内例句 30→文字 55，与同层普通例句同列；
+  `run` 子义项 def 56、组头 74、组内例句 56；compact `set` 组头 48、例句 60。
+- 文本守恒：新旧包 95 个词条纯文本逐字相同，唯一差异是组头前那个 `– `
+  （正是要删的）。`ld-gramexa` 16,411 / `ld-colloexa` 7,270 / `ld-subsense`
+  23,930 的节点数一个不少。
+- `regress_list_validity` / `regress_scheme_b` / `regress_css_fallback` /
+  `regress_hanging_indent` 全 PASS。`regress_hanging_indent` 的静态判据原本
+  把 gramexa 当例句（要求 1.6em + ::before），已改为新契约（组头 1.1em、
+  无破折号、内层列表回拉），并拿旧 styles.css 做过 FAIL 对照。
+
+### 待办
+
+- 四份发布产物要用本版重建（`revision` 仍统一 2026.10.17），上一节的
+  「发布待办」1–5 条不变；`standard` 与 `compact` 的 term bank 应仍逐字节相同。
+
+---
+
 ## 当前工作区补充（2026.10.17 · 悬挂缩进重写 / 中文例句行内化 / 去重与音标）
 
 > ⚠️ **本条取代 2026-09-14 补充成为最新状态**（后者与 09-13 补充均为历史）。
