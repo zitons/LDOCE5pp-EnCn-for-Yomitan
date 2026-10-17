@@ -1712,3 +1712,72 @@ D43（ACTIV 芯片错位 4.1px）、T9（芯片文字跃出边框）**是同一�
 会遗传的属性（`text-indent` / `line-height` / `letter-spacing` / `text-align` /
 `word-spacing` / `visibility`）**不要用来实现「只影响自己首行」的效果**。需要的
 就是首行效果时，用作用在自身盒子上、且能用负 margin 抵消的属性。
+
+
+---
+
+## 2026.10.17 轮 · 悬挂缩进重写 / 中文例句行内化 / 去重与音标（PR #10 审查轮）
+
+> 本轮由外部审查（PR #10 的 8 条意见）驱动，全部落地并经第二轮独立复核。
+> 详细过程在 HANDOVER.md「当前工作区补充（2026.10.17）」，此处只记结论与证据。
+
+### D45【高】例句首行/折行 12px 偏移 ✅ 已修复并验证
+
+旧悬挂缩进（margin-left:1.6em + ::before{margin-left:-1.6em}）的负 margin
+把整个首行开头拉出去：块盒子 55、首行文字 43、折行 55。
+重写为 padding-left:1.6em + 流内定宽 inline-block 子弹（width = 负 margin，
+同元素同字号必然抵消）。实测首行 52 = 折行起点，破折号紧贴文字。
+**实现无关的门禁**（regress_hanging_indent.py + has_alignment_fix）已重写：
+判几何（left indent 1.6em、子弹向左挂出、无非零 text-indent），不判实现；
+且**先剥 CSS 注释再匹配** —— 旧 FIX_MARK 命中代码文档文字，把磁盘上全部
+正确包判成未修复，两条 alignment 门禁静默 SKIP 而套件仍绿。
+
+### D46【中】中文例句比英文深 36px ✅ 已修复（含设计裁决）
+
+ld-excn 自带 padding-left:1.6em 又整体在例句缩进内（英文 43 / 中文 79）。
+改 display:inline，译文放到破折号后面同一行。ld-defcn（中文释义）独立成行
+经用户裁决保留为设计取舍。
+
+### D47【中】drop_tight_duplicates 判据摇摆 ✅ 定格为文本等值
+
+v1 文本等值被审查者证伪（6/138 误删链接/标注）→ v2 结构等值被复核证伪
+（4 词条把同一例句组连排两遍，211 处源重复只覆盖 4 处）→ v3 定格文本等值。
+_carry_nodew 删除：两份副本的 ld-nodew 完全同一组，按构造永不触发，
+且 replace 语义会把 <a href> 换成裸 span。
+门禁判据（相邻同文本兄弟>20字 = 0）实测：无去重基线 211 处/190 词条、
+结构等值 4、文本判据 0 —— 有判别力，建议进套件。
+
+### D48【中】音标分段分隔的收窄与不变量 ✅ 已修复
+
+prev_is_pron 条件收窄（上一发出的节点也是音标分段才补空格）修掉 PR head
+129 个双前导空格节点（120 词条）。源端
+`<span class="neutral span"> /</span>` 的单个前导空格是必要排版分隔；
+不变量定为 **0 < 前导空格 ≤ 1**（"首字符非空白"会崩掉全库 ~37k 节点）。
+
+### D49【中】变体命名与留痕 ✅ 已修复
+
+非 standard 变体 zip 名与 index.title 加后缀（standard 逐字节不变 ——
+Yomitan 的 CSS scope 绑定 title）；变体 title 契约在构建路径断言
+（validator 硬编码会拒绝测试夹具）；套件输出目录加时间戳；official_schema
+改每包一份报告。此前四包共用一份 schema 报告、standard 的套件结果被
+compact 重跑覆盖，均不可复核。
+
+### D50【高·流程】"13/13 全绿"的假象 ⚠️ 门禁已加防
+
+三个叠加因素曾让套件在两条 alignment 门禁没跑的情况下显示全绿：
+FIX_MARK 命中 CSS 注释 → has_alignment_fix 全 False → newest_fixed_package
+返回 None → 静默 SKIP；hanging_indent 动态半边缺 Chrome 时 return 0 +
+打印 PASS（比 SKIP 更隐蔽）；套件退出码被管道截断误读。
+现在：剥注释 + 几何判据 + 无包时 FAIL 退出 1 + 每道门的 skipped 字段
+落进 results.json。
+
+### 教训（本轮新增）
+
+1. **测哪个变体就加载哪个变体的样式表** —— 前 5 次悬挂缩进尝试"各有缺陷"
+   的真因是验证页加载了紧凑包 CSS（ld-exlist > li > ld-ex::before，
+   font-size:60%、特异度 0-2-1 顶掉所有扁平规则）。
+2. **扫描 CSS 特征必须先剥注释** —— 工程文档（为什么否决某方案）会
+   永久毒化子串匹配型门禁。
+3. **改判据先想清楚误判的可见后果，并做只回退一个 hunk 的干净 A/B**。
+4. **非 ASCII 文件改写禁用 PowerShell -replace/Set-Content**（毁 UTF-8，
+   本轮 4 次）；整文件行尾漂移会淹没真实 diff —— .gitattributes 已钉。
