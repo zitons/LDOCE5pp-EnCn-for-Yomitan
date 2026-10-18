@@ -172,22 +172,68 @@ def check_static(css):
 
     # Group heads: block at a small step, no bullet, and their own list pulled
     # back so the contained examples keep the ordinary example column.
-    for cls, step in GROUPS.items():
-        base = [b for sel, b in rules
-                if re.search(rf'\[data-sc-class="{cls}"\]', sel)
-                and "::before" not in sel and ">" not in sel]
-        if not base:
-            fails.append(f"{cls}: no base rule found")
+    fails += check_groups(rules)
+    return fails
+
+
+def _effective(rules, cls):
+    """Effective `display` and left indent of the bare `[data-sc-class="cls"]`
+    rule, in sheet order.
+
+    All such rules have the SAME specificity (0-1-0), so the last declaration
+    wins regardless of which block it sits in. Picking the first matching rule
+    (or the last block that happens to mention the class) is how the compact
+    sheet's `ld-colloexa { display:inline }` override survived a green gate:
+    the block rule existed, but a later sibling rule undid it.
+    """
+    display = None
+    left = None
+    for sel, body in rules:
+        parts = [p.strip() for p in sel.split(",")]
+        if f'[data-sc-class="{cls}"]' not in parts:
             continue
-        last = base[-1]                      # cascade order: the last one wins
-        left = _left_indent(last)
-        if not left or left != step:
+        d = _decl(body, "display")
+        if d is not None:
+            display = d
+        i = _left_indent(body)
+        if i is not None:
+            left = i
+    return display, left
+
+
+def _effective_pseudo(rules, cls, pseudo="::before", prop="content"):
+    """Effective value of `prop` on `[data-sc-class="cls"]<pseudo>`.
+
+    Presence is not the question: both sheets deliberately emit a ::before rule
+    with `content:none` to switch off the marker that scheme B writes into the
+    DOM. Only a rule that actually PAINTS something (a value other than none)
+    means the group head is still dressed as an example.
+    """
+    value = None
+    target = f'[data-sc-class="{cls}"]{pseudo}'
+    for sel, body in rules:
+        parts = [p.strip() for p in sel.split(",")]
+        if target not in parts:
+            continue
+        v = _decl(body, prop)
+        if v is not None:
+            value = v.strip()
+    return value
+
+
+def check_groups(rules):
+    """The group-head contract, evaluated against the EFFECTIVE cascade."""
+    fails = []
+    for cls, step in GROUPS.items():
+        display, left = _effective(rules, cls)
+        if left != step:
             fails.append(f"{cls}: head indent is {left or 'absent'}, expected {step}")
-        if not re.search(r"display\s*:\s*block", last):
-            fails.append(f"{cls}: head is not a block ({last[:60]})")
-        if re.search(rf'\[data-sc-class="{cls}"\]::before', " ".join(
-                sel for sel, _ in rules)):
-            fails.append(f"{cls}: still draws an example bullet (::before)")
+        if display != "block":
+            fails.append(f"{cls}: head is {display or 'not declared'}, expected "
+                         f"block -- a later same-specificity rule overrides it")
+        if _effective_pseudo(rules, cls) not in (None, "none"):
+            fails.append(f"{cls}: still draws an example bullet "
+                         f"(::before content {_effective_pseudo(rules, cls)})")
         pull = [b for sel, b in rules
                 if re.search(rf'\[data-sc-class="{cls}"\]\s*>\s*'
                              rf'\[data-sc-class="ld-exlist"\]', sel)]
@@ -299,10 +345,12 @@ def main():
     args = ap.parse_args()
     if args.css:
         css = open(args.css, encoding="utf-8").read()
+        compact_css = None
     else:
         sys.path.insert(0, HERE)
         import ldoce2yomitan as C
         css = C.generate_css()
+        compact_css = C.generate_css("compact")
 
     print("=== static checks ===")
     f1 = check_static(css)
@@ -310,6 +358,13 @@ def main():
         print("   FAIL", f)
     print(f"   {len(HANGING)} hanging classes checked, "
           f"{len(f1)} static failure(s)")
+
+    if compact_css is not None:
+        fc = ["[compact] " + f for f in check_groups(_rules(compact_css))]
+        for f in fc:
+            print("   FAIL", f)
+        print(f"   compact sheet: group-head contract, {len(fc)} failure(s)")
+        f1 += fc
 
     print("\n=== dynamic checks (real browser) ===")
     f2, skips = check_dynamic(css)

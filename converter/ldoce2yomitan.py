@@ -3139,21 +3139,22 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-syntax-cod"], [data-sc-class="ld-gram-cod"] { padding:0; border:0;
   background:none }
 
-/* collocation / example groups: no background, no border, colour only */
-[data-sc-class="ld-collgrp"], [data-sc-class="ld-collgrp-head"] { display:block;
-  margin:2px 0 1px; padding:0; border:0; background:none }
-[data-sc-class="ld-collo"], [data-sc-class="ld-exp"] { }
-/* collocation examples: English and Chinese inline, colour-coded */
-/* collocation examples: English and Chinese inline, colour-coded, with a forced
-   break after the Chinese so the next collocation starts at the gutter. */
-[data-sc-class="ld-colloexa"] { display:inline; margin-left:1.1em;
-  white-space:pre-line }
-[data-sc-class="ld-colloexa-cn"] { display:inline; margin-left:1.1em;
-  color:var(--ld-zh) !important; white-space:pre-line }
-[data-sc-class="ld-colloexa-cn"]::before { content:" " }
-[data-sc-class="ld-colloexa-cn"]::after { content:"\\A"; white-space:pre-line }
-[data-sc-class="ld-collo-list"] { margin:1px 0 2px; padding:0; list-style:none }
-[data-sc-class="ld-collo-list"] > li { margin:0 }
+/* Collocation group heads: NO override here.
+   This block used to force `ld-colloexa { display:inline }` (to keep a
+   collocation and its Chinese gloss on one line) and styled three classes that
+   the converter never emits (`ld-collgrp`, `ld-colloexa-cn`, `ld-collo-list`).
+   Since ColloExa is now a group HEAD that owns its own <ul class="ld-exlist">,
+   the inline box broke it two ways:
+     * the block <ul> inside an inline parent takes its containing block from
+       the nearest BLOCK ancestor (the sense), so its -1.1em pull-back landed
+       below the parent column: head l=30, examples l=42, while the sibling
+       grammar groups sat at head 48 / examples 60 -- an 18px step that no other
+       level uses;
+     * a block child (div.ld-defcn) inside an inline box splits the inline into
+       anonymous block boxes, so the head itself lost its 1.1em step.
+   The standard rules (group head block + 1.1em, its own exlist -1.1em) already
+   describe the original dictionary, whose `.ColloExa` is `display:block` with
+   `margin-left:18px`. */
 
 /* panels become a wrapping ROW OF CHIPS, like the reference dictionary's
    WORD ORIGIN / EXAMPLES / THESAURUS / COLLOCATIONS / PHRASES row, instead of a
@@ -3811,7 +3812,12 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     # [data-dictionary="<title>"], so renaming the standard title would break
     # every existing user's custom CSS.
     variant_tag = "" if css_variant == "standard" else f"_{css_variant}"
-    zip_name = (f"LDOCE5pp_Yomitan_{date.today().strftime('%Y.%m.%d')}"
+    # The file name must carry the REVISION, not today's date: --revision is what
+    # lands in index.json (and what the release notes / _make_release.py look
+    # for), so building with a pinned revision used to produce a package whose
+    # name and index disagreed whenever the build ran on a later day.
+    rev_tag = re.sub(r"[^0-9A-Za-z._-]", "-", str(revision))
+    zip_name = (f"LDOCE5pp_Yomitan_{rev_tag}"
                 + variant_tag
                 + ("" if ui_zh else "_EN") + ("_DEBUG" if partial else "") + ".zip")
     zip_path = os.path.join(output_dir, zip_name)
