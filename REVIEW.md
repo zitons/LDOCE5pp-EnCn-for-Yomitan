@@ -1781,3 +1781,54 @@ FIX_MARK 命中 CSS 注释 → has_alignment_fix 全 False → newest_fixed_pack
 3. **改判据先想清楚误判的可见后果，并做只回退一个 hunk 的干净 A/B**。
 4. **非 ASCII 文件改写禁用 PowerShell -replace/Set-Content**（毁 UTF-8，
    本轮 4 次）；整文件行尾漂移会淹没真实 diff —— .gitattributes 已钉。
+
+## 2026.10.19 轮 · 四变体重建与验收
+
+### D51【高·流程】修复把「合格判据」变成了「不合格判据」 ✅ 已修复
+
+`regression_suite.py` 的 `has_alignment_fix()` 原本用来回答「这个包是否带
+D42/D43 的对齐修复」，进而决定两条浏览器门禁能否跑。它把
+`ld-gramexa` / `ld-colloexa` 也当成例句，要求 1.6em 缩进 + 悬挂 `::before`。
+
+77ccda7 之后组头是 1.1em 的独立块、无破折号、内层列表回拉 −1.1em，
+于是这个判据**对每一个修好的包都返回 False**：
+
+```
+newest_fixed_package() -> None
+FAIL: no package on disk carries the alignment fix ... (exit 1)
+```
+
+与 D50 同型但方向相反：不是「判据太松静默 SKIP」，而是「判据停在旧形状，
+把新包全判死」。若当时为了让套件跑起来而放宽它，两条对齐门禁就会重新静默跳过。
+
+修法：拆成两段独立契约（例句看「任一条规则解析出 ≥1.0em，且若画标记则悬挂」；
+组头看「block + 1.1em + 无标记 + 子列表 −1.1em」），都按**层叠最后一条**声明判断，
+并把 `_base_rules`（选择器主体恰为该类）与 `_styled_rules`（含祖先限定）
+分开 —— 早先版本把 compact 的 `[ld-exlist] [ld-ex] {margin-left:1.9em}`
+读成「基缩进」，一度让 compact 全判 False。
+正负对照：新源码/新包 True，10.17 旧包 False。
+
+### D52【中】组内例句的「渲染列」此前无人守 ✅ 已加门禁
+
+`regress_hierarchy.py` 只证明 DOM 形状（无包装 `<li>`、无嵌套 exlist），
+但组头与组内例句落在哪一列完全由 CSS 决定，人工量过却没固化。
+新增 `regress_group_geometry.py`（浏览器，复用对齐门禁的 jsdom+CDP 管线）：
+
+- A：`head.left − 组内列表.left` == 1.1 × 组头 font-size（±0.8px）
+- B：组的列表与同级普通列表同列
+- C：组内首条与同级普通列表首条同列
+
+四份新包各 215 个组头、102 个可比对，全通过；**旧包作为阳性对照全数失败**
+（step −23.27，期望 16.01）。已注册进套件，缺 Chrome 时按 SKIP。
+
+### 验收口径的补充（本轮建立的规矩）
+
+1. **门禁按 (mode × css-variant) 笛卡尔积跑**：7 道包级门禁 × 4 份 = 28 次，
+   发布套件标准线、紧凑线各一轮（18 项，无 SKIP）。
+2. **文本守恒要跑全量**：64,390 个词条、去掉 `ld-mark` 后逐字 0 差异
+   （此前只比 95 个词）。
+3. **层级守恒要按祖先链比**：245,933 行里每个 `ld-ex` 的缩进祖先链
+   （sense/subsense/gramexa/colloexa/collocate/exponent/expl/runon）0 变化 ——
+   只看「列表总数少了 6,887」会误判成例句换层，实际是同类相邻列表合并。
+4. **两变体内容本应逐字节相同**：standard/compact 只有 `styles.css` 与
+   `index.json` 标题不同；这一点让「派生一个变体」可被证明等价（见 HANDOVER）。

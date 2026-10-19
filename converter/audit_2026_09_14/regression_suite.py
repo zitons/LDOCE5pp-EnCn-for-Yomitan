@@ -1,8 +1,9 @@
 """Rerun current regressions with explicit packages and fresh logs.
 
-Mostly non-browser. It also includes TWO browser-based steps, `regress_alignment.py`
-(REVIEW D42/D43) for each mode, which need jsdom + headless Chrome AND a package that
-actually CONTAINS the fix.
+Mostly non-browser. It also includes FOUR browser-based steps: `regress_alignment.py`
+(REVIEW D42/D43) and `regress_group_geometry.py` (the group column, 77ccda7), each
+for both modes. They need jsdom + headless Chrome AND a package that actually
+CONTAINS the fix.
 
 Two traps this harness must avoid, both raised in review:
 
@@ -36,13 +37,80 @@ import argparse
 #    suite stayed green.
 # 2. JUDGE BY SELECTOR + PROPERTY, not by substring.  The hang may be built
 #    with margin-left (D44) or padding-left + an in-flow fixed-width bullet
-#    (PR #10); both are geometrically equivalent.  What must hold is: the five
-#    hanging classes resolve a left indent of the expected size, their ::before
-#    hangs out to the left, and NO hanging class uses text-indent (it inherits,
-#    which is the mechanism behind D42/D43).
-_HANGING_CLASSES=['ld-ex','ld-ex-good','ld-ex-bad','ld-gramexa','ld-colloexa']
-_HANGING_INDENT={'ld-ex':'1.6em','ld-ex-good':'1.6em','ld-ex-bad':'1.6em',
-                 'ld-gramexa':'1.6em','ld-colloexa':'1.6em'}
+#    (PR #10); both are geometrically equivalent.  What must hold is: the three
+#    hanging EXAMPLE classes resolve a left indent of the expected size, their
+#    ::before hangs out to the left, and none of them uses text-indent (it
+#    inherits, which is the mechanism behind D42/D43).
+#
+# 3. GROUP HEADS ARE NOT EXAMPLES -- 2026.10.18 (77ccda7).  This marker used to
+#    demand the 1.6em hang for ld-gramexa / ld-colloexa as well.  That was the
+#    PRE-FIX shape: the head was a list member, so it carried the example indent
+#    and dash, and its own <ul> then stepped a second time.  After 77ccda7 the
+#    head is a sibling BLOCK at 1.1em with no marker, and its own example list is
+#    pulled back to the parent column.  Keeping the old requirement did not just
+#    go stale, it inverted: every post-fix package failed this test, so
+#    newest_fixed_package() returned None and the suite refused to start -- the
+#    same silent-skip failure mode as (1).  The two shapes are now checked
+#    separately, and the group check requires the pull-back, which only the fixed
+#    hierarchy has.
+_HANGING_CLASSES=['ld-ex','ld-ex-good','ld-ex-bad']
+_HANGING_INDENT={'ld-ex':'1.6em','ld-ex-good':'1.6em','ld-ex-bad':'1.6em'}
+_GROUP_CLASSES={'ld-gramexa':'1.1em','ld-colloexa':'1.1em'}
+
+
+def _base_rules(rules,cls):
+ """Rules that style the class ITSELF: the selector part is exactly
+ `[data-sc-class="cls"]`.
+
+ Deliberately stricter than "the class is the subject of the selector": the
+ compact sheet carries `[data-sc-class="ld-exlist"] [data-sc-class="ld-ex"]
+ { margin-left:1.1em }` and a later 1.9em variant of the same shape. Both have
+ ld-ex as their subject and both DO apply, but they are ancestor-qualified
+ overrides, not the base geometry. Reading the last of them as "the" indent is
+ how an earlier draft of this check rejected every compact package.
+ """
+ out=[]
+ for sel,body in rules:
+  for part in sel.split(','):
+   if part.strip()==f'[data-sc-class="{cls}"]':
+    out.append(body)
+ return out
+
+
+def _styled_rules(rules,cls):
+ """Any rule that styles the class, base or ancestor-qualified (same subject rule)."""
+ out=[]
+ for sel,body in rules:
+  for part in sel.split(','):
+   if re.search(rf'\[data-sc-class="{cls}"\]\s*$',part.strip()):
+    out.append(body)
+ return out
+
+
+def _before_rules(rules,cls):
+ return [body for sel,body in rules
+         if any(re.search(rf'\[data-sc-class="{cls}"\]::before\s*$',p.strip())
+                for p in sel.split(','))]
+
+
+def _em(v):
+ m=re.match(r'\s*(-?[\d.]+)em\b',str(v or ''))
+ return float(m.group(1)) if m else None
+
+
+def _paints_marker(body):
+ m=re.search(r'(?<![-\w])content\s*:\s*([^;]+)',body)
+ return bool(m) and m.group(1).strip() not in ('none','normal','""',"''")
+
+
+def _hangs(body):
+ ml=re.search(r'(?<![-\w])margin-left\s*:\s*([^;]+)',body)
+ pos=re.search(r'(?<![-\w])position\s*:\s*([^;]+)',body)
+ leftpos=re.search(r'(?<![-\w])left\s*:\s*([^;]+)',body)
+ return bool((ml and ml.group(1).strip().startswith('-'))
+             or (pos and pos.group(1).strip()=='absolute'
+                 and leftpos and leftpos.group(1).strip().startswith('-')))
+
 
 def _css_rules(css):
  flat=re.sub(r'/\*.*?\*/','',css,flags=re.S)
@@ -63,33 +131,64 @@ def _left_indent(body):
  return None
 
 def has_alignment_fix(pkg):
+ """Does this package carry the post-77ccda7 example/group geometry?
+
+ Two independent halves, because the two variants express the indent differently:
+
+   * An example still gets at least a full gutter step somewhere. The standard
+     sheet builds it as padding-left:1.6em on the base rule; compact resets that
+     base padding and puts margin-left:1.9em on the ancestor-qualified rule. So
+     ask whether ANY rule styling the class resolves an em indent >= 1.0, rather
+     than pinning one selector shape. A painted marker must hang out to the left;
+     if the last ::before rule paints nothing (compact drops the neutral dash) the
+     question does not arise.
+   * A group head is a block at 1.1em with NO marker of its own, and its own
+     example list is pulled back by exactly that 1.1em. This is the shape that
+     only the fixed hierarchy has: before the fix the head WAS a list member and
+     carried the example indent plus the en dash, so the pre-fix packages fail on
+     both the indent and the marker.
+ """
  try:
   css=zipfile.ZipFile(pkg).read('styles.css').decode('utf-8','replace')
  except Exception:
   return False
  rules=_css_rules(css)
+
  for cls in _HANGING_CLASSES:
-  base=[b for sel,b in rules
-        if re.search(rf'\[data-sc-class="{cls}"\]',sel) and '::before' not in sel]
-  if not base:
+  indents=[_em(_left_indent(b)) for b in _styled_rules(rules,cls)]
+  if not any(v is not None and v>=1.0 for v in indents):
    return False
-  left=_left_indent(base[0])
-  if not left or not left.startswith(_HANGING_INDENT[cls].split('em')[0]):
-   return False
-  before=[b for sel,b in rules if f'[data-sc-class="{cls}"]::before' in sel]
+  before=_before_rules(rules,cls)
   if not before:
    return False
-  b=before[0]
-  ml=re.search(r'(?<![-\w])margin-left\s*:\s*([^;]+)',b)
-  pos=re.search(r'(?<![-\w])position\s*:\s*([^;]+)',b)
-  leftpos=re.search(r'(?<![-\w])left\s*:\s*([^;]+)',b)
-  hangs=((ml and ml.group(1).strip().startswith('-'))
-         or (pos and pos.group(1).strip()=='absolute'
-             and leftpos and leftpos.group(1).strip().startswith('-')))
-  if not hangs:
+  b=before[-1]
+  if _paints_marker(b) and not _hangs(b):
    return False
-  ti=re.search(r'(?<![-\w])text-indent\s*:\s*([^;]+)',b)
-  if ti and ti.group(1).strip() not in ('0','0px'):
+
+ for cls,step in _GROUP_CLASSES.items():
+  base=_base_rules(rules,cls)
+  if not base:
+   return False
+  body=base[-1]
+  if _em(_left_indent(body))!=_em(step):
+   return False
+  if not re.search(r'(?<![-\w])display\s*:\s*block',body):
+   return False
+  before=_before_rules(rules,cls)
+  if before and _paints_marker(before[-1]):
+   return False
+  pull_back=False
+  for sel,b in rules:
+   for part in sel.split(','):
+    part=part.strip()
+    if not re.search(r'\[data-sc-class="ld-exlist"\]\s*$',part):
+     continue
+    if f'[data-sc-class="{cls}"]' not in part:
+     continue
+    m=re.search(r'(?<![-\w])margin-left\s*:\s*-\s*([\d.]+)em',b)
+    if m and m.group(1)=='1.1':
+     pull_back=True
+  if not pull_back:
    return False
  return True
 
@@ -164,11 +263,13 @@ if args.alignment_bilingual is None and align_bi is None:
  raise SystemExit(1)
 SKIP_CODE=2
 # exit 2 means "prerequisite missing" and only these steps may turn it into a skip
-SKIP_OK={'bilingual_alignment','mono_alignment','hanging_indent'}
-# ...but only the alignment steps genuinely need a package on the command line.
+SKIP_OK={'bilingual_alignment','mono_alignment','hanging_indent',
+         'bilingual_group_geometry','mono_group_geometry'}
+# ...but only the steps that MEASURE a package need one on the command line.
 # regress_hanging_indent.py tests the stylesheet and takes no package, so lumping
 # it in here made line 122 skip it before it ever ran.
-NEEDS_PKG={'bilingual_alignment','mono_alignment'}
+NEEDS_PKG={'bilingual_alignment','mono_alignment',
+           'bilingual_group_geometry','mono_group_geometry'}
 steps=[
  ('followup_fast','regress_review_followup.py',None),
  ('publication_and_sequence','audit_2026_09_12/regress_gates.py',None),
@@ -180,6 +281,12 @@ steps=[
  # lists all passed 14/14. See regress_hierarchy.py.
  ('bilingual_hierarchy','regress_hierarchy.py',bilingual),
  ('mono_hierarchy','regress_hierarchy.py',mono),
+ # The hierarchy gate proves the DOM shape; this one proves the GROUP still reads
+ # as a group once CSS is applied: head one small step from its list, and that
+ # list on the plain-example column. A CSS tweak can break the second without
+ # touching the first (the original defect was measured l=106 vs l=81).
+ ('bilingual_group_geometry','regress_group_geometry.py',bilingual),
+ ('mono_group_geometry','regress_group_geometry.py',mono),
  ('bilingual_head_separation','regress_head_separation.py',bilingual),
  ('mono_head_separation','regress_head_separation.py',mono),
  ('inline_css','regress_inline_vs_css.py',bilingual),
