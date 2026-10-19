@@ -1,4 +1,10 @@
-"""Create the v2026.09.13 tag and GitHub Release, then upload both assets.
+"""Create a tag and GitHub Release, then upload assets.
+
+Defaults still point at the v2026.09.13 verified pair; for a new release set
+REL_TAG / REL_NAME / REL_ASSETS explicitly.  A four-asset release (standard
+bilingual + mono, compact bilingual + mono) needs all four paths in REL_ASSETS,
+semicolon-separated -- the compact packages are NOT in the default list.
+
 
 Auth: the same CredRead path as _git_push.py (GCM hangs on this machine).
 Upload endpoint: uploads.github.com (the normal API asset upload), NOT the repo

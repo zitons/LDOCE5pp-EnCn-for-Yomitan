@@ -5,6 +5,310 @@
 
 ---
 
+## 当前工作区补充（2026.10.19 · 四变体重建 + 一条「判据反转」的门禁缺陷）
+
+> ⚠️ **本条为最新状态**。上一节（10.17 晚·例证层级修复）讲的是改了什么，
+> 本节讲的是**谁在验、验得对不对、四份产物重建后的实测数字**。
+
+### 一、先修门禁，否则重建根本没被验证
+
+`audit_2026_09_14/regression_suite.py` 的 `has_alignment_fix()` 决定
+「哪个包算带修复、可以放行两条浏览器对齐门禁」。它当时仍要求
+`ld-gramexa` / `ld-colloexa` 满足**例句**的悬挂几何（`1.6em` + 悬挂 `::before`）——
+那正是 77ccda7 **修掉之前**的形状。修完之后组头是「1.1em + 无破折号 + 内层列表回拉」，
+于是这个判据**把每一个修好的包都判为不合格**：
+
+```
+newest_fixed_package() -> None
+FAIL: no package on disk carries the alignment fix -- both alignment gates would be skipped.
+```
+
+后果不是「门禁报红」，而是**套件直接拒跑**（exit 1）；若有人为了让它跑起来而放宽判据，
+两条对齐门禁就会静默 SKIP —— 与文档里记过的两次「假绿」同型。
+
+判据已重写为两段独立契约：
+
+| 对象 | 要求 |
+|---|---|
+| `ld-ex` / `ld-ex-good` / `ld-ex-bad` | **任一条**样式规则（基规则或祖先限定规则）解析出 ≥1.0em 左缩进；若最后一条 `::before` 真的画了标记，则必须悬挂 |
+| `ld-gramexa` / `ld-colloexa` | 基规则 `display:block` 且左缩进 = 1.1em；**无**画出标记的 `::before`；其直接子 `ld-exlist` 必须 `margin-left:-1.1em` |
+
+两处都按**层叠里最后一条**声明判断（早先按「第一条匹配」判断，会被后置的
+inline 覆盖绕过）。正负对照：当前源码 standard / compact + 本次四个包 = True；
+磁盘上 10.17 的旧包 = False（旧包组头仍画破折号、缩进 1.9em）。
+
+### 二、新增门禁：组内例句的**渲染列**
+
+`regress_hierarchy.py` 只证明 DOM 形状对（无包装 `<li>`、无嵌套 exlist），
+但「组头一步、组内例句与同级例句同列」是 **CSS 才能决定**的，之前只有人工量过。
+`converter/regress_group_geometry.py` 把它固化（复用 `regress_alignment` 的
+jsdom + Chrome 管线，每组 3 条一页避免 CDP 超大 evaluate 掉线）：
+
+| 检查 | 判据 |
+|---|---|
+| A 头步进 | `head.left - 组内列表.left` == 1.1 × 组头 font-size（±0.8px） |
+| B 列表同列 | 组的 `ld-exlist` 与同级普通 `ld-exlist` 同一 left |
+| C 条目同列 | 组内首条 `li.ld-ex` 与同级普通列表首条同一 left |
+
+四份新包各测 215 个组头（其中 102 个有同级普通列表可比），全 0 失败；
+**旧包作为阳性对照全数失败**（`step=-23.27`，期望 `16.01`，即组头比自己的例句还靠左）。
+已注册进套件（`bilingual_group_geometry` / `mono_group_geometry`，需浏览器，
+缺 Chrome 时按 SKIP 处理）。
+
+### 三、重建（revision 2026.10.19）
+
+| 产物 | 构建 | 大小 |
+|---|---|---:|
+| `2026-10-19-hierarchy/bilingual-standard/LDOCE5pp_Yomitan_2026.10.19.zip` | 由 compact 孪生包派生 | 60.6 MB |
+| `2026-10-19-hierarchy/bilingual-compact/LDOCE5pp_Yomitan_2026.10.19_compact.zip` | 942.6 s | 60.6 MB |
+| `2026-10-19-hierarchy/mono-standard/LDOCE5pp_Yomitan_2026.10.19_EN.zip` | 926.7 s | 51.5 MB |
+| `2026-10-19-hierarchy/mono-compact/LDOCE5pp_Yomitan_2026.10.19_compact_EN.zip` | 1,097.3 s | 51.5 MB |
+
+四份均 `rows=245,933`、`dangling=0`、`seq_ok=1`、`[OK] Validation passed.`，
+`build.log` 与 `index.json` 同目录留存。`TAG_LIMIT=8` 的 17 行 >8 个
+definitionTags 提示照旧（未截断，属已知项）。
+
+> **bilingual-standard 是派生的**：standard 与 compact 的 term bank 逐字节相同
+> （变体只换 `styles.css` 与 `index.json` 的标题后缀），把 compact 包的这两份成员
+> 换掉即等价。派生前后用 10 词真实双构建验过：55 个成员里除 `styles.css` /
+> `index.json` 外全部 sha256 相同。之所以派生，是因为串行四建中途我误删了
+> 已完成的那份 standard 目录。
+
+### 四、验收（这次是四份都跑，不只跑「最新的那份」）
+
+- **7 道包级门禁 × 4 份 = 28 次**，全部 exit 0：
+  `hierarchy` / `list_validity` / `head_separation` / `inline_vs_css` /
+  `scheme_b` / `alignment` / `group_geometry`。
+- 源码级：`css_fallback` PASS、`hanging_indent`（standard + compact 双变体、
+  静态 + 浏览器动态）PASS。
+- 发布套件 `regression_suite.py` 标准线 exit 0（18 项，无 SKIP）；紧凑线见
+  `audit_2026_09_14/results/regressions_2026*`。
+- **文本守恒**：新旧包 64,390 个词条，去除 `ld-mark` 标记后纯文本**逐字 0 差异**。
+- **层级守恒**：245,933 行里，例句的缩进祖先链（sense / subsense / gramexa /
+  colloexa / collocate / exponent / expl / runon）**0 条变化**。
+  列表数 137,335 → 130,448 只是同类相邻列表被合并，不是例句换层。
+- 节点数不变：`ld-gramexa` 16,411、`ld-colloexa` 7,270、`ld-subsense` 23,930、
+  `ld-ex` 162,897、`ld-sense` 124,701、`ld-def` 133,453。
+  `ld-mark` 645,016 → 621,335（−23,681 = 组头数，正是删掉的那个 `– `）。
+
+### 五、这轮发现但**没动**的两处
+
+1. `[data-sc-class="ld-phrase"]` 是**死规则**：全量 245,933 行里该 class 出现
+   0 次，converter 里也只有这条 CSS 提到它（8bd429c 刚以同样理由删过三个
+   从未生成的类）。删它需要重跑四份构建，视觉零影响，留待下次顺手处理。
+2. `_make_release.py` 的默认 `REL_TAG` / `REL_ASSETS` 仍指向 2026.09.13 的两份
+   standard 包；发布 2026.10.19 必须显式给四个 `REL_ASSETS`。
+
+### 待办
+
+1. 发布 `v2026.10.19`：`REL_TAG` / `REL_NAME` / `REL_ASSETS`（四份，分号分隔）
+   跑 `_make_release.py --dry-run` 先看清单，再正式发。
+2. 删 `ld-phrase` 死规则（与下次重建一起做）。
+3. 上一节「发布待办」1–5 条其余项不变。
+
+---
+
+## 当前工作区补充（2026.10.17 晚 · 例证层级修复）
+
+> ⚠️ **本条为最新状态**，与下面同日的「悬挂缩进重写」节叠加阅读：那一节讲的是
+> 例句**首行/折行如何对齐**，本节讲的是**谁该缩进、缩进几级**。两者互不冲突，
+> 但 CSS 段落已被本节改过（组头规则整段替换）。
+
+### 症状（Chrome 实测 `getBoundingClientRect().left`，不是看代码猜的）
+
+以 `run`（standard，mono）为例，同一屏内的例句：
+
+| 节点 | 修前 | 修后 | 原版 |
+|---|---:|---:|---:|
+| 子义项 a) 的释义 | 56 | 56 | 52 |
+| 普通例句文字 | 81 | 80 | 84 |
+| **例句组内的例句** | **106** | **80** | **84** |
+
+组头自己也被当成一条例句：带 `–` 破折号、占 1.6em 的一级。全量统计：
+
+- 47,611 个**无类名** `<li>`（都是给 subsense / gramexa / colloexa 套的包装）
+- 22,279 个**嵌套** `ld-exlist`
+- 23,930 个子义项被塞进 `<ol class="ld-senselist">` → 无样式宿主（Anki、纯 HTML）
+  会把 a)/b)/c) 再套一层 UA 编号 1. 2. 3.
+
+### 根因
+
+`EXAMPLE_ITEM_CLASSES` 同时收了 `ld-gramexa` / `ld-colloexa`。但这两个类
+是**组头**，不是例句：源里是
+
+```html
+<div class="GramExa"><span class="PROPFORM">set something down/aside</span>
+  <div class="EXAMPLE">…</div><div class="EXAMPLE">…</div></div>
+```
+
+当成例句项后：`group_into_list` 给它套 `<li>`（类名留在内层，li 无类名）→
+渲染器把组头当例句，补破折号 + `padding-left:1.6em` → 它自己的 `<ul>` 再叠
+1.6em。一级的事变成两级。
+
+`ld-subsense` 同理：它是「a) …」这样的子块，不是父级义项列表的成员。
+
+### 修法（数据层 + 两套 CSS）
+
+1. `SENSE_ITEM_CLASSES` 去掉 `ld-subsense`：子义项留在父 `<li>` 里当普通 div，
+   与源里的 `div.Subsense` 一致。
+2. `EXAMPLE_ITEM_CLASSES` 去掉 `ld-gramexa` / `ld-colloexa`：组头成为独立块。
+3. 组头 CSS 按原版比例重写（原版 `.GramExa{margin-left:18px}` /
+   `.GramExa .EXAMPLE{margin-left:24px}` / `.EXAMPLE{margin-left:42px}`）：
+   组头 `margin-left:1.1em`、**没有** `::before` 破折号；它自己那张
+   `ld-exlist` 用 `margin-left:-1.1em` 拉回父列，于是组内例句落在与普通例句
+   **完全相同**的列上。standard / compact 同步（compact 原来在 1.9em）。
+4. `SCHEME_B_MARKERS` 去掉 gramexa / colloexa：无样式宿主不再看到组头前的 `– `。
+
+### 验证
+
+- 全量 mono 重建：957.0 s，245,933 行，49 bank，`[OK] Validation passed.`
+- 新门禁 `converter/regress_hierarchy.py`（无浏览器，纯结构）：
+
+  | 指标 | 旧包 | 新包 |
+  |---|---:|---:|
+  | wrapper `<li>` | 47,611 | **0** |
+  | senselist 里的非义项项 | 23,930 | **0** |
+  | 嵌套 `ld-exlist` | 22,279 | **0** |
+  | `<li>` 总数 | 833,626 | 786,015 |
+
+  旧包上 exit 1（阳性对照成立），已注册进套件
+  （`bilingual_hierarchy` / `mono_hierarchy`）。
+- 几何复测（Chrome，standard 与 compact 各自加载自己的 styles.css）：
+  `set` 组头 48、组内例句 30→文字 55，与同层普通例句同列；
+  `run` 子义项 def 56、组头 74、组内例句 56；compact `set` 组头 48、例句 60。
+- 文本守恒：新旧包 95 个词条纯文本逐字相同，唯一差异是组头前那个 `– `
+  （正是要删的）。`ld-gramexa` 16,411 / `ld-colloexa` 7,270 / `ld-subsense`
+  23,930 的节点数一个不少。
+- `regress_list_validity` / `regress_scheme_b` / `regress_css_fallback` /
+  `regress_hanging_indent` 全 PASS。`regress_hanging_indent` 的静态判据原本
+  把 gramexa 当例句（要求 1.6em + ::before），已改为新契约（组头 1.1em、
+  无破折号、内层列表回拉），并拿旧 styles.css 做过 FAIL 对照。
+
+### 待办
+
+- 四份发布产物要用本版重建（`revision` 仍统一 2026.10.17），上一节的
+  「发布待办」1–5 条不变；`standard` 与 `compact` 的 term bank 应仍逐字节相同。
+
+---
+
+## 当前工作区补充（2026.10.17 · 悬挂缩进重写 / 中文例句行内化 / 去重与音标）
+
+> ⚠️ **本条取代 2026-09-14 补充成为最新状态**（后者与 09-13 补充均为历史）。
+> 全部内容已过 14 项门禁（standard/compact 两线各 14/14、0 FAIL），已提交推送，
+> **Release 尚未发布**（见本节末「发布待办」）。
+
+### 本轮改了什么（回应 PR #10 审查的 8 条意见）
+
+**CSS 层（generate_css）**
+
+1. **例句悬挂缩进重写（第四方案）**。旧实现 margin-left:1.6em +
+   ::before{margin-left:-1.6em}，负 margin 把整个首行开头拉出去 ——
+   实测块盒子 55、首行文字 43、折行 55，同一句话两行差 12px。
+   新实现：块上 padding-left:1.6em，破折号是**流内** inline-block、
+   width 恰为 1.6em、再用同值负 margin 拉回 gutter。width 与 margin-left
+   在同一元素同一字号上，1.6em 必然相等、精确抵消 —— 首行/折行对齐、
+   破折号紧贴文字，**无补偿数**。实测（ship，真实标准样式表）：
+   盒子 29 + padding 23.28 = 52.28 → 首行文字 52；::before 23.27 = -23.27px。
+
+2. **中文例句行内化**：ld-excn 从 display:block 改 inline（margin-left:.25em），
+   译文放到破折号后面同一行（用户明确要求）。standard 的 ld-defcn
+   （中文释义）保持独立成行 —— 用户裁决为设计取舍，保留。
+
+3. compact 根节点补 overflow-wrap:break-word：此前两份表一条 word-break
+   都没有，'thing' 的加粗搭配 "make things worse/easier/difficult"
+   实测越界 21px。
+
+**数据层**
+
+4. **drop_tight_duplicates 判据两换其三，最终回退文本等值**。
+   v1 文本等值（tag+class+textContent）→ 审查者抓出 6/138 误删
+   （可见文本不丢但链接/标注丢失）；v2 改结构等值（序列化 JSON）→
+   复核发现更糟：4 个词条把同一例句组连排两遍（act a part/role 连出
+   两次），211 处源重复只覆盖 4 处；**v3 回退文本等值**（break a habit /
+   break a record 文本不同不会误合，ab·an·don 有 an 隔开也不会），
+   并删除 _carry_nodew —— 复核证明两份副本的 ld-nodew 完全同一组、
+   按构造永不触发，且其 replace 语义会把 <a href> 换成裸 span（毁链接）。
+   **教训：改判据前先想清楚"误判的可见后果"，并做干净 A/B
+   （只回退一个 hunk，其余两边一致）。**
+
+5. **音标分段分隔条件收窄**（prev_is_pron）：只在上一发出的节点也是
+   音标分段时补前导空格。复核确认它修掉了 PR head 上 129 个双前导
+   空格节点（120 词条）。源端 `<span class="neutral span"> /</span>` 的
+   单个前导空格是必要的排版分隔，正确不变量是 **0 < 前导空格 ≤ 1**，
+   不是"首字符非空白"（加了会让全库 ~37k 音标节点全崩）。
+
+**门禁层（audit_2026_09_14 / audit_2026_09_12）**
+
+6. **has_alignment_fix 重写**（regression_suite.py）：先剥 CSS 注释再匹配
+   —— 旧 FIX_MARK 命中代码里"三种被否决方案"的文档文字，把磁盘上全部
+   正确包判成未修复，两条 alignment 门禁静默 SKIP 而套件仍绿；按精确
+   selector + 属性值判定（五个悬挂类各验 left indent 1.6em + ::before
+   向左挂出 + 无非零 text-indent），兼容 D44 margin-left 与本轮
+   padding+定宽子弹两种实现；newest_fixed_package() 返回 None 且未
+   显式传 --alignment-* 时 **FAIL 退出 1**，不再静默跳过。
+
+7. **regress_hanging_indent.py 判据同步**为同一几何判据（原先硬编码
+   margin-left 写法，对新实现报 5 项 FAIL）；成功文案改为几何描述。
+
+8. **输出留痕**：regression_suite 输出目录默认加时间戳（同日二跑不再
+   覆盖/拒绝）；official_schema.mjs 改**每包一份报告**
+   （official_schema_<名>_<sha8>.json），此前四包共用一文件只剩最后一份。
+
+**打包层**
+
+9. **变体命名**：非 standard 变体 zip 名加 `_compact`、index.title 加
+   `(compact)`；**standard 名与 title 逐字节不变** —— Yomitan 用
+   [data-dictionary="<title>"] 作用域隔离 CSS，改标准 title 会毁掉
+   老用户的自定义 CSS。变体 title 契约在**构建路径**断言（validator 只查
+   非空 —— 硬编码进 validator 会拒绝测试夹具，A6 五个夹具全挂）。
+
+### 走过的弯路（血泪，接手必读）
+
+- **测哪个变体，就必须加载那个变体的样式表**。悬挂缩进前 5 次尝试
+  "各有缺陷"的真正原因：验证页加载了紧凑包 styles.css，其中
+  ld-exlist > li > ld-ex::before（font-size:60%、特异度 0-2-1）把
+  所有扁平规则顶掉 —— 改的东西根本没生效。改测
+  generate_css('standard') 后，流内定宽方案第一次就正确。
+- 曾拍脑袋用 padding-right:2.6667em 补偿字号差 —— 撤回。正确答案
+  不需要补偿，需要的是让两个值在同一元素同一字号上解析。
+- PowerShell 的 -replace / Set-Content 会毁 UTF-8 中文（本轮毁过 4 次）。
+  **凡涉及非 ASCII 的文件改写一律用 Python io.open(..., newline='\n')。**
+- 整文件行尾从 LF 漂成 CRLF 会让提交长成 +4186/−4167 单一大 hunk，
+  真实改动全被淹没。已加 **.gitattributes**（*.py text eol=lf 等）钉死。
+- "13/13 全绿"可能是假象：门禁缺前置时 return 0 + 打印 PASS 比SKIP
+  更隐蔽。**看 results.json 里每道的 skipped 字段，别只看退出码。**
+
+### 交付物（2026.10.17，未发布）
+
+| 路径 | 说明 |
+|---|---|
+| yomitan_fixed/2026-10-09-margin-left/bilingual/LDOCE5pp_Yomitan_2026.10.17.zip | standard 双语（63.7 MB，rev 2026.10.17） |
+| yomitan_fixed/2026-10-09-margin-left/mono/LDOCE5pp_Yomitan_2026.10.17_EN.zip | standard 纯英文 |
+| yomitan_fixed/2026-10-12-compact/bilingual/LDOCE5pp_Yomitan_2026.10.17_compact.zip | **compact 双语**（文件名带变体后缀） |
+| yomitan_fixed/2026-10-12-compact/mono/LDOCE5pp_Yomitan_2026.10.17_compact_EN.zip | compact 纯英文 |
+
+验证：官方 Schema 每包一份报告（official_schema_<名>_<sha8>.json）0 failures；
+套件 14 门 standard/compact 两线各 14/14、0 FAIL、exit 0（alignment 两门
+真跑了，不再 SKIP）；批 A 不变量（相邻同文本兄弟 0；音标前导空格恰 1）。
+standard 与 compact 的 term bank 逐字节相同（be5d808c… / 9392b7c0…）——
+compact 只差 CSS + title，10.16 那次跨天构建与其余同代码状态。
+
+### 发布待办
+
+1. REL_TAG=v2026.10.17、REL_NAME、REL_ASSETS=<四份 zip 分号分隔> 跑
+   converter/_make_release.py（compact 两份不在默认列表，必须显式传）
+2. 重写 _release_notes.md（现仍是 10.12 的）
+3. 【未做】#3 六处工具变体感知：check_state / final_report /
+   3×package_probe / verify_fixed 都调 generate_css() 无参，对 compact 包
+   会误报 CSS 不匹配（方法：照 regress_content 的 _variants 循环，
+   按包内 title 判变体）
+4. 产物目录语义：standard 包在 2026-10-09-margin-left/ 下是历史名，
+   newest_fixed_package() 按包内 CSS 判不受影响，但人看目录会误判；
+   建议发布目录改 yomitan_fixed/<发布日>/<variant>/
+5. 产物已在 feature 分支提交推送（c866e46），PR #10 分支停在 9fc6a27
+
+---
+
 ## 当前工作区补充（2026-09-14 · N1–N3）
 
 > ⚠️ **本条已被 2026.10.03 取代。** 本轮（N1–N3）的成品后来已并入

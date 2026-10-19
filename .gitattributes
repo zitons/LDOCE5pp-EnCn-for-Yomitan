@@ -1,0 +1,13 @@
+# Line endings are pinned so a stray editor cannot rewrite a whole file and
+# bury a real change inside a 4000-line diff (this happened to
+# converter/ldoce2yomitan.py in the PR #10 review round).
+* text=auto eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

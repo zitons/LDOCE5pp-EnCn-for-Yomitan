@@ -1,4 +1,17 @@
-"""Regression gate: the hanging indent must stay margin-left based.
+"""Regression gate: the hanging indent must HOLD GEOMETRICALLY.
+
+   Implementation-agnostic since PR #10: the hang may be built with
+   margin-left + a hanging bullet, or padding-left + an in-flow
+   inline-block bullet of the same width. What the gate checks is the
+   RESULT: every line of an example starts at the same left edge, and the
+   bullet hangs into the gutter to the left of that edge.
+
+   WHY not margin-left specifically: text-indent is INHERITED, so a hang
+   built with text-indent leaks into every descendant that opens a block
+   container (the mechanism behind REVIEW D42/D43 and TYPOGRAPHY T9).
+   That hazard is checked directly (no text-indent on a hanging class or
+   its descendants) instead of by forbidding one implementation in favour
+   of another.
 
 REVIEW D42/D43 and TYPOGRAPHY T9 all trace back to one mechanism: a negative
 `text-indent` used for a hanging indent. `text-indent` is INHERITED, so it leaks
@@ -38,11 +51,21 @@ TOL = 0.6          # px
 # classes that draw a hanging bullet, and the indent each one uses
 HANGING = {
     "ld-ex": "1.6em", "ld-ex-good": "1.6em", "ld-ex-bad": "1.6em",
-    "ld-gramexa": "1.6em", "ld-colloexa": "1.6em",
     "ld-corpexa": "1.2em", "ld-corpexa-corpus": "1.2em",
     "ld-corpexa-dics": "1.2em", "ld-corpexa-encyc": "1.2em",
     "ld-corpexa-online": "1.2em", "ld-corpexa-phrases": "1.2em",
 }
+
+# Group heads (grammar pattern / collocation) are NOT hanging bullets: they are
+# one bold line that CONTAINS its examples. They used to be listed in HANGING
+# because they were rendered as example items -- with a dash and a 1.6em indent
+# -- and their own <ul> then indented the examples one level further. The gate
+# now locks the corrected shape instead:
+#   * the head is a block at a 1.1em step (the original uses 18px against the
+#     example's 42px), with NO ::before -- a head is not an example line;
+#   * the head's own example list is pulled back by the same 1.1em, so its
+#     examples land on the ordinary example column, not one level below it.
+GROUPS = {"ld-gramexa": "1.1em", "ld-colloexa": "1.1em"}
 
 
 def _rules(css):
@@ -76,16 +99,48 @@ def _margin_left(body):
     return None
 
 
+def _decl(body, prop):
+    m = re.search(rf"(?<![-\w]){re.escape(prop)}\s*:\s*([^;]+)", body)
+    return m.group(1).strip() if m else None
+
+
+def _left_indent(body):
+    """The effective LEFT indent of a declaration block (margin or padding,
+    longhand or shorthand), or None."""
+    for prop in ("margin-left", "padding-left"):
+        v = _decl(body, prop)
+        if v:
+            return v
+    for shorthand in ("margin", "padding"):
+        m = re.search(rf"(?<![-\w]){shorthand}\s*:\s*([^;]+)", body)
+        if m:
+            parts = m.group(1).split()
+            if len(parts) == 4:
+                return parts[3]
+            if len(parts) in (2, 3):
+                return parts[1]
+            if len(parts) == 1:
+                return parts[0]
+    return None
+
+
 def check_static(css):
+    """Verify the hang GEOMETRICALLY, whatever mechanism builds it."""
     fails = []
     rules = _rules(css)
 
-    neg = [sel for sel, body in rules if re.search(r"text-indent\s*:\s*-", body)]
+    # S1/S4: no text-indent anywhere in a hanging block or its descendants.
+    # text-indent inherits, so ANY value on a hanging class leaks into block
+    # descendants; the hang must be built with box geometry instead.
+    # text-indent:0 is a RESET (it stops the leak) and is not only allowed but
+    # required on any hanging class whose sheet sets an inherited indent
+    # elsewhere -- only a NON-ZERO value can create the hang.
+    neg = [sel for sel, body in rules
+           if any(f'"{cls}"' in sel for cls in HANGING)
+           and re.search(r"text-indent\s*:\s*(?!0\s*[;}])(?!0px\s*[;}])[^;]+", body)]
     if neg:
-        fails.append(f"negative text-indent still declared: {neg[:4]}")
+        fails.append(f"text-indent declared on a hanging class: {neg[:4]}")
 
-    # every hanging class must have a positive margin-left, and its ::before a
-    # matching negative one
     for cls, indent in HANGING.items():
         base = [b for sel, b in rules
                 if re.search(rf'\[data-sc-class="{cls}"\]', sel)
@@ -93,18 +148,103 @@ def check_static(css):
         if not base:
             fails.append(f"{cls}: no base rule found")
             continue
-        ml = _margin_left(base[0])
-        if not ml or not ml.startswith(("1.6em", "1.2em")):
-            fails.append(f"{cls}: margin-left is {ml or 'absent'}, expected {indent}")
+        left = _left_indent(base[0])
+        if not left or not left.startswith(indent.split("em")[0]):
+            fails.append(f"{cls}: left indent is {left or 'absent'}, "
+                         f"expected {indent}")
         before = [b for sel, b in rules
                   if f'[data-sc-class="{cls}"]::before' in sel]
         if not before:
             fails.append(f"{cls}: no ::before rule")
             continue
-        bml = _margin_left(before[0])
-        if not bml or not bml.startswith("-"):
-            fails.append(f"{cls}: ::before margin-left is {bml or 'absent'} "
-                         f"(the bullet would not hang out)")
+        b = before[0]
+        ml = _decl(b, "margin-left")
+        msh = _left_indent(b) if (ml is None and _decl(b, "padding-left") is None) else None
+        pos = _decl(b, "position")
+        leftpos = _decl(b, "left")
+        hangs = (
+            (ml and ml.startswith("-"))
+            or (pos == "absolute" and leftpos and leftpos.startswith("-"))
+        )
+        if not hangs:
+            fails.append(f"{cls}: ::before does not hang out "
+                         f"(margin-left {ml}, position {pos} {leftpos})")
+
+    # Group heads: block at a small step, no bullet, and their own list pulled
+    # back so the contained examples keep the ordinary example column.
+    fails += check_groups(rules)
+    return fails
+
+
+def _effective(rules, cls):
+    """Effective `display` and left indent of the bare `[data-sc-class="cls"]`
+    rule, in sheet order.
+
+    All such rules have the SAME specificity (0-1-0), so the last declaration
+    wins regardless of which block it sits in. Picking the first matching rule
+    (or the last block that happens to mention the class) is how the compact
+    sheet's `ld-colloexa { display:inline }` override survived a green gate:
+    the block rule existed, but a later sibling rule undid it.
+    """
+    display = None
+    left = None
+    for sel, body in rules:
+        parts = [p.strip() for p in sel.split(",")]
+        if f'[data-sc-class="{cls}"]' not in parts:
+            continue
+        d = _decl(body, "display")
+        if d is not None:
+            display = d
+        i = _left_indent(body)
+        if i is not None:
+            left = i
+    return display, left
+
+
+def _effective_pseudo(rules, cls, pseudo="::before", prop="content"):
+    """Effective value of `prop` on `[data-sc-class="cls"]<pseudo>`.
+
+    Presence is not the question: both sheets deliberately emit a ::before rule
+    with `content:none` to switch off the marker that scheme B writes into the
+    DOM. Only a rule that actually PAINTS something (a value other than none)
+    means the group head is still dressed as an example.
+    """
+    value = None
+    target = f'[data-sc-class="{cls}"]{pseudo}'
+    for sel, body in rules:
+        parts = [p.strip() for p in sel.split(",")]
+        if target not in parts:
+            continue
+        v = _decl(body, prop)
+        if v is not None:
+            value = v.strip()
+    return value
+
+
+def check_groups(rules):
+    """The group-head contract, evaluated against the EFFECTIVE cascade."""
+    fails = []
+    for cls, step in GROUPS.items():
+        display, left = _effective(rules, cls)
+        if left != step:
+            fails.append(f"{cls}: head indent is {left or 'absent'}, expected {step}")
+        if display != "block":
+            fails.append(f"{cls}: head is {display or 'not declared'}, expected "
+                         f"block -- a later same-specificity rule overrides it")
+        if _effective_pseudo(rules, cls) not in (None, "none"):
+            fails.append(f"{cls}: still draws an example bullet "
+                         f"(::before content {_effective_pseudo(rules, cls)})")
+        pull = [b for sel, b in rules
+                if re.search(rf'\[data-sc-class="{cls}"\]\s*>\s*'
+                             rf'\[data-sc-class="ld-exlist"\]', sel)]
+        if not pull:
+            fails.append(f"{cls}: its inner example list is not pulled back -- "
+                         f"examples would sit one level too deep")
+        else:
+            ml = _decl(pull[-1], "margin-left")
+            if ml != "-" + step:
+                fails.append(f"{cls}: inner list margin-left is {ml}, "
+                             f"expected -{step}")
     return fails
 
 
@@ -205,10 +345,12 @@ def main():
     args = ap.parse_args()
     if args.css:
         css = open(args.css, encoding="utf-8").read()
+        compact_css = None
     else:
         sys.path.insert(0, HERE)
         import ldoce2yomitan as C
         css = C.generate_css()
+        compact_css = C.generate_css("compact")
 
     print("=== static checks ===")
     f1 = check_static(css)
@@ -216,6 +358,13 @@ def main():
         print("   FAIL", f)
     print(f"   {len(HANGING)} hanging classes checked, "
           f"{len(f1)} static failure(s)")
+
+    if compact_css is not None:
+        fc = ["[compact] " + f for f in check_groups(_rules(compact_css))]
+        for f in fc:
+            print("   FAIL", f)
+        print(f"   compact sheet: group-head contract, {len(fc)} failure(s)")
+        f1 += fc
 
     print("\n=== dynamic checks (real browser) ===")
     f2, skips = check_dynamic(css)
@@ -235,7 +384,9 @@ def main():
     if skips:
         print("HANGING INDENT GATE: PASS (static only; dynamic skipped)")
         return 0
-    print("HANGING INDENT GATE: PASS  (margin-left scheme intact)")
+    print("HANGING INDENT GATE: PASS  (hanging geometry intact: each hanging "
+          "class indents 1.6em on the left, its bullet hangs out, and no "
+          "hanging class uses text-indent)")
     return 0
 
 

@@ -187,6 +187,85 @@ def merge_adjacent_text(nodes):
     return out
 
 
+def _serialised(node):
+    """Canonical JSON of a built SC node -- used for auditing, not for the
+    duplicate comparison (see the docstring of drop_tight_duplicates)."""
+    return json.dumps(node, sort_keys=True, ensure_ascii=False)
+
+
+def drop_tight_duplicates(nodes):
+    """Remove an element that is immediately followed by an identical one.
+
+    A scan of 119 rendered entries found 29 places where the SAME element with
+    the SAME text sat directly beside itself with nothing but whitespace between:
+    an ACTIV chip twice ('back' -> RETURN RETURN, 11 across the sample) and whole
+    example groups twice ('break' -> the 'break from' group, 15). Both reproduce
+    from the source markup, where the link/group is literally written twice:
+
+        <a href="entry://ACTIV:RETURN"><span class="ACTIV">RETURN</span></a>
+        <a href="entry://ACTIV:RETURN"><span class="ACTIV">RETURN</span></a>
+
+    The comparison is TEXT equality (plain textContent), NOT structural
+    equality.  A structural key (serialised JSON) was tried and reverted: it
+    kept BOTH copies of 8 adjacent same-text siblings across 4 entries, so a
+    reader saw the same example group twice ('act a part/role' rendered twice
+    back to back).  Against a no-dedup baseline those 8 cover only 4 of the 211
+    adjacent same-text siblings / 190 entries that exist in the source -- text
+    equality removes the other 207.  Text equality never merged the wrong pair:
+    'break a habit' / 'break a record' differ in text, and the syllable dots of
+    'ab.an.an' have 'an' between them.
+
+    Text equality CAN collapse two copies that are not structurally identical.
+    An audit of the one case where that happens in practice ('act' sense: the
+    surviving copy wraps a few words in <a href> where the dropped copy used
+    plain spans) found that BOTH copies carry the same ld-nodew boldings and
+    the surviving copy keeps every link -- so nothing recoverable is lost, and
+    no attempt is made to merge markup from the dropped copy.  A first version
+    did try to carry ld-nodew over; it was deleted because it could never fire
+    (the boldings are always identical on both copies) and its replacement step
+    would have swapped an <a href> node for a bare span, i.e. destroyed a link,
+    had it ever fired.
+    """
+    out = []
+    i = 0
+    n = len(nodes)
+    while i < n:
+        node = nodes[i]
+        out.append(node)
+        if isinstance(node, dict) and node.get("tag"):
+            # skip forward over every identical repeat, so a run of three
+            # collapses to one rather than two
+            j = i + 1
+            while True:
+                k = j
+                gap = True
+                while k < n and isinstance(nodes[k], str):
+                    if nodes[k].strip():
+                        gap = False
+                        break
+                    k += 1
+                if (gap and k < n and isinstance(nodes[k], dict)
+                        and nodes[k].get("tag") == node.get("tag")
+                        and _plain_text(nodes[k]) == _plain_text(node)):
+                    j = k + 1
+                    continue
+                break
+            i = j
+            continue
+        i += 1
+    return out
+
+
+def drop_dups_in_tree(node):
+    """Apply drop_tight_duplicates at every level of a built SC tree."""
+    if isinstance(node, list):
+        return drop_tight_duplicates([drop_dups_in_tree(x) for x in node])
+    if isinstance(node, dict) and node.get("content") is not None:
+        node = dict(node)
+        node["content"] = drop_dups_in_tree(node["content"])
+    return node
+
+
 def strip_leading_bullet(nodes):
     if not nodes:
         return
@@ -394,8 +473,9 @@ FREQ_VALUE = {"S1": 1000, "W1": 1000, "S2": 2000, "W2": 2000, "S3": 3000, "W3": 
 # stands in for.
 SCHEME_B_MARKERS = {
     "ld-ex":            "\u2013\u00a0",   # - (en dash, like the ::before content)
-    "ld-gramexa":       "\u2013\u00a0",
-    "ld-colloexa":      "\u2013\u00a0",
+    # No marker for ld-gramexa / ld-colloexa: they are group heads, not example
+    # lines. The source draws no dash before the pattern ("set something (down)
+    # on something"); the dash came from treating the head as one more example.
     "ld-ex-good":       "\u2713\u00a0",   # check
     "ld-ex-bad":        "\u2717\u00a0",   # cross
     "ld-corpexa":       "\u2022\u00a0",   # bullet
@@ -664,11 +744,22 @@ SEMANTIC_INLINE_STYLES = {
     "ld-wf-pos": {"fontStyle": "italic"},
 }
 
-# classes that are a list member at their level
-SENSE_ITEM_CLASSES = frozenset({"ld-sense", "ld-sense-cross", "ld-sense-merge",
-                                "ld-subsense"})
-EXAMPLE_ITEM_CLASSES = frozenset({"ld-ex", "ld-ex-good", "ld-ex-bad",
-                                  "ld-gramexa", "ld-colloexa"})
+# Classes that are a list member at their own level.
+#
+# ld-subsense is deliberately NOT here. A subsense is a labelled sub-block
+# ("a) ...", "b) ..."), not an item of the parent's sense list: wrapping it in
+# <ol class="ld-senselist"><li> added a list level the source never had, and a
+# host without our stylesheet numbered those items 1. 2. 3. on top of the a)/b)
+# labels the subsense already carries. It now stays a plain <div> inside the
+# parent <li>, exactly as the source nests div.Subsense.
+#
+# ld-gramexa / ld-colloexa are NOT list members either -- they are group HEADS
+# that CONTAIN their examples (span.PROPFORM + one or more div.EXAMPLE). As list
+# members they were wrapped in a classless <li>, got the example dash and the
+# example indent, and then indented their own <ul> a second time: two levels for
+# what is one. See the group rules in generate_css().
+SENSE_ITEM_CLASSES = frozenset({"ld-sense", "ld-sense-cross", "ld-sense-merge"})
+EXAMPLE_ITEM_CLASSES = frozenset({"ld-ex", "ld-ex-good", "ld-ex-bad"})
 
 
 def add_inline_semantics(node):
@@ -1425,7 +1516,29 @@ class LdoceRenderer:
                     out.append(sc("span", " \u00b7 ", cls="ld-sep"))
                     out.extend(inner)
             elif "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
-                pron_text = sc_text(child.get_text("", strip=True))
+                # strip=True on each span removed the whitespace that SEPARATES
+                # consecutive head spans, so they ran together: 'the' came out as
+                # "/ðə;before vowelsði;strongðiː/" -- the source is
+                #   <span class="PRON">ðə</span>
+                #   <span class="STRONG">; before vowels</span>
+                #   <span class="PRON"> ði</span>          <- leading space
+                #   <span class="STRONG">; strong</span>
+                #   <span class="PRON"> ðiː</span>         <- leading space
+                # The leading space of each following span is the only thing that
+                # keeps the segments apart, so keep it when something was already
+                # emitted.
+                raw = child.get_text("", strip=False)
+                pron_text = sc_text(raw)
+                # Only a segment that FOLLOWS another pronunciation segment
+                # needs its leading space restored -- a segment right after the
+                # headword must not gain one, or every pronunciation node starts
+                # with a space ('/ əˈbændən/').  Re-add the space exactly when
+                # the previous emitted node is itself a pronunciation span.
+                prev_is_pron = bool(out) and isinstance(out[-1], dict) \
+                    and (out[-1].get("data") or {}).get("class") in (
+                        "ld-pron", "ld-pron-amevar")
+                if pron_text and prev_is_pron and raw[:1].isspace():
+                    pron_text = " " + pron_text
                 if pron_text:
                     flush_hwd()
                     pron_cls = "ld-pron-amevar" if "AMEVARPRON" in cls else "ld-pron"
@@ -1745,7 +1858,20 @@ class LdoceRenderer:
             # belongs to the form that precedes it, and two forms may share one
             # pronunciation string.
             if "PronCodes" in cls or "PRON" in cls or "AMEVARPRON" in cls:
-                pron = sc_text(child.get_text("", strip=True))
+                # Same separator problem as the head path: strip=True removes the
+                # leading space that keeps consecutive PRON / STRONG segments
+                # apart, so an inflected form's pronunciation glued together the
+                # same way. push_sep() already inserts a separator between forms,
+                # so only the intra-pronunciation gap is restored here.
+                raw = child.get_text("", strip=False)
+                pron = sc_text(raw)
+                # Same rule as the head path: restore the leading space only when
+                # the PREVIOUS node is itself a pronunciation segment -- never on
+                # the first segment of a form's pronunciation.
+                prev_is_pron = bool(nodes) and isinstance(nodes[-1], dict) \
+                    and (nodes[-1].get("data") or {}).get("class") == "ld-infl-pron"
+                if pron and prev_is_pron and raw[:1].isspace():
+                    pron = " " + pron
                 if pron:
                     push_sep()
                     nodes.append(sc("span", pron, cls="ld-infl-pron"))
@@ -2383,8 +2509,19 @@ class LdoceRenderer:
 # ---------------------------------------------------------------------------
 
 
-def generate_css():
-    return """/* LDOCE5++ Yomitan styles - generated by ldoce2yomitan v""" + VERSION + """ */
+def generate_css(variant="standard"):
+    """The dictionary stylesheet.
+
+    variant="standard"  the current look: head band, coloured panels, generous
+                        spacing.
+    variant="compact"   a parallel, space-frugal look modelled on the compact
+                        Japanese-Chinese dictionaries (明镜日汉双解: every rule is
+                        font-size:1.0em, margin-left:1.0em hanging, and it spends
+                        NO backgrounds or borders at all -- differentiation is by
+                        colour only). Same structured content, same information,
+                        far less vertical space.
+    """
+    base = """/* LDOCE5++ Yomitan styles - generated by ldoce2yomitan v""" + VERSION + """ */
 .gloss-sc { white-space: pre-wrap; }
 .gloss-sc--structured-content { white-space: normal; }
 
@@ -2439,6 +2576,13 @@ def generate_css():
   --ld-geo:   #8f67d8;
   --ld-warn:  #d35748;
   --ld-level: #b0851b;
+  /* The sense-number accent. --ld-red was REFERENCED (ld-snum / ld-snum-n) but
+     never defined, so `color:var(--ld-red)` was invalid at computed-value time
+     and the number fell back to the inherited body colour -- measured
+     rgb(232,232,232) on a dark host, i.e. no accent at all and no way to tell a
+     sense number from the text beside it. Defined here (static) and in the
+     @supports block (theme-adaptive) like every other accent. */
+  --ld-red:   #b03a2e;
   /* neutrals: the de-emphasised text tiers. With color-mix() available they are
      derived from --text-color further down, so they track the theme. Without it
      there is NO way to dim relative to the theme, and a fixed grey cannot stand
@@ -2477,6 +2621,7 @@ def generate_css():
     --ld-field: color-mix(in srgb, #7f8c2f 68%, var(--text-color, currentColor) 32%);
     --ld-geo:   color-mix(in srgb, #9163e6 68%, var(--text-color, currentColor) 32%);
     --ld-warn:  color-mix(in srgb, #e0503f 68%, var(--text-color, currentColor) 32%);
+    --ld-red:   color-mix(in srgb, #c0392b 62%, var(--text-color, currentColor) 38%);
     --ld-level: color-mix(in srgb, #b8860b 68%, var(--text-color, currentColor) 32%);
     --ld-text2: color-mix(in srgb, var(--text-color, currentColor) 88%, transparent);
     --ld-dim:   color-mix(in srgb, var(--text-color, currentColor) 70%, transparent);
@@ -2623,21 +2768,65 @@ def generate_css():
 [data-sc-class="ld-panel-online"] > [data-sc-class="ld-panel-sum"]::before { border-left-color:var(--ld-dim); }
 
 /* ---- examples ---------------------------------------------------------- */
-/* Hanging indent via margin-left, NOT text-indent.
-   text-indent is inherited, so a negative value leaks into every descendant
-   that opens a block container -- that mechanism caused the misalignment
-   defects in REVIEW D42/D43 and TYPOGRAPHY T9, and needed an 11-selector
-   descendant reset to contain. margin-left applies to this element's own box
-   and does not inherit, which is what the original stylesheet does (684
-   rules, zero negative text-indent).
-   Geometry is unchanged: the block's border box moves right by the indent,
-   and the bullet's negative margin-left pulls it back out, so the bullet
-   sits where the dash used to and wrapped lines still start at the indent. */
-[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"], [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] { display:block; margin:1px 0 3px 1.6em; color:var(--ld-text2); font-size:.97em; }
-[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before, [data-sc-class="ld-colloexa"]::before { content:"\\2013\\00a0 "; color:var(--ld-frame); font-weight:700; margin-left:-1.6em; }
-[data-sc-class="ld-ex-good"]::before { content:"\\2713\\00a0 "; color:var(--ld-frame); font-weight:700; margin-left:-1.6em; }
-[data-sc-class="ld-ex-bad"]::before { content:"\\2717\\00a0 "; color:var(--ld-warn); font-weight:700; margin-left:-1.6em; }
-[data-sc-class="ld-excn"] { display:block; padding-left:1.6em; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-bottom:2px; }
+/* Hanging indent: the block is padded, and the bullet is an IN-FLOW
+   inline-block of exactly that width pulled back by the same amount.
+
+       padding-left:1.6em                 every line starts at the padding edge
+       ::before { inline-block; width:1.6em; margin-left:-1.6em }
+                                          the bullet occupies the gutter, and
+                                          because it is a fixed-width box IN THE
+                                          FLOW, the text after it resumes at
+                                          exactly the padding edge
+
+   Three other forms were measured and rejected:
+
+   1. margin-left:1.6em + ::before{margin-left:-1.6em} with no fixed width.
+      The negative margin shifts the whole START of the first line left, so the
+      first line's text began at 43 while the wrapped line began at 55 -- one
+      example's two lines 12px out of line.
+
+   2. padding-left + text-indent:-1.6em + inline-block bullet. Aligns the lines,
+      but the inline-block sits at the text-indent edge, so the bullet is pushed
+      to the padding edge and a large gap opens between bullet and text.
+
+   3. ::before { position:absolute; left:-1.6em }. Out of flow, so it cannot
+      shift the first line -- but text no longer follows the bullet either, and
+      a 1.6em void opened between the dash and the example.
+
+   Form 4 below is the only one where the bullet both stays next to the text and
+   leaves the first line aligned with the wrapped lines. */
+[data-sc-class="ld-ex"], [data-sc-class="ld-ex-good"], [data-sc-class="ld-ex-bad"] { display:block; margin:1px 0 3px; padding-left:1.6em; color:var(--ld-text2); font-size:.97em; }
+[data-sc-class="ld-ex"]::before { content:"\\2013"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex-good"]::before { content:"\\2713"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-frame); font-weight:700; }
+[data-sc-class="ld-ex-bad"]::before { content:"\\2717"; display:inline-block; width:1.6em; margin-left:-1.6em; color:var(--ld-warn); font-weight:700; }
+/* ---- example groups: grammar pattern / collocation head -----------------
+   A group is ONE head line plus the examples that belong to it:
+
+       set something (down) on something          <- ld-gramexa (head)
+       – She set the tray down on a table ...     <- its examples, SAME column
+       – Mark filled the pan and set it on ...       as every other example
+
+   It used to be a list member itself, so the head was wrapped in a classless
+   <li>, got the example dash and the example indent (1.6em), and then its own
+   <ul> added a second 1.6em on top: the examples under a head sat one full
+   level deeper than the examples beside it (measured l=106 vs l=81 on 'run',
+   and 22,279 nested ld-exlist overall).
+
+   The original does it with one small step for the head and the ordinary
+   example column for its examples:
+       .ldoceEntry .GramExa            { margin-left: 18px  }
+       .ldoceEntry .GramExa .EXAMPLE   { margin-left: 24px  }  -> 84 = the
+       .ldoceEntry .EXAMPLE            { margin-left: 42px  }      same column
+
+   So: the group takes a 1.1em step for the head, and the reset below pulls its
+   own list back to the parent column, which puts the examples exactly where a
+   plain example sits (their own padding/margin then applies as usual). No dash
+   on the head -- it is a head, not an example line. */
+[data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
+  display:block; margin:2px 0 3px 1.1em; }
+[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
+[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em; }
+[data-sc-class="ld-excn"] { display:inline; padding-left:0; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-left:.25em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
 [data-sc-class="ld-hint-inline"] { color:var(--ld-level); font-style:italic; }
@@ -2733,6 +2922,303 @@ def generate_css():
 
 /* ---- topics / misc ----------------------------------------------------- */
 [data-sc-class="ld-topics"], [data-sc-class="ld-topics-body"] { display:block; margin:4px 0; }
+"""
+
+    if variant != "compact":
+        return base
+    return base + _COMPACT_OVERRIDES
+
+
+# ---------------------------------------------------------------------------
+# Compact stylesheet variant
+# ---------------------------------------------------------------------------
+# Modelled on the compact Japanese-Chinese dictionaries the user pointed at
+# (明镜日汉双解词典_Yomitan 1.4.4.zip): every rule there is font-size:1.0em, a
+# 1.0em hanging indent, and it spends NO backgrounds or borders at all --
+# differentiation is by colour alone. That is what keeps a long entry to a
+# couple of screens.
+#
+# This block only OVERRIDES the space-hungry rules of the standard stylesheet; it
+# is appended after them so it wins on source order at equal specificity. The
+# structured content is byte-identical to the standard build, so content fidelity
+# and every existing gate are unaffected -- only the look changes.
+_COMPACT_OVERRIDES = """
+/* ==========================================================================
+   COMPACT VARIANT -- space-frugal, parallel to the standard look.
+   Same content, same colour contract, no bands, no boxes, minimal margins.
+
+   NO font-size IS CHANGED ANYWHERE HERE. The reference dictionary
+   (明镜日汉双解) sets font-size:1.0em on every rule: it neither inflates nor
+   shrinks the type. Every pixel saved comes from line-height, margins,
+   padding and the inline flow -- never from making the text smaller.
+   ========================================================================== */
+
+/* tighter leading everywhere: this alone removes ~10% of the height.
+
+   overflow-wrap is set here because nothing in either sheet declared one, and a
+   long unbreakable collocation ran past the popup edge in a scan of 49 entries:
+   'thing' carries a bold ld-collo reading
+   "make things worse/easier/difficult", which measured 159px wide ending 21px
+   beyond the 430px container. break-word lets such a run wrap instead of
+   overflowing, and cannot affect text that already fits. */
+[data-sc-class="ld"] { line-height:1.34; overflow-wrap:break-word }
+[data-sc-class="ld-ex"], [data-sc-class="ld-corpexa"],
+[data-sc-class="ld-corpexa-corpus"], [data-sc-class="ld-corpexa-dics"],
+[data-sc-class="ld-corpexa-encyc"], [data-sc-class="ld-corpexa-online"],
+[data-sc-class="ld-corpexa-phrases"] { line-height:1.28 }
+
+/* the head band becomes an inline run: headword + pronunciation + POS flow on
+   one line instead of occupying a padded block */
+[data-sc-class="ld-head"] { display:inline; margin:0; padding:0; border:0;
+  background:none }
+[data-sc-class="ld-hwd-wrap"] { }
+[data-sc-class="ld-hwd"] { }
+[data-sc-class="ld-pron"], [data-sc-class="ld-pron-bre"],
+[data-sc-class="ld-pron-ame"] { }
+[data-sc-class="ld-pos"], [data-sc-class="ld-pos-ital"] { }
+[data-sc-class="ld-freq"], [data-sc-class="ld-freq-oral"],
+[data-sc-class="ld-freq-written"], [data-sc-class="ld-freq-freq"] { }
+[data-sc-class="ld-hwd-grp"] { margin:0 }
+
+/* senses: keep the hanging indent (D44 margin-left scheme) but drop the rule
+   above each sense and tighten the gap */
+[data-sc-class~="ld-sense"], [data-sc-class~="ld-sense-cross"],
+[data-sc-class~="ld-sense-merge"] { margin:0 0 3px; padding-top:0 }
+[data-sc-class~="ld-sense"]::before, [data-sc-class~="ld-sense-cross"]::before,
+[data-sc-class~="ld-sense-merge"]::before { display:none }
+[data-sc-class="ld-snum"], [data-sc-class="ld-snum-n"] { color:var(--ld-red) }
+
+/* definitions: the Chinese flows INLINE right after the English, exactly as the
+   reference dictionary does -- its dfcn/exjp/excn rules carry no display:block at
+   all, so the whole sense is one paragraph and only the colour differs:
+      あ ⟨感⟩ ① 驚いたり…あっ。/ 啊，噢，哦。…▲ 「～そうか」噢，是吗…
+   Emitting the Chinese on its own line (the standard look) doubles the height of
+   every sense.
+
+   The break goes BEFORE ld-def, not after the preceding chip. On 'back' sense 1
+   the DOM order is ld-signpost, ld-zh, ld-act, ld-act, ld-def, so a break on any
+   one of those chips still left the definition continuing on that line
+   (measured l=359 instead of the l=97 gutter). */
+[data-sc-class="ld-def"] { margin:0; display:inline; white-space:pre-line }
+[data-sc-class="ld-def"]::before { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-defcn"] { display:inline; margin:0; white-space:pre-line;
+  font-weight:600; color:var(--ld-zh) !important }
+[data-sc-class="ld-defcn"]::before { content:" " }
+[data-sc-class="ld-defcn"]::after { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-defcn-first"] { display:inline; margin:0; white-space:pre-line;
+  font-weight:600; color:var(--ld-zh) !important }
+[data-sc-class="ld-defcn-first"]::after { content:"\\A"; white-space:pre-line }
+
+/* examples: English and Chinese in one run, colour-coded, 1.1em gutter.
+   The real class names are ld-ex / ld-excn (an earlier version guessed
+   "ld-ex-cn", which matches nothing, so the Chinese example kept its
+   display:block from the standard sheet and every example took two lines).
+
+   ld-ex is `inline` so the Chinese follows the English on the SAME line, and
+   `::after { content:"\\A" }` (an escaped newline = a forced line break in CSS
+   white-space:pre-line) closes the run. Without it the next example continues on
+   the same line and its left edge drifts to wherever the previous Chinese
+   ended -- measured on 'back' sense 1: the 2nd example started at l=330 instead
+   of l=86, which is exactly the misalignment class this project keeps hitting.
+
+   ld-gramexa is NOT an example run -- it is a grammar note that CONTAINS its own
+   examples (a propform plus an exlist). Making it inline swallowed them into one
+   73px-tall run ("back in/to/into etc -- Rory plugged the cable back into ..."),
+   which is what broke 'back' sense 3. It stays a BLOCK with its own line.
+
+   The selectors are deliberately MORE SPECIFIC than the standard rules they
+   override. ld-ex inside a list is an <li>, and the standard line's
+   `ld-exlist > li { margin:0 }` (0-1-1) outranks a bare
+   `[data-sc-class="ld-ex"]` (0-1-0) -- so the compact margin never applied and
+   'back' sense 3's two examples sat 17px apart (l=47 vs l=30). Qualifying with
+   the ancestor raises these to 0-2-0 and makes them win regardless of order. */
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-good"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-bad"] { display:inline;
+  margin-left:1.1em; white-space:pre-line }
+[data-sc-class="ld-ex"]::after, [data-sc-class="ld-ex-good"]::after,
+[data-sc-class="ld-ex-bad"]::after { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-gramexa"] { display:block; margin:2px 0 1px 1.1em }
+[data-sc-class="ld-propform"] { display:inline; font-weight:600 }
+[data-sc-class="ld-propform"]::after { content:"\\A"; white-space:pre-line }
+/* The en dash before an example is dropped in compact. It is not decoration the
+   reader asked for -- it is a stand-in for a rule, and the hanging indent plus
+   the italic + colour already separate an example from the definition. The
+   reference dictionary does the same: its `exam` rule carries no marker at all.
+   The ✓/✗ on ld-ex-good / ld-ex-bad stay: those carry meaning (a correct vs an
+   incorrect usage), unlike the neutral dash.
+
+   The marker itself still exists in the DOM as an ld-mark span (so a host with
+   no stylesheet keeps it) and the standard stylesheet hides that span, so this
+   only switches off the ::before that paints it. */
+[data-sc-class="ld-ex"]::before, [data-sc-class="ld-gramexa"]::before,
+[data-sc-class="ld-colloexa"]::before, [data-sc-class="ld-corpexa"]::before {
+  content:none }
+/* The English-to-Chinese gap. Two contributors, and the bigger one was invisible:
+
+     1. padding-left: the STANDARD sheet indents ld-excn by 1.6em, which is right
+        when the Chinese is a display:block on its own line under the English.
+        This variant makes ld-excn inline so it follows on the SAME line, and the
+        1.6em (22.1px, measured) then becomes pure blank space mid-line. It has to
+        be reset here -- overriding display without also overriding padding was
+        the whole bug, and it is what the "wide gap" actually was.
+     2. margin-left: previously 1.1em (16.2px) on top of that. A quarter em is
+        enough once the padding is gone.
+
+   Measured after the fix: gap 3.2px -> 1.9px, padding-left 22.1px -> 0.
+   The same padding reset is applied to every class that the standard sheet
+   indents but this variant flows inline, so none of them carry invisible space. */
+[data-sc-class="ld-excn"] { display:inline; margin-left:.25em; padding-left:0;
+  color:var(--ld-zh) !important }
+[data-sc-class="ld-excn"]::before { content:" " }
+[data-sc-class="ld-defcn"], [data-sc-class="ld-zh"], [data-sc-class="ld-def"],
+[data-sc-class="ld-ex"] { padding-left:0; text-indent:0 }
+[data-sc-class="ld-exlist"] { margin:1px 0 2px }
+[data-sc-class="ld-exlist"] > li { margin:0 }
+
+/* ---- example hierarchy -------------------------------------------------
+   Measured on a rendered 'ship': an example and the definition above it sat only
+   16px apart (the gutter is 31px, so the step was half a level and the eye could
+   not read it), at the same colour, so the two ran together. Two changes:
+
+     1. ONE FULL GUTTER STEP PER LEVEL. The example indent goes 1.1em -> 1.9em,
+        making every level a multiple of the sense gutter:
+            0        sense number
+            1.9em    definition
+            3.8em    examples
+            5.7em    an example's own sub-examples
+        Measured step: 16px -> 27px. Height is 2382 vs 2368 for the old build,
+        i.e. +0.6%.
+
+     2. display:block ON THE EXAMPLE. An inline box takes margin-left on its
+        first line box alone, so a wrapped example dropped back to the
+        definition's indent --
+            ◻ They're now shipping their long-awaited new anti-   (indented)
+            virus software. ...                                   (left edge)
+        A block box indents every line. ld-excn stays inline inside, so the
+        Chinese still follows the English on the SAME line and the height does
+        not grow.
+        ld-def is deliberately NOT made a block: that pushes its Chinese onto its
+        own line and doubles the entry height. Its first line therefore stays
+        ~13px right of its own wrap, which is the lesser evil.
+
+   No colour is changed here. An earlier draft dimmed the examples to a grey; the
+   user asked for that to be removed, so the hierarchy is carried by indent, the
+   marker and the phrase rule only. */
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-good"],
+[data-sc-class="ld-exlist"] [data-sc-class="ld-ex-bad"] {
+  display:block; margin-left:1.9em }
+[data-sc-class="ld-exlist"] > li > [data-sc-class="ld-ex"]::before,
+[data-sc-class="ld-exlist"] > li[data-sc-class="ld-ex"]::before {
+  content:"\\25fb"; font-size:60%; padding-right:.35em; vertical-align:2px;
+  color:var(--ld-zh); margin-left:-1.1em }
+/* example groups: one 1.1em step for the head, its own list pulled back to the
+   parent column (see the standard-sheet note). The ancestor-qualified 1.9em
+   rules that used to live here matched because the group was an <li> of the
+   example list; now that it is a sibling block they would only ever be dead
+   weight, and 1.9em would put the head BELOW its own examples. */
+[data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
+  display:block; margin-left:1.1em }
+[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
+[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em }
+/* the phrase line that introduces a group of examples gets the bar the original
+   screenshot shows, so the group reads as belonging together */
+[data-sc-class="ld-phrase"] { display:block; font-weight:700;
+  border-left:3px solid color-mix(in srgb, var(--text-color, currentColor) 26%,
+  transparent); padding-left:.5em; margin:4px 0 2px 1.9em }
+
+/* grammar / register / signpost chips: inline, no padding blocks.
+   ld-zh is the Chinese gloss under a signpost -- it also gets a forced break so
+   the following definition starts at the gutter. */
+[data-sc-class="ld-gram"], [data-sc-class="ld-reg"], [data-sc-class="ld-signpost"],
+[data-sc-class="ld-geo"], [data-sc-class="ld-syntax"], [data-sc-class="ld-infllab"] {
+  display:inline; margin:0 .35em 0 0; padding:0; border:0; background:none }
+[data-sc-class="ld-zh"] { display:inline; white-space:pre-line }
+[data-sc-class="ld-zh"]::after { content:"\\A"; white-space:pre-line }
+[data-sc-class="ld-syntax-cod"], [data-sc-class="ld-gram-cod"] { padding:0; border:0;
+  background:none }
+
+/* Collocation group heads: NO override here.
+   This block used to force `ld-colloexa { display:inline }` (to keep a
+   collocation and its Chinese gloss on one line) and styled three classes that
+   the converter never emits (`ld-collgrp`, `ld-colloexa-cn`, `ld-collo-list`).
+   Since ColloExa is now a group HEAD that owns its own <ul class="ld-exlist">,
+   the inline box broke it two ways:
+     * the block <ul> inside an inline parent takes its containing block from
+       the nearest BLOCK ancestor (the sense), so its -1.1em pull-back landed
+       below the parent column: head l=30, examples l=42, while the sibling
+       grammar groups sat at head 48 / examples 60 -- an 18px step that no other
+       level uses;
+     * a block child (div.ld-defcn) inside an inline box splits the inline into
+       anonymous block boxes, so the head itself lost its 1.1em step.
+   The standard rules (group head block + 1.1em, its own exlist -1.1em) already
+   describe the original dictionary, whose `.ColloExa` is `display:block` with
+   `margin-left:18px`. */
+
+/* panels become a wrapping ROW OF CHIPS, like the reference dictionary's
+   WORD ORIGIN / EXAMPLES / THESAURUS / COLLOCATIONS / PHRASES row, instead of a
+   stack of full-width bars. Each is an inline-block <details>, so closed chips sit
+   side by side and wrap; opening one makes it go full width and the rest reflow
+   below it. */
+[data-sc-class="ld-panel"], [data-sc-class="ld-panel-corpus"],
+[data-sc-class="ld-panel-wf"], [data-sc-class="ld-panel-etym"],
+[data-sc-class="ld-panel-online"] { display:inline-block; vertical-align:top;
+  margin:1px 3px 1px 0; max-width:100%; }
+[data-sc-class="ld-panel"][open], [data-sc-class="ld-panel-corpus"][open],
+[data-sc-class="ld-panel-wf"][open], [data-sc-class="ld-panel-etym"][open],
+[data-sc-class="ld-panel-online"][open] { display:block; width:100%;
+  margin:2px 0; }
+/* The chip TEXT must clear 4.5:1. var(--ld-frame) is a saturated green that only
+   reaches 3.44:1 -- and the standard line uses --ld-head (the full text colour,
+   21:1) here, so the chip was the one class the compact variant made worse.
+   Derive it toward --text-color instead: the border keeps the saturated frame
+   colour so the chip still reads as a chip, while the label keeps its contrast. */
+[data-sc-class="ld-panel-sum"] { display:inline-block; padding:0 .4em;
+  line-height:1.5; cursor:pointer; list-style:none;
+  border:1px dashed var(--ld-frame); border-radius:3px;
+  color:color-mix(in srgb, var(--ld-frame) 45%, var(--text-color, currentColor) 55%);
+  font-weight:600; }
+[data-sc-class="ld-panel"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-corpus"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-wf"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-etym"][open] > [data-sc-class="ld-panel-sum"],
+[data-sc-class="ld-panel-online"][open] > [data-sc-class="ld-panel-sum"] {
+  display:block; border-style:solid; }
+[data-sc-class="ld-panel-body"] { border-left:0; border-radius:0; background:none;
+  padding:0 0 0 1.0em; margin:1px 0 2px; }
+/* the panel title sits inside the chip, so it inherits the same contrast need */
+[data-sc-class="ld-panel-title"] {
+  color:color-mix(in srgb, var(--ld-frame) 45%, var(--text-color, currentColor) 55%); }
+[data-sc-class="ld-wf-pos"] { }
+[data-sc-class="ld-wf-word"] { }
+
+/* corpus list: inline like everything else, colour-coded */
+[data-sc-class="ld-corpulist"] { margin:1px 0 2px; padding:0; }
+[data-sc-class="ld-exagroup"] { margin:1px 0; }
+[data-sc-class="ld-exagroup-title"] { margin-bottom:0; }
+
+/* etymology / topics: thin */
+[data-sc-class="ld-origin"] { }
+[data-sc-class="ld-century"] { }
+[data-sc-class="ld-topics"], [data-sc-class="ld-topics-body"] { margin:1px 0; }
+
+/* cross-references at the tail: "-> jump ship at jump(16)" reads as one compact
+   run, matching the reference's arrow-prefixed tail.
+
+   NO ::before arrow here. The SC already carries the arrow as the crossref's
+   first child -- {"class":"ld-crossref","content":[" →", ...]} -- so adding
+   one with generated content painted two in a row: "→→improve on/upon
+   something". The standard sheet does not add one either (it only sets
+   display/margin/colour), so removing this also puts the two variants back in
+   agreement. */
+[data-sc-class="ld-crossref"] { display:inline; margin:0; }
+[data-sc-class="ld-syn"], [data-sc-class="ld-homophone"] { display:inline;
+  margin:0 .5em 0 0; }
+
+/* lists: less indent */
+[data-sc-class="ld-list"] { margin:1px 0 2px 1.0em; }
+[data-sc-class="ld-senselist"], [data-sc-class="ld-exlist"] { margin:1px 0 2px; }
 """
 
 
@@ -3079,7 +3565,7 @@ def collect_style_keys(node, bad, used):
 
 
 def validate_package(zip_path, term_index, revision, mode, full_rows=True,
-                     known_exprs=None):
+                     known_exprs=None, css_variant="standard"):
     """Structural validation of the finished package.
 
     Each bank is decompressed and parsed exactly once. The "target must be a
@@ -3111,6 +3597,16 @@ def validate_package(zip_path, term_index, revision, mode, full_rows=True,
         expect_target = "zh" if mode == "bilingual" else "en"
         if index.get("targetLanguage") != expect_target:
             errors.append(f"index.targetLanguage must be {expect_target}")
+        # The title IS Yomitan's CSS scope attribute: addScopeToCss wraps the
+        # whole stylesheet in [data-dictionary="<title>"].  The validator only
+        # checks the SAFETY property -- non-empty, and for a mono package free
+        # of CJK -- because fixtures legitimately use their own titles.  The
+        # per-variant title contract ("LDOCE5++ (LM5pp)" with the variant
+        # suffix) is asserted in the build path, where the intended variant is
+        # actually known.
+        title = index.get("title", "")
+        if not title.strip():
+            errors.append("index.title must not be empty")
         if str(index.get("revision")) != str(revision):
             errors.append("index.revision mismatch")
         banks = sorted(n for n in names if re.fullmatch(r"term_bank_\d+\.json", n))
@@ -3280,7 +3776,7 @@ class BuildValidationError(RuntimeError):
 
 def build(input_path, output_dir, mode="bilingual", revision=None, test_words=None,
           open_panels=False, keep_json=False, validate=True, show_progress=True,
-          limit=None):
+          limit=None, css_variant="standard"):
     start = time.time()
     os.makedirs(output_dir, exist_ok=True)
     revision = revision or date.today().strftime("%Y.%m.%d")
@@ -3308,7 +3804,21 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     gc.set_threshold(50000, 100, 100)
 
     ui_zh = mode == "bilingual"
-    zip_name = (f"LDOCE5pp_Yomitan_{date.today().strftime('%Y.%m.%d')}"
+    # A non-standard variant MUST be distinguishable on disk and in Yomitan's
+    # dictionary list: before this suffix a compact build overwrote the
+    # standard package sitting in the same directory (the --limit class of
+    # defect), and after import both variants showed the same title.  The
+    # STANDARD name and title are untouched -- Yomitan scopes imported CSS with
+    # [data-dictionary="<title>"], so renaming the standard title would break
+    # every existing user's custom CSS.
+    variant_tag = "" if css_variant == "standard" else f"_{css_variant}"
+    # The file name must carry the REVISION, not today's date: --revision is what
+    # lands in index.json (and what the release notes / _make_release.py look
+    # for), so building with a pinned revision used to produce a package whose
+    # name and index disagreed whenever the build ran on a later day.
+    rev_tag = re.sub(r"[^0-9A-Za-z._-]", "-", str(revision))
+    zip_name = (f"LDOCE5pp_Yomitan_{rev_tag}"
+                + variant_tag
                 + ("" if ui_zh else "_EN") + ("_DEBUG" if partial else "") + ".zip")
     zip_path = os.path.join(output_dir, zip_name)
     zip_tmp = zip_path + ".part"
@@ -3490,7 +4000,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         if freq_tokens:
             freq_meta[k] = list(dict.fromkeys(freq_tokens))
         gloss = [{"type": "structured-content",
-                  "content": sc("div", nodes, cls="ld")}]
+                  "content": drop_dups_in_tree(sc("div", nodes, cls="ld"))}]
         term_bank.append([k, "", tags, rules, ENTRY_SCORE, gloss, sequence, ""])
         written_exprs.add(k)
         sequence += 1
@@ -3588,7 +4098,12 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
     if source_revision:
         desc_bits.append(f"source {source_revision}")
     index_data = {
-        "title": "LDOCE5++ (LM5pp)",
+        # The title doubles as Yomitan's CSS scope attribute
+        # ([data-dictionary="<title>"]).  Keep the standard title byte-stable;
+        # only non-standard variants get a suffix, so their CSS is scoped
+        # separately and the two can coexist in one profile.
+        "title": "LDOCE5++ (LM5pp)" + ("" if css_variant == "standard"
+                                       else f" ({css_variant})"),
         "format": 3,
         "revision": revision,
         "sequenced": True,
@@ -3609,7 +4124,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
 
     for name, payload in (("index.json", dumps(index_data)),
                           ("tag_bank_1.json", dumps(build_tag_bank(ui_zh))),
-                          ("styles.css", generate_css())):
+                          ("styles.css", generate_css(css_variant))):
         path = os.path.join(output_dir, name)
         with io.open(path, "w", encoding="utf-8") as handle:
             handle.write(payload)
@@ -3643,7 +4158,7 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
         errors, vstats = validate_package(
             zip_tmp, term_index, revision, mode,
             full_rows=debug is False and limit is None,
-            known_exprs=written_exprs)
+            known_exprs=written_exprs, css_variant=css_variant)
         print(f"[*] Validator: rows={vstats['rows']} banks={vstats['term_banks']} "
               f"query_links={vstats['query_links']} dangling={vstats['dangling_links']} "
               f"redirect_items={vstats['redirect_items']} "
@@ -3665,6 +4180,20 @@ def build(input_path, output_dir, mode="bilingual", revision=None, test_words=No
 
     os.replace(zip_tmp, zip_path)          # atomic: *.part -> real name
     print(f"[*] Compressed {zip_name}")
+
+    # The title doubles as Yomitan's CSS scope attribute, so it must carry the
+    # variant suffix exactly when the build is a non-standard variant.  This is
+    # asserted HERE, in the build path where css_variant is actually known --
+    # not in validate_package(), whose fixtures legitimately use their own
+    # titles.  (Review round PR #10: a hard-coded title check there rejected
+    # every audit fixture and broke the sequence gates.)
+    expected_title = ("LDOCE5++ (LM5pp)" if css_variant == "standard"
+                      else f"LDOCE5++ (LM5pp) ({css_variant})")
+    with zipfile.ZipFile(zip_path) as zf:
+        built_title = json.loads(zf.read("index.json").decode("utf-8"))["title"]
+    if built_title != expected_title:
+        reject_package([f"index.title must be {expected_title!r} for the "
+                        f"{css_variant} variant (built {built_title!r})"])
 
     if not keep_json:
         for path in list(generated):
@@ -3690,6 +4219,12 @@ def main(argv=None):
     parser.add_argument("-o", "--output", default="./yomitan_ldoce", help="Output directory")
     parser.add_argument("-m", "--mode", choices=("bilingual", "mono"), default="bilingual")
     parser.add_argument("--revision", default=None)
+    parser.add_argument("--css-variant", choices=("standard", "compact"),
+                        default="standard",
+                        help="stylesheet look. 'standard' is the current one; "
+                             "'compact' is a parallel space-frugal variant "
+                             "(no bands/boxes, colour-only differentiation) that "
+                             "reuses the same structured content")
     parser.add_argument("--test-words", default=None,
                         help="Debug build restricted to these comma-separated headwords")
     parser.add_argument("--open-panels", action="store_true")
@@ -3700,6 +4235,7 @@ def main(argv=None):
     parser.add_argument("--limit", type=int, default=None,
                         help="Render at most N entries (smoke testing); must be > 0")
     args = parser.parse_args(argv)
+    css_variant = args.css_variant
     # Reject a non-positive limit here rather than letting it mean something else
     # downstream: the render loop tests truthiness, so `--limit 0` used to render
     # the WHOLE dictionary while still being named and warned as a partial build.
@@ -3717,6 +4253,7 @@ def main(argv=None):
             keep_json=args.keep_json,
             validate=not args.skip_validation,
             show_progress=not args.no_progress,
+            css_variant=css_variant,
             limit=args.limit,
         )
     except BuildValidationError as exc:
