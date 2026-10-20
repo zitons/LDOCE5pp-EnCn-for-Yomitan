@@ -77,6 +77,10 @@
 - **7 道包级门禁 × 4 份 = 28 次**，全部 exit 0；`css_fallback` PASS；
   `hanging_indent`（双变体、静态 + 浏览器）PASS。
 - 发布套件 `regression_suite.py`：标准线 18 项全 exit 0、无 SKIP；紧凑线同。
+- **面板与正文已自动统一**（撤掉回拉的副产品）：展开 `<details>` 量 3 个词条、
+  39 个面板组头（`ld-collocate` / `ld-exponent`），组内列表一律落在组头的
+  **文字列**（`left + padding-left`，偏差 0.0），例句圆点再内缩 6.78px ——
+  与正文「组头 63 → 列表 63 → 圆点 69.78」是同一套。面板不需要再改。
 
 ---
 
@@ -168,9 +172,17 @@ definitionTags 提示照旧（未截断，属已知项）。
 
 ### 五、这轮发现但**没动**的两处
 
-1. `[data-sc-class="ld-phrase"]` 是**死规则**：全量 245,933 行里该 class 出现
-   0 次，converter 里也只有这条 CSS 提到它（8bd429c 刚以同样理由删过三个
-   从未生成的类）。删它需要重跑四份构建，视觉零影响，留待下次顺手处理。
+1. `[data-sc-class="ld-phrase"]` 是**死规则**，而且是个**潜在复发点**：全量 245,933
+   行里该 class 出现 0 次，但它的声明是「`display:block` + 加粗 + 左竖线 +
+   `margin-left:1.9em`」—— 1.9em 正好比组头深一级，正是 2026.10.18 修掉的那类
+   缺陷。将来任何一条代码路径吐出 `ld-phrase`，就会当场复现「多一级」。
+   **2026.10.20 复核后仍不动**，理由不是「1 条无所谓」：标准表 15 个、紧凑表
+   30 个类名在包内从未出现（`ld-table/td/th/para/xref/block`、
+   `ld-corpexa-encyc/online/phrases`、`ld-sense-merge`——它还被 `~=` 规则引用，
+   属预留、`ld-reg/syntax/infllab/pos-ital/pron-ame/pron-bre` 等），单删一条只会
+   让「哪条算死规则」变随意；删了还必须重跑四份，否则 `regress_content` 的
+   「CSS == 当前 `generate_css()`」会判红。→ 与下一次**本来就**要重建的改动合并，
+   做法是「预留类白名单 + 死类门禁」一次性清，而不是一条条手工删。
 2. `_make_release.py` 的默认 `REL_TAG` / `REL_ASSETS` 仍指向 2026.09.13 的两份
    standard 包；发布 2026.10.19 必须显式给四个 `REL_ASSETS`。
 
@@ -178,7 +190,7 @@ definitionTags 提示照旧（未截断，属已知项）。
 
 1. 发布 `v2026.10.19`：`REL_TAG` / `REL_NAME` / `REL_ASSETS`（四份，分号分隔）
    跑 `_make_release.py --dry-run` 先看清单，再正式发。
-2. 删 `ld-phrase` 死规则（与下次重建一起做）。
+2. 清死类：`ld-phrase` 等（按「预留类白名单 + 死类门禁」一次性处理，与下次重建一起做）。
 3. 上一节「发布待办」1–5 条其余项不变。
 
 ---
