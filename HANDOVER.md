@@ -5,6 +5,81 @@
 
 ---
 
+## 当前工作区补充（2026.10.20 · 撤回「组内例句回拉」）
+
+> ⚠️ **本条为最新状态**。下一节（10.19）讲的是「组头不再多占一级」，
+> 但它同时把组内例句**拉回了普通例句列**，本节讲为什么那一步是错的、怎么撤回的。
+
+### 一、问题
+
+77ccda7 修层级时做了两步：组头从例句列表里拿出来当独立块（对），再把它
+自己那张 `ld-exlist` 用 `margin-left:-1.1em` 拉回父列（错）。后一步的本意是
+「让组内例句落回普通例句列」，实际把破折号送到了**组头左边**：
+
+| | 组头 | 组内列表 | 关系 |
+|---|---:|---:|---|
+| 10.19（回拉到普通列） | 63.0 | 46.5 | 列表在组头**左** 16.5px |
+| 10.20（本版，留在组头列） | 63.0 | 63.0 | 同列；例句圆点在组头内 6.8px（standard）/ 11.6px（compact） |
+
+（420px 宽、bilingual-standard 实测；旧版的 16.5px 就是 `1.1em`。）
+
+于是一个义项下挂两个搭配组时，屏幕顺序成了「破折号 → 组头 → 破折号 → 组头」，
+分组只剩加粗一条线索；`abscond` 的语法组例句看起来像义项自带的例句。
+面板里的搭配组（`ld-collocate` 25,059 / `ld-exponent` 7,589）本来就是
+「组头与例句圆点同列」，正文和面板因此成了两套排法 —— 撤掉回拉后两边终于一致。
+
+### 二、改法
+
+删掉两条规则（standard / compact 各一条）：
+
+```css
+[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
+[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em }
+```
+
+组内列表于是留在组头所在列，层级单调递增：义项 0 → 组头 1.1em → 例句（组头内）。
+代价（已知并接受）：组内例句比同级普通例句右 1.1em（16.5px），窄弹窗里长例句多折一点。
+影响面：`ld-colloexa` 7,270（5,936 带例句）、`ld-gramexa` 16,411（16,342 带例句），
+合计 9,043 个词条。
+
+### 三、判据反向（三处，缺一处就自相矛盾）
+
+| 位置 | 旧 | 新 |
+|---|---|---|
+| `regress_group_geometry.py` A | `head − list == 1.1em` | `head − list == 0` |
+| 同上 B | 组列表与同级普通列表同列 | 组列表比普通列表右 1.1em |
+| 同上 C | 组内首条与普通首条同列 | 组内首条比普通首条右 1.1em |
+| `regress_hanging_indent.check_groups` | 必须有 `-1.1em` 回拉 | **出现负 margin 即失败** |
+| `regression_suite.has_alignment_fix` | 有回拉才算合格包 | 有回拉即判不合格 |
+
+正负对照：10.19 旧包在新 `group_geometry` 下 A/B/C 全红（15 / 5 / 5 个），
+新源码对新判据 PASS；`hanging_indent` 拿旧 `styles.css` 跑会报
+`inner list pulled back (-1.1em)`。
+
+### 四、重建（revision 2026.10.20）
+
+| 产物 | 构建 | 大小 |
+|---|---|---:|
+| `2026-10-20-group-column/bilingual-standard/LDOCE5pp_Yomitan_2026.10.20.zip` | 865.3 s | 60.6 MB |
+| `2026-10-20-group-column/bilingual-compact/LDOCE5pp_Yomitan_2026.10.20_compact.zip` | 938 s | 60.6 MB |
+| `2026-10-20-group-column/mono-standard/LDOCE5pp_Yomitan_2026.10.20_EN.zip` | 850.2 s | 51.4 MB |
+| `2026-10-20-group-column/mono-compact/LDOCE5pp_Yomitan_2026.10.20_compact_EN.zip` | 914 s | 51.4 MB |
+
+四份均 `rows=245,933`、`dangling=0`、`query_links=1,947,613`、`seq_ok=1`、
+`[OK] Validation passed.`（banks：双语 51、单语 49）。
+
+**内容零变化可直接证明**：与 10.19 的 bilingual-standard 逐成员比 sha256，
+55 个成员里只有 `styles.css`（30,157 → 30,745 B）与 `index.json`（标题/版本）不同，
+其余全部逐字节相同 —— 这轮只动了样式。
+
+### 五、验收
+
+- **7 道包级门禁 × 4 份 = 28 次**，全部 exit 0；`css_fallback` PASS；
+  `hanging_indent`（双变体、静态 + 浏览器）PASS。
+- 发布套件 `regression_suite.py`：标准线 18 项全 exit 0、无 SKIP；紧凑线同。
+
+---
+
 ## 当前工作区补充（2026.10.19 · 四变体重建 + 一条「判据反转」的门禁缺陷）
 
 > ⚠️ **本条为最新状态**。上一节（10.17 晚·例证层级修复）讲的是改了什么，
@@ -31,7 +106,7 @@ FAIL: no package on disk carries the alignment fix -- both alignment gates would
 | 对象 | 要求 |
 |---|---|
 | `ld-ex` / `ld-ex-good` / `ld-ex-bad` | **任一条**样式规则（基规则或祖先限定规则）解析出 ≥1.0em 左缩进；若最后一条 `::before` 真的画了标记，则必须悬挂 |
-| `ld-gramexa` / `ld-colloexa` | 基规则 `display:block` 且左缩进 = 1.1em；**无**画出标记的 `::before`；其直接子 `ld-exlist` 必须 `margin-left:-1.1em` |
+| `ld-gramexa` / `ld-colloexa` | 基规则 `display:block` 且左缩进 = 1.1em；**无**画出标记的 `::before`；其直接子 `ld-exlist` 必须 `margin-left:-1.1em`（**10.20 已反转**为「不得为负」，见上一节） |
 
 两处都按**层叠里最后一条**声明判断（早先按「第一条匹配」判断，会被后置的
 inline 覆盖绕过）。正负对照：当前源码 standard / compact + 本次四个包 = True；
@@ -44,11 +119,11 @@ inline 覆盖绕过）。正负对照：当前源码 standard / compact + 本次
 `converter/regress_group_geometry.py` 把它固化（复用 `regress_alignment` 的
 jsdom + Chrome 管线，每组 3 条一页避免 CDP 超大 evaluate 掉线）：
 
-| 检查 | 判据 |
+| 检查 | 判据（**10.20 已改为右表口径**，见上一节） |
 |---|---|
-| A 头步进 | `head.left - 组内列表.left` == 1.1 × 组头 font-size（±0.8px） |
-| B 列表同列 | 组的 `ld-exlist` 与同级普通 `ld-exlist` 同一 left |
-| C 条目同列 | 组内首条 `li.ld-ex` 与同级普通列表首条同一 left |
+| A 头步进 | ~~`head.left - 组内列表.left` == 1.1 × font-size~~ → 现为 **`head − list == 0`** |
+| B 列表同列 | ~~与同级普通列表同列~~ → 现为 **比普通列表右 1.1em** |
+| C 条目同列 | ~~与普通列表首条同列~~ → 现为 **比普通首条右 1.1em** |
 
 四份新包各测 215 个组头（其中 102 个有同级普通列表可比），全 0 失败；
 **旧包作为阳性对照全数失败**（`step=-23.27`，期望 `16.01`，即组头比自己的例句还靠左）。
@@ -293,19 +368,31 @@ definitionTags 提示照旧（未截断，属已知项）。
 standard 与 compact 的 term bank 逐字节相同（be5d808c… / 9392b7c0…）——
 compact 只差 CSS + title，10.16 那次跨天构建与其余同代码状态。
 
-### 发布待办
+### 发布记录（2026.10.19 已完成）
 
-1. REL_TAG=v2026.10.17、REL_NAME、REL_ASSETS=<四份 zip 分号分隔> 跑
-   converter/_make_release.py（compact 两份不在默认列表，必须显式传）
-2. 重写 _release_notes.md（现仍是 10.12 的）
+已于 **2026-10-19** 以 `v2026.10.19` 发布（release id 417407346，tag 指向合并
+PR #11 后的 main `4130e6d`），四份资产：
+
+| 资产 | 大小 |
+|---|---:|
+| `LDOCE5pp_Yomitan_2026.10.19.zip`（双语 standard） | 63,550,517 B |
+| `LDOCE5pp_Yomitan_2026.10.19_compact.zip`（双语 compact） | 63,555,577 B |
+| `LDOCE5pp_Yomitan_2026.10.19_EN.zip`（纯英文 standard） | 53,949,614 B |
+| `LDOCE5pp_Yomitan_2026.10.19_compact_EN.zip`（纯英文 compact） | 53,954,684 B |
+
+来源目录 `yomitan_fixed/2026-10-19-hierarchy/`；bilingual/standard 由 compact
+孪生包派生（term bank 逐字节相同，仅 styles.css 与 title 不同，已用 10 词双构建
+对照验证等价）。发版说明 `_release_notes.md` 已重写为面向读者的口径。
+
+仍待办：
+
 3. 【未做】#3 六处工具变体感知：check_state / final_report /
    3×package_probe / verify_fixed 都调 generate_css() 无参，对 compact 包
    会误报 CSS 不匹配（方法：照 regress_content 的 _variants 循环，
    按包内 title 判变体）
-4. 产物目录语义：standard 包在 2026-10-09-margin-left/ 下是历史名，
-   newest_fixed_package() 按包内 CSS 判不受影响，但人看目录会误判；
-   建议发布目录改 yomitan_fixed/<发布日>/<variant>/
-5. 产物已在 feature 分支提交推送（c866e46），PR #10 分支停在 9fc6a27
+4. 【已改进】产物目录已按 `yomitan_fixed/<发布日>/<variant>/` 组织
+   （`2026-10-19-hierarchy/{bilingual,mono}-{standard,compact}/`）
+5. 产物在 PR #11 合并后已进 main
 
 ---
 

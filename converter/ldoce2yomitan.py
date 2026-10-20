@@ -2803,8 +2803,8 @@ def generate_css(variant="standard"):
    A group is ONE head line plus the examples that belong to it:
 
        set something (down) on something          <- ld-gramexa (head)
-       – She set the tray down on a table ...     <- its examples, SAME column
-       – Mark filled the pan and set it on ...       as every other example
+         – She set the tray down on a table ...   <- its examples, one step
+         – Mark filled the pan and set it on ...     inside the head
 
    It used to be a list member itself, so the head was wrapped in a classless
    <li>, got the example dash and the example indent (1.6em), and then its own
@@ -2818,14 +2818,23 @@ def generate_css(variant="standard"):
        .ldoceEntry .GramExa .EXAMPLE   { margin-left: 24px  }  -> 84 = the
        .ldoceEntry .EXAMPLE            { margin-left: 42px  }      same column
 
-   So: the group takes a 1.1em step for the head, and the reset below pulls its
-   own list back to the parent column, which puts the examples exactly where a
-   plain example sits (their own padding/margin then applies as usual). No dash
-   on the head -- it is a head, not an example line. */
+   So: the group takes a 1.1em step for the head, and its own list keeps that
+   column -- it is NOT pulled back to the parent column (revision 2026.10.20).
+
+   The pull-back came first, to land a group's examples on the ordinary example
+   column, and it was wrong in one direction: the examples' bullets ended up
+   16.5px LEFT of their own head (head 34.5, bullets 18 at 420px). Under a sense
+   that carries two groups the order became bullet, head, bullet, head, so the
+   only thing tying examples to their head was the bold line -- and the group
+   read as a stray example followed by a label. Keeping the list on the head's
+   column makes the steps monotonic (sense 0 -> head 1.1em -> examples 1.1em
+   inside the head), which is also the layout the reference popup uses for its
+   collocation groups: head and dashes share a column, the text one gutter in.
+   The price, accepted: a group's examples sit one 1.1em step right of the plain
+   examples beside them. No dash on the head -- it is a head, not an example
+   line. */
 [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
   display:block; margin:2px 0 3px 1.1em; }
-[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
-[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em; }
 [data-sc-class="ld-excn"] { display:inline; padding-left:0; text-indent:0; color:var(--ld-zh) !important; font-size:.95em; margin-left:.25em; margin-bottom:2px; }
 [data-sc-class="ld-propform"] { font-weight:700; color:var(--ld-pos); }
 [data-sc-class="ld-hint"] { display:block; border-left:3px solid rgba(176,133,27,.60); border-left:3px solid color-mix(in srgb, var(--ld-level) 60%, transparent); /* static fallback, scheme A */; background:rgba(176,133,27,.08); background:color-mix(in srgb, var(--ld-level) 8%, transparent); /* static fallback, scheme A */; padding:3px 8px; margin:4px 0; }
@@ -3113,15 +3122,14 @@ _COMPACT_OVERRIDES = """
 [data-sc-class="ld-exlist"] > li[data-sc-class="ld-ex"]::before {
   content:"\\25fb"; font-size:60%; padding-right:.35em; vertical-align:2px;
   color:var(--ld-zh); margin-left:-1.1em }
-/* example groups: one 1.1em step for the head, its own list pulled back to the
-   parent column (see the standard-sheet note). The ancestor-qualified 1.9em
-   rules that used to live here matched because the group was an <li> of the
-   example list; now that it is a sibling block they would only ever be dead
+/* example groups: one 1.1em step for the head, and its own list keeps that
+   column (see the standard-sheet note -- the -1.1em pull-back that used to sit
+   here put the group's bullets LEFT of its own head). The ancestor-qualified
+   1.9em rules that used to live here matched because the group was an <li> of
+   the example list; now that it is a sibling block they would only ever be dead
    weight, and 1.9em would put the head BELOW its own examples. */
 [data-sc-class="ld-gramexa"], [data-sc-class="ld-colloexa"] {
   display:block; margin-left:1.1em }
-[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
-[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em }
 /* the phrase line that introduces a group of examples gets the bar the original
    screenshot shows, so the group reads as belonging together */
 [data-sc-class="ld-phrase"] { display:block; font-weight:700;
@@ -3146,15 +3154,15 @@ _COMPACT_OVERRIDES = """
    Since ColloExa is now a group HEAD that owns its own <ul class="ld-exlist">,
    the inline box broke it two ways:
      * the block <ul> inside an inline parent takes its containing block from
-       the nearest BLOCK ancestor (the sense), so its -1.1em pull-back landed
-       below the parent column: head l=30, examples l=42, while the sibling
-       grammar groups sat at head 48 / examples 60 -- an 18px step that no other
-       level uses;
+       the nearest BLOCK ancestor (the sense), so the list stepped off the head
+       instead of staying in its column: head l=30, examples l=42, while the
+       sibling grammar groups sat at head 48 / examples 60 -- an 18px step that
+       no other level uses;
      * a block child (div.ld-defcn) inside an inline box splits the inline into
        anonymous block boxes, so the head itself lost its 1.1em step.
-   The standard rules (group head block + 1.1em, its own exlist -1.1em) already
-   describe the original dictionary, whose `.ColloExa` is `display:block` with
-   `margin-left:18px`. */
+   The standard rules (group head block at 1.1em, its own list in the same
+   column) already describe the original dictionary, whose `.ColloExa` is
+   `display:block` with `margin-left:18px`. */
 
 /* panels become a wrapping ROW OF CHIPS, like the reference dictionary's
    WORD ORIGIN / EXAMPLES / THESAURUS / COLLOCATIONS / PHRASES row, instead of a

@@ -63,8 +63,11 @@ HANGING = {
 # now locks the corrected shape instead:
 #   * the head is a block at a 1.1em step (the original uses 18px against the
 #     example's 42px), with NO ::before -- a head is not an example line;
-#   * the head's own example list is pulled back by the same 1.1em, so its
-#     examples land on the ordinary example column, not one level below it.
+#   * the head's own example list stays in the head's column. It used to be
+#     pulled back by 1.1em so its examples landed on the ordinary example
+#     column, but that put the bullets LEFT of their own head (head 34.5,
+#     bullets 18 at 420px) and made a two-group sense read as
+#     bullet/head/bullet/head. Any negative pull-back is a failure now.
 GROUPS = {"ld-gramexa": "1.1em", "ld-colloexa": "1.1em"}
 
 
@@ -170,8 +173,8 @@ def check_static(css):
             fails.append(f"{cls}: ::before does not hang out "
                          f"(margin-left {ml}, position {pos} {leftpos})")
 
-    # Group heads: block at a small step, no bullet, and their own list pulled
-    # back so the contained examples keep the ordinary example column.
+    # Group heads: block at a small step, no bullet, and their own list in the
+    # same column (no pull-back, which would put the examples left of the head).
     fails += check_groups(rules)
     return fails
 
@@ -234,17 +237,17 @@ def check_groups(rules):
         if _effective_pseudo(rules, cls) not in (None, "none"):
             fails.append(f"{cls}: still draws an example bullet "
                          f"(::before content {_effective_pseudo(rules, cls)})")
+        # The inner list must stay in the head's column: a negative margin-left
+        # pulls it back under the parent column, putting the group's bullets to
+        # the LEFT of its own head (the 2026.10.19 shape).
         pull = [b for sel, b in rules
                 if re.search(rf'\[data-sc-class="{cls}"\]\s*>\s*'
                              rf'\[data-sc-class="ld-exlist"\]', sel)]
-        if not pull:
-            fails.append(f"{cls}: its inner example list is not pulled back -- "
-                         f"examples would sit one level too deep")
-        else:
-            ml = _decl(pull[-1], "margin-left")
-            if ml != "-" + step:
-                fails.append(f"{cls}: inner list margin-left is {ml}, "
-                             f"expected -{step}")
+        for body in pull:
+            ml = _decl(body, "margin-left") or _left_indent(body)
+            if ml and ml.strip().startswith("-"):
+                fails.append(f"{cls}: inner list pulled back ({ml}) -- the "
+                             f"group's examples would sit left of its head")
     return fails
 
 

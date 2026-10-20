@@ -46,13 +46,14 @@ import argparse
 #    demand the 1.6em hang for ld-gramexa / ld-colloexa as well.  That was the
 #    PRE-FIX shape: the head was a list member, so it carried the example indent
 #    and dash, and its own <ul> then stepped a second time.  After 77ccda7 the
-#    head is a sibling BLOCK at 1.1em with no marker, and its own example list is
-#    pulled back to the parent column.  Keeping the old requirement did not just
+#    head is a sibling BLOCK at 1.1em with no marker, and its own example list
+#    keeps that column (it was pulled back to the parent column on 2026.10.18/19;
+#    that put the group's bullets left of its own head and was reverted on
+#    2026.10.20).  Keeping the old requirement did not just
 #    go stale, it inverted: every post-fix package failed this test, so
 #    newest_fixed_package() returned None and the suite refused to start -- the
 #    same silent-skip failure mode as (1).  The two shapes are now checked
-#    separately, and the group check requires the pull-back, which only the fixed
-#    hierarchy has.
+#    separately, and the group check treats a negative pull-back as a failure.
 _HANGING_CLASSES=['ld-ex','ld-ex-good','ld-ex-bad']
 _HANGING_INDENT={'ld-ex':'1.6em','ld-ex-good':'1.6em','ld-ex-bad':'1.6em'}
 _GROUP_CLASSES={'ld-gramexa':'1.1em','ld-colloexa':'1.1em'}
@@ -143,10 +144,11 @@ def has_alignment_fix(pkg):
      if the last ::before rule paints nothing (compact drops the neutral dash) the
      question does not arise.
    * A group head is a block at 1.1em with NO marker of its own, and its own
-     example list is pulled back by exactly that 1.1em. This is the shape that
-     only the fixed hierarchy has: before the fix the head WAS a list member and
-     carried the example indent plus the en dash, so the pre-fix packages fail on
-     both the indent and the marker.
+     example list stays in that column -- no negative pull-back. The pull-back
+     was the 2026.10.18/19 shape; it put the group's bullets 16.5px left of
+     their own head, so it is now a failure signal, not a success one. Before
+     the hierarchy fix the head WAS a list member and carried the example indent
+     plus the en dash, so pre-fix packages fail on the indent and the marker.
  """
  try:
   css=zipfile.ZipFile(pkg).read('styles.css').decode('utf-8','replace')
@@ -177,7 +179,8 @@ def has_alignment_fix(pkg):
   before=_before_rules(rules,cls)
   if before and _paints_marker(before[-1]):
    return False
-  pull_back=False
+  # The inner list must NOT be pulled back: a negative margin-left on it puts the
+  # group's examples under the parent column, i.e. left of their own head.
   for sel,b in rules:
    for part in sel.split(','):
     part=part.strip()
@@ -185,11 +188,8 @@ def has_alignment_fix(pkg):
      continue
     if f'[data-sc-class="{cls}"]' not in part:
      continue
-    m=re.search(r'(?<![-\w])margin-left\s*:\s*-\s*([\d.]+)em',b)
-    if m and m.group(1)=='1.1':
-     pull_back=True
-  if not pull_back:
-   return False
+    if re.search(r'(?<![-\w])margin-left\s*:\s*-',b):
+     return False
  return True
 
 def newest_fixed_package(mode):
