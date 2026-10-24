@@ -206,6 +206,103 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 逐字节   三音源各抽样 40 个 blob 与原始库比对：byte-differ 0，not-found 0
 ```
 
+## TLD 音频库（The little dict）
+
+第三份成品：`yomitan_audio/tld.db`，把 The little dict 的 7 个媒体包并成一个库，
+给 LDOCE 覆盖不到的词做补充（合并顺序见本节末尾）。构建器 `converter/build_tld_audio_db.py`。
+
+### 为什么是 7 个音源
+
+词典只有一份 `TLD.mdx`，音频却分散在 7 个 `.mdd` 里，每个包是一个**独立来源**：
+
+| .mdd | source | 文件数 | 格式 | 内容 |
+|---|---|---:|---|---|
+| `TLD.1.mdd` | `tld_ame` | 95,615 | mp3 | `/ameProns/*` 美音 |
+| `TLD.2.mdd` | `tld_uk` | 152,154 | spx | `media/english/uk_pron/*` 英音 |
+| `TLD.3.mdd` | `tld_collins` | 101,727 | spx | `COLmp3*` 柯林斯 |
+| `TLD.4.mdd` | `tld_mw` | 154,737 | spx | `mw_*` |
+| `TLD.5.mdd` | `tld_ids` | 118,174 | spx | 纯数字 ID |
+| `TLD.6.mdd` | `tld_uk2` | 78,879 | mp3 | `uk_pron/ca2uk*` 第二套英音 |
+| `TLD.mdd` | `tld_snd` | 149,212 | spx | `snd*` |
+
+不能并成一个 `tld` 标签：`android` 的主键语义是 `(source, file)`，而 **TLD.1 与 TLD.6
+有 8,753 个同名文件**（同一个词的美音版和英音版都叫 `xxx.mp3`）。合成一个 source
+会让它们互相覆盖，Hoshi 不报错，但播出来的声音是错的。
+
+`.spx`（Speex）不入库原样，先转 Opus——Hoshi 只发现 `.mp3/.opus/.ogg`。
+
+### 构建
+
+```bash
+# 单个源（调试用）
+python converter/build_tld_audio_db.py --only TLD.1.mdd --out yomitan_audio/tld.db
+# 全部 7 个
+python converter/build_tld_audio_db.py --out yomitan_audio/tld.db
+# spx 转码需要 ffmpeg；没装 imageio-ffmpeg 时用 --ffmpeg 直接给路径
+```
+
+参数：`--only <mdd>` 只处理一个包、`--limit N` 前 N 条、`--ffmpeg PATH`、`--tld DIR`。
+产物是**追加写入**已有库的，逐源重灌前先 `delete from entries/android where source=?`。
+
+### 两道门禁（都是被 bug 逼出来的）
+
+1. **音频头**：入库前与转码后都校验 `OggS` / `ID3` / `0xFFEx` / `RIFF`，
+   不合格计数并在结束时非零即 `SystemExit`。
+2. **时长**：`|源时长 − Opus 时长| ≤ 0.12 + 5%·源时长`，不过就**复核**（见下），
+   复核仍不符才丢弃并计入 `duration-gate rejects`。
+
+> 只用第一道是不够的：接错的音频同样是合法 Opus（见 `HANDOVER.md` 2026.10.23 节）。
+
+时长门禁本身也踩过一个坑，值得记下来：源侧时长不能用「最后一张 Ogg 页的 granule」
+来算。有些Collins / snd 条目把「单词 + 几个例句」串成了**多条 chained 逻辑流**，
+最后一页的 granule 只覆盖最后一条链，比如 9.9 秒的音频只报 1.2 秒——于是门禁把
+**3,149 个完好的文件判成错配丢掉**（1.0%）。现在改成：
+
+- 首选**按 Ogg 段表数包**：每包 `frames_per_packet × frame_size` 个采样，按各链自己的
+  `rate` 折算，再减掉每条链的头部包；实测与解码时长偏差 ≤ 2%，远小于 12% 容差。
+- 仍不符时**解码复核**：`ffmpeg -i <src> -f null -` 读实际解码时长，与 Opus 时长对比。
+  只有解码也对不上才丢。复核只对极少数候选跑一次，不影响吞吐。
+
+### 验收
+
+```bash
+# 每源抽 200 条：mp3 比字节、opus 比包络相关，并与「下一条记录」对照
+python _tmp/accept.py
+# 走 Hoshi 的真实查询逻辑，看能不能取到可解码的 blob
+python converter/validate_audio_db.py --db yomitan_audio/tld.db --words "improve,abandon,ocelot"
+```
+
+判据：mp3 源要 **byte-exact 200/200**；opus 源要 **corr_own ≥ 0.8**（实测 0.980 起），
+且明显高于 `corr_nxt`（0.48–0.69 才是正常值——若两者接近，说明音频整体错位）。
+只查 magic 无法发现「声音是别人的」。
+
+`_tmp/fast_audit.py` 里的 `Mdd` 类可以按文件名**只解压所属的那一个块**取记录，
+比整包遍历快两个数量级，写新的抽检脚本时直接用。
+
+### 已知损失
+
+全部 7 个源重灌 + 补齐后，行数与修前完全一致（881,796），**没有因为门禁丢音频**。
+
+| 项 | 数量 | 原因 |
+|---|---:|---|
+| TLD.1.mdd 坏块 | 17 块 / 219 键（0.23%） | mdd 本身数据损坏，非切片问题 |
+| mdd 有文件、mdx 无对应词 | 9,023（逐源见下） | 词缀表、裸 ID、未被引用的录音，本来就不该入库 |
+
+逐源缺口（mdd 去重文件名 − 库内文件名）：ame 718、uk 85、collins 3,560、mw 795、
+ids 334、uk2 474、snd 3,057。抽样检查过，这些文件能解码，只是 `TLD.mdx` 里没有词条
+引用它们（`_ance_suf`、`a0028000`、`COLmp3en_us_*` 这类）。
+
+### 合并顺序
+
+Hoshi 只按 `source` 字母序取第一个命中，本地源整体排在在线源之前。两库同时导入时：
+
+```
+ldoce_ame → ldoce_bre → oald10 → tld_ame → tld_collins → tld_ids
+           → tld_mw → tld_snd → tld_uk → tld_uk2
+```
+
+即 **LDOCE 永远先命中，TLD 只补 LDOCE 没有的词**。
+
 ## 音频是怎么定位的
 
 源 HTML 里音频挂在两种元素上，**两条都要认**（只认一条会丢 16 个百分点）：
