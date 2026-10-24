@@ -208,8 +208,12 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 
 ## TLD 音频库（The little dict）
 
-第三份成品：`yomitan_audio/tld.db`，把 The little dict 的 7 个媒体包并成一个库，
-给 LDOCE 覆盖不到的词做补充（合并顺序见本节末尾）。构建器 `converter/build_tld_audio_db.py`。
+第三份成品：`yomitan_audio/tld.db`，把 The little dict 的 7 个媒体包 + ODE 2024
+并成一个库，给 LDOCE 覆盖不到的词做补充（合并顺序见本节末尾）。
+构建器 `converter/build_tld_audio_db.py`（TLD 七源）+ `converter/build_ode_audio.py`（ODE）。
+
+现状：**1,065,161 行 / 340,320 词条 / 5.07 GB**，`entries` 行序即优先级，
+`android` 与 `entries` 一一对应（0 孤立行）。
 
 ### 为什么是 7 个音源
 
@@ -241,8 +245,32 @@ python converter/build_tld_audio_db.py --out yomitan_audio/tld.db
 # spx 转码需要 ffmpeg；没装 imageio-ffmpeg 时用 --ffmpeg 直接给路径
 ```
 
-参数：`--only <mdd>` 只处理一个包、`--limit N` 前 N 条、`--ffmpeg PATH`、`--tld DIR`。
+参数：`--only <mdd>` 只处理一个包、`--limit N` 前 N 条、`--ffmpeg PATH`、`--tld DIR`、
+`--missing-only`（只补库里还没有的文件）、`--blacklist PATH`（默认 `converter/bad_clips.tsv`）。
 产物是**追加写入**已有库的，逐源重灌前先 `delete from entries/android where source=?`。
+
+### ODE 2024（第八个源，单独构建器）
+
+`converter/build_ode_audio.py` 读 `C:\baidunetdiskdownload\ODE now opus\2024`（Oxford
+ODE 的 opus 包），写入 `ode2024` 源。它和 TLD 没有关系，只是**同一个库里的另一个源**，
+所以 `apply_blacklist.py` / `reorder_entries.py` 对它一样生效。
+
+```bash
+python converter/build_ode_audio.py --ode "C:/baidunetdiskdownload/ODE now opus/2024" \
+       --out yomitan_audio/tld.db
+```
+
+两条要点：
+
+- **只收「音频词干 == 词条自身词头」的引用**。ODE 的条目页会顺带列出邻近词的音频
+  （`four` 页面里带 `four_by_four` 的发音），不筛就会把别的词的音挂到自己头上 ——
+  这跟上面 `four` 的错误是同一个坑。
+- 键的形态是 `<词>_<条目号>_<gb|us>_<n>`，**条目号经常省略**（`improve_gb_1` 与
+  `3d_printer_1_gb_1` 并存）。只认省略形式会少一半（61,971 → 93,590）。
+- mdx 里用下划线代空格（`four_by_four`），TLD 用空格（`four by four`）—— 多词条在
+  阅读器里会查不中，22,771 个表达式受影响，**尚未处理**。
+
+码率很低（opus 48 kHz，约 11 kbps，1.26 KB/条），体积小是这个原因，不是音质好。
 
 ### 两道门禁（都是被 bug 逼出来的）
 
@@ -292,16 +320,67 @@ python converter/validate_audio_db.py --db yomitan_audio/tld.db --words "improve
 ids 334、uk2 474、snd 3,057。抽样检查过，这些文件能解码，只是 `TLD.mdx` 里没有词条
 引用它们（`_ance_suf`、`a0028000`、`COLmp3en_us_*` 这类）。
 
+### 错配音频（录音内容 ≠ 词头）
+
+有一类问题**任何结构校验都抓不到**：mdd 记录完好、mdx 引用完好、解码零错误，
+但录音本身念的是别的词。典型是 `four` 播成 "Four by four."：
+
+- `TLD.6.mdd` 的 `ukl30144.mp3` / `usl30139.mp3` 录音内容是 **"Four by four."**
+- `TLD.mdx` 的 `four` 条目却把这两条挂成自己的 cuk/cus 音源
+- 相邻记录没有错位：`ukl30143.mp3` 确实是 `foundation course`，`ukl30145` 也正常
+  → 不是整表偏移，是**单条数据标错**（打包时按"前缀最像"回填，`four by four`
+  比别的候选更像 `four`）
+
+处理方式：**人工/ASR 确认后进黑名单**，不猜、不做模糊匹配修正。
+
+```bash
+# 1) 找候选（不给结论，只给清单）
+python converter/clip_audit.py            # -> _tmp/clip_audit.tsv
+python converter/clip_audit.py --sample 40 # 随机导 40 条供试听/ASR
+
+# 2) 把确认的写进 converter/bad_clips.tsv（TAB 分隔：source/file/expression/原因）
+
+# 3) 从现有库删（幂等，可反复跑）
+python converter/apply_blacklist.py --dry-run
+python converter/apply_blacklist.py
+```
+
+`build_tld_audio_db.py` 也读同一份 `bad_clips.tsv`（`--blacklist` 可改路径），
+**重灌时自动跳过**，不会复活。
+
+`clip_audit.py` 只能给两类线索，都需要人听：`shared`（一个文件被多个不相关词头
+共用，至少一条错）、`prefix`（stem 与词头在词边界上互相为前缀，如 `for` → `four`、
+`air` → `air_ambulance`）。打包时 stem 被截断到 14 字符、以及 `bling bling` 这类
+叠词都会误报，脚本里已按这两条豁免。
+
+当前已知错配：**4 条**已确认并删除（`tld_uk2` 的 `four` 英/美两条、`tld_ame` 的
+`cache` ← "Cachet."、`tld_collins` 的 `grandad` ← "Granddaddy."），全部在
+`bad_clips.tsv` 里留了 ASR 依据。同音词共用一条录音（`for` / `fore` / `four` 在
+Collins 里同音）不算错配，保留。
+
+`clip_audit.py` 的静态扫描现在报 **221 条候选**（只保留"stem 本身也是本源词头"的行，
+截断类误报因此被滤掉）。这 221 条都要听过才能定性，属于**待办**，不是已修。
+
 ### 合并顺序
 
-Hoshi 只按 `source` 字母序取第一个命中，本地源整体排在在线源之前。两库同时导入时：
+Hoshi 对一个词只取**一条**命中行 —— 取到哪条取决于它遍历 `entries` 的顺序，
+可能是行序（rowid），也可能是 `source` 字母序，两者并不保证一致。所以行序必须
+显式等于优先级：
+
+```bash
+python converter/reorder_entries.py --dry-run   # 只报告
+python converter/reorder_entries.py             # 重写 entries（android 不动）
+```
+
+优先级（`reorder_entries.py` 的 `PRIORITY`）：
 
 ```
-ldoce_ame → ldoce_bre → oald10 → tld_ame → tld_collins → tld_ids
-           → tld_mw → tld_snd → tld_uk → tld_uk2
+ode2024 → ldoce_ame → ldoce_bre → oald10 → tld_uk → tld_ame → tld_collins
+        → tld_mw → tld_ids → tld_snd → tld_uk2
 ```
 
-即 **LDOCE 永远先命中，TLD 只补 LDOCE 没有的词**。
+`tld_uk2` 垫底：它 87,551 条只贡献 2,291 个别处没有的词，却是唯一一个有
+"录音≠词头"实证的源（见上）。
 
 ## 音频是怎么定位的
 

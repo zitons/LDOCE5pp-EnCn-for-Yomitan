@@ -58,6 +58,31 @@ MDD_SOURCES = {
     "TLD.mdd": "tld_snd",
 }
 
+# Clips whose recording does not match the headword. No structural check can
+# find these (the mdd record decodes cleanly and the mdx reference is intact --
+# only the audio itself disagrees), so they live in a hand-curated TSV and are
+# skipped on insert. Empty set == feature off.
+BAD = set()
+
+
+def load_blacklist(path):
+    """Read (source, file, expression) triples; missing file is not an error."""
+    if not path or not os.path.exists(path):
+        return set()
+    out = set()
+    with open(path, encoding="utf-8-sig") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                print(f"      WARNING: ignoring malformed blacklist line {line!r}")
+                continue
+            out.add((parts[0].strip(), parts[1].strip(), parts[2].strip()))
+    return out
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries (
     id integer PRIMARY KEY NOT NULL,
@@ -413,7 +438,16 @@ def main():
     ap.add_argument("--missing-only", action="store_true",
                     help="skip files whose stem is already in the target db for this "
                          "source -- used to top up files a stricter gate rejected")
+    ap.add_argument("--blacklist", default=os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "bad_clips.tsv"),
+                    help="TSV of (source, file, expression) rows whose recording does "
+                         "not match the headword; skipped on insert")
     args = ap.parse_args()
+
+    global BAD
+    BAD = load_blacklist(args.blacklist) if args.blacklist else set()
+    if BAD:
+        print(f"      blacklist: {len(BAD)} (source, file, expression) row(s) skipped")
 
     mdx = os.path.join(args.tld, "TLD.mdx")
     cache = os.path.join(os.path.dirname(os.path.abspath(args.out)) or ".",
@@ -471,6 +505,7 @@ def main():
     bad_payload = 0
     bad_blocks = 0
     lost_keys = 0
+    blacklisted = 0
     try:
         for name in mdds:
             path = os.path.join(args.tld, name)
@@ -503,6 +538,12 @@ def main():
                     words = file_words.get(b.casefold())
                     if not words:
                         continue
+                    if BAD:
+                        kept = [w for w in words if (src, w, b) not in BAD]
+                        if not kept:
+                            blacklisted += 1
+                            continue
+                        words = kept
                     if have and os.path.splitext(b)[0].casefold() in have:
                         continue
                     rel = offsets[idx] - base
@@ -596,6 +637,8 @@ def main():
     print(f"[4/4] inserted {inserted:,} rows into {args.out}")
     print(f"      skipped (no word maps to the file): {skipped_no_word:,}")
     print(f"      transcode failures                : {transcode_fail:,}")
+    if BAD:
+        print(f"      blacklisted (audio != headword)   : {blacklisted:,}")
     print(f"      duration-gate rejects             : {REJECTED:,}")
     print(f"      undecodable blocks                : {bad_blocks:,}"
           f"  (keys lost: {lost_keys:,})")
