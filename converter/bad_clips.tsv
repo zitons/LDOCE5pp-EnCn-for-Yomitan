@@ -7,3 +7,4 @@ tld_uk2	ukl30144.mp3	four	ASR="Four by four."，录音属于 four by four，uk2 
 tld_uk2	usl30139.mp3	four	ASR="Four by four."，同上（美音版）
 tld_ame	ld41cachet.mp3	cache	ASR="Cachet."，pack 按前缀把 cachet 的录音挂给了 cache
 tld_collins	COLmp3en_gb_grandaddy.opus	grandad	ASR="Granddaddy."，同上（grandad 挂到 grandaddy）
+tld_collins	COLmp3en_us_to.opus	tout	ASR="Two."，该文件被 to/too/tout/two 共用，tout /taʊt/ 读音不同，属错挂

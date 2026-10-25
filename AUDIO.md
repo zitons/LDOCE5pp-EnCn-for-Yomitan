@@ -353,13 +353,32 @@ python converter/apply_blacklist.py
 `air` → `air_ambulance`）。打包时 stem 被截断到 14 字符、以及 `bling bling` 这类
 叠词都会误报，脚本里已按这两条豁免。
 
-当前已知错配：**4 条**已确认并删除（`tld_uk2` 的 `four` 英/美两条、`tld_ame` 的
-`cache` ← "Cachet."、`tld_collins` 的 `grandad` ← "Granddaddy."），全部在
-`bad_clips.tsv` 里留了 ASR 依据。同音词共用一条录音（`for` / `fore` / `four` 在
-Collins 里同音）不算错配，保留。
+当前已知错配：**5 条**已确认并删除（`tld_uk2` 的 `four` 英/美两条、`tld_ame` 的
+`cache` ← "Cachet."、`tld_collins` 的 `grandad` ← "Granddaddy."、`tld_collins` 的
+`tout` ← "Two."），全部在 `bad_clips.tsv` 里留了 ASR 依据。同音词共用一条录音
+（`for` / `fore` / `four` 在 Collins 里同音）不算错配，保留。
 
-`clip_audit.py` 的静态扫描现在报 **221 条候选**（只保留"stem 本身也是本源词头"的行，
-截断类误报因此被滤掉）。这 221 条都要听过才能定性，属于**待办**，不是已修。
+**221 条静态候选已逐类核过，绝大多数是误报**（分堆脚本 `_tmp/classify_audit.py`）：
+
+| 类别 | 条数 | 定性 |
+|---|---:|---|
+| 短语词条，录音就是整句 | 75 | **误报**。ASR 实测 `ld41communication_.mp3` = "Communication cord."、`ld5_mickey_mouse_.mp3` = "The Mickey Mouse club."，文件名只是截断 |
+| Collins 同音异形共用 | ~100 | **设计如此**。实测 `COLmp3en_us_moral_2.opus` = "Morale."，挂 `morale` 正确 |
+| 一文件挂多个读音不同的词条 | ~35 | 至少一条必错，本轮由此抓出 `tout` |
+
+全库「一个文件被多个词条引用」共 **3,268 组 / 6,975 行**：
+
+- **同音异形 2,367 组**（`air|ere|err|heir`、`bi|buy|by|bye`、`carat|carrot|karat`）——
+  Collins 与 LDOCE 的音频按**发音**组织，同音词共用一条录音，不是错配。
+- **单词与短语混用 698 组**，其中 948 条是短语词条：词条 `bird louse`，录音只有
+  `louse`（实测 `L0388600.opus` = "louse"、`T0358300.opus` = "ton"）。这属于
+  **录音不完整**（听到的是词条的基础词），不是错到别的词，保留不删。
+- 真正「文件名词干严格长于词条」的只有 **9 条**。除已删的 `cache` / `grandad`，
+  其余是 `cyclic` ← cyclical、`hoot` ← hoots、`surtitle` ← surtitles 这类只差后缀的。
+
+结论：静态线索只能**缩小范围**，不能当结论。`prefix` 规则会把文件名下划线切碎的
+情况也报出来（`tld_uk` 那 24 条 `blankety blank` ← `blank` 全是这一类）。逐条听过的
+结论记在 `converter/asr_findings.tsv`（OK / PARTIAL / UNSURE / FAIL 四档）。
 
 ### 合并顺序
 

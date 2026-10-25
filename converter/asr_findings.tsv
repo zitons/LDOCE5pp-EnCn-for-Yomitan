@@ -9,6 +9,8 @@
 #   OK      录音与词头一致
 #   AMBIG   同音词，ASR 无法区分（如 for / four），不算错配
 #   UNSURE  ASR 没听出可辨识的词（短音节常见，如 "份儿。"），不能据此定罪
+#   PARTIAL 录音只是词条的一部分：短语词条听到的是基础词（bird louse 听到 louse、
+#           leading article 听到 leading）。不是「错到别的词」，不算 FAIL
 #   FAIL    录音明确属于别的词，已从库中删除
 #
 # 判据：只有转写中出现「词头之外的完整词」才能判 FAIL（"Four by four." /
@@ -31,3 +33,11 @@ ode2024	four_gb_3.opus	four	Four.	OK	kept	2026-10-25
 tld_collins	COLmp3en_us_for.opus	four	Four.	OK	kept	2026-10-25
 tld_collins	COLmp3en_gb_faa.opus	for	For.	OK	kept	2026-10-25
 tld_collins	COLmp3en_us_fir.opus	for	份儿。	UNSURE	kept	2026-10-25
+tld_ame	ld41communication_.mp3	communication cord	Communication cord.	OK	kept	2026-10-25
+tld_ame	ld5_mickey_mouse_.mp3	Mickey Mouse Club, the	The Mickey Mouse club.	OK	kept	2026-10-25
+tld_collins	COLmp3en_us_moral_2.opus	morale	Morale.	OK	kept	2026-10-25
+tld_collins	COLmp3en_us_to.opus	tout	Two.	FAIL	pending	2026-10-25
+tld_collins	COLmp3en_us_pace_1.opus	pacey	PY.	UNSURE	kept	2026-10-25
+tld_collins	COLmp3en_us_leading_1.opus	leading article / leading light / leading question	Leading.	PARTIAL	pending	2026-10-25
+tld_ids	L0388600.opus	bird louse 等 8 个下位词	Mouse.（实为 louse，只有基础词）	PARTIAL	kept	2026-10-25
+tld_ids	T0358300.opus	long ton 等 5 个下位词	Ton.	PARTIAL	kept	2026-10-25

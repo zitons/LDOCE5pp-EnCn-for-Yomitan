@@ -42,6 +42,9 @@ def main():
     ap.add_argument("--db", default=DB)
     ap.add_argument("--tsv", default=TSV)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--quick-check", action="store_true",
+                    help="run pragma quick_check afterwards; slow (30+ min) "
+                         "because it walks every 4.6 GB blob page")
     args = ap.parse_args()
 
     rules = load(args.tsv)
@@ -81,7 +84,10 @@ def main():
         con.execute("ANALYZE")
         con.commit()
         print(f"deleted {total_del} entries row(s), {blob_del} orphan blob(s)")
-    print("quick_check:", con.execute("pragma quick_check").fetchone()[0])
+    if args.quick_check:
+        print("quick_check:", con.execute("pragma quick_check").fetchone()[0])
+    else:
+        print("quick_check: skipped (pass --quick-check to run; slow on 5 GB)")
     print("db size:", f"{os.path.getsize(args.db):,} B")
     con.close()
 
