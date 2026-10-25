@@ -1,0 +1,33 @@
+﻿# ASR 复核记录 —— 录音内容 vs 词头，逐条听过才算数。
+#
+# 和 bad_clips.tsv 的分工：
+#   asr_findings.tsv  全部听过的结论，含 OK / AMBIG / UNSURE，是审计流水
+#   bad_clips.tsv     只放 verdict=FAIL 的，供 build_tld_audio_db.py 跳过
+#
+# 列（TAB 分隔）：source / file / word / asr / verdict / action / date
+#
+#   OK      录音与词头一致
+#   AMBIG   同音词，ASR 无法区分（如 for / four），不算错配
+#   UNSURE  ASR 没听出可辨识的词（短音节常见，如 "份儿。"），不能据此定罪
+#   FAIL    录音明确属于别的词，已从库中删除
+#
+# 判据：只有转写中出现「词头之外的完整词」才能判 FAIL（"Four by four." /
+# "Cachet." / "Granddaddy."）。ASR 对单音节词极不可靠——`for` 会被转成
+# "份儿。"、`fore`/`four` 会互相串，所以「转写不像」不构成证据。
+#
+source	file	word	asr	verdict	action	date
+tld_uk2	ukl30144.mp3	four	Four by four.	FAIL	removed	2026-10-24
+tld_uk2	usl30139.mp3	four	Four by four.	FAIL	removed	2026-10-24
+tld_ame	ld41cachet.mp3	cache	Cachet.	FAIL	removed	2026-10-24
+tld_collins	COLmp3en_gb_grandaddy.opus	grandad	Granddaddy.	FAIL	removed	2026-10-24
+tld_uk2	ukl30143.mp3	foundation course	Foundation course.	OK	kept	2026-10-24
+tld_ame	ld45four.mp3	four	Four.	OK	kept	2026-10-25
+tld_uk	mediaenglishuk_pronffoufour_four__gb_1.opus	four	Four.	OK	kept	2026-10-25
+tld_uk	mediaenglishus_pronffoufour_four__us_1.opus	four	Four.	OK	kept	2026-10-25
+tld_mw	mw_four.opus	four	Four.	OK	kept	2026-10-25
+tld_snd	sndffofour.opus	four	Four.	OK	kept	2026-10-25
+tld_ids	F0324700.opus	four	Four.	OK	kept	2026-10-25
+ode2024	four_gb_3.opus	four	Four.	OK	kept	2026-10-25
+tld_collins	COLmp3en_us_for.opus	four	Four.	OK	kept	2026-10-25
+tld_collins	COLmp3en_gb_faa.opus	for	For.	OK	kept	2026-10-25
+tld_collins	COLmp3en_us_fir.opus	for	份儿。	UNSURE	kept	2026-10-25
