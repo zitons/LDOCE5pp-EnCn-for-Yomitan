@@ -44,7 +44,7 @@ REJECTED = 0                # transcodes dropped by the duration gate (running t
 #   TLD.3  COLmp3*.spx               Collins pronunciation library
 #   TLD.4  mw_*.spx                  Merriam-Webster style headword clips
 #   TLD.5  <numeric>.spx             unnamed ids
-#   TLD.6  uk_pron\ca2uk*.mp3        a second British set
+#   TLD.6  uk_pron\ca2uk*.mp3        a second British set -> DROPPED, see below
 #   TLD    snd*.spx                  the default/sound set
 # The existing merged DB uses the same convention (ldoce_ame / ldoce_bre / oald10),
 # so a per-origin tag is what the merge tool and the audits expect.
@@ -54,7 +54,13 @@ MDD_SOURCES = {
     "TLD.3.mdd": "tld_collins",
     "TLD.4.mdd": "tld_mw",
     "TLD.5.mdd": "tld_ids",
-    "TLD.6.mdd": "tld_uk2",
+    # "TLD.6.mdd": "tld_uk2",  -- dropped 2026-11-11, do not re-add.
+    #   Health check: 87,549 clips / 649 MB bought only 2,291 expressions
+    #   (2,291 of 338,029 = 0.7% of lookups), 70% of its filenames are bare
+    #   numbers (`ukl30144.mp3`) so a mismatch cannot be caught structurally,
+    #   and it is the only source with a confirmed wrong clip (`four` ->
+    #   "Four by four."). The 672 single words it alone covered now have no
+    #   audio; that was an accepted trade. Numbers live in AUDIO.md.
     "TLD.mdd": "tld_snd",
 }
 

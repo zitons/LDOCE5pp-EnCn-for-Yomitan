@@ -212,12 +212,13 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 并成一个库，给 LDOCE 覆盖不到的词做补充（合并顺序见本节末尾）。
 构建器 `converter/build_tld_audio_db.py`（TLD 七源）+ `converter/build_ode_audio.py`（ODE）。
 
-现状：**1,065,161 行 / 340,320 词条 / 5.07 GB**，`entries` 行序即优先级，
-`android` 与 `entries` 一一对应（0 孤立行）。
+现状：**977,609 行 / 338,029 词条 / 5.08 GB 文件**（`tld_uk2` 已整源删除，见下），
+`entries` 行序即优先级，`android` 与 `entries` 一一对应（0 孤立行）。
 
-### 为什么是 7 个音源
+### 为什么是 6 个音源
 
-词典只有一份 `TLD.mdx`，音频却分散在 7 个 `.mdd` 里，每个包是一个**独立来源**：
+词典只有一份 `TLD.mdx`，音频却分散在 7 个 `.mdd` 里，每个包是一个**独立来源**。
+2026-11-11 体检后砍掉 `TLD.6.mdd`，剩 6 个：
 
 | .mdd | source | 文件数 | 格式 | 内容 |
 |---|---|---:|---|---|
@@ -226,7 +227,7 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 | `TLD.3.mdd` | `tld_collins` | 101,727 | spx | `COLmp3*` 柯林斯 |
 | `TLD.4.mdd` | `tld_mw` | 154,737 | spx | `mw_*` |
 | `TLD.5.mdd` | `tld_ids` | 118,174 | spx | 纯数字 ID |
-| `TLD.6.mdd` | `tld_uk2` | 78,879 | mp3 | `uk_pron/ca2uk*` 第二套英音 |
+| ~~`TLD.6.mdd`~~ | ~~`tld_uk2`~~ | ~~78,879~~ | ~~mp3~~ | **已删，见「砍源决策」** |
 | `TLD.mdd` | `tld_snd` | 149,212 | spx | `snd*` |
 
 不能并成一个 `tld` 标签：`android` 的主键语义是 `(source, file)`，而 **TLD.1 与 TLD.6
@@ -240,7 +241,7 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 ```bash
 # 单个源（调试用）
 python converter/build_tld_audio_db.py --only TLD.1.mdd --out yomitan_audio/tld.db
-# 全部 7 个
+# 全部 6 个（TLD.6 已在 MDD_SOURCES 里注释掉，不在其中）
 python converter/build_tld_audio_db.py --out yomitan_audio/tld.db
 # spx 转码需要 ffmpeg；没装 imageio-ffmpeg 时用 --ffmpeg 直接给路径
 ```
@@ -353,7 +354,8 @@ python converter/apply_blacklist.py
 `air` → `air_ambulance`）。打包时 stem 被截断到 14 字符、以及 `bling bling` 这类
 叠词都会误报，脚本里已按这两条豁免。
 
-当前已知错配：**5 条**已确认并删除（`tld_uk2` 的 `four` 英/美两条、`tld_ame` 的
+当前已知错配：**5 条**已确认并删除（`tld_uk2` 的 `four` 英/美两条——该源现已整源
+移除，这两条记录留作档案、`apply_blacklist.py` 对它们已是空操作；`tld_ame` 的
 `cache` ← "Cachet."、`tld_collins` 的 `grandad` ← "Granddaddy."、`tld_collins` 的
 `tout` ← "Two."），全部在 `bad_clips.tsv` 里留了 ASR 依据。同音词共用一条录音
 （`for` / `fore` / `four` 在 Collins 里同音）不算错配，保留。
@@ -395,11 +397,45 @@ python converter/reorder_entries.py             # 重写 entries（android 不�
 
 ```
 ode2024 → ldoce_ame → ldoce_bre → oald10 → tld_uk → tld_ame → tld_collins
-        → tld_mw → tld_ids → tld_snd → tld_uk2
+        → tld_mw → tld_ids → tld_snd
 ```
 
-`tld_uk2` 垫底：它 87,551 条只贡献 2,291 个别处没有的词，却是唯一一个有
-"录音≠词头"实证的源（见上）。
+`tld_uk2` 原本垫底，现已整源删除，理由见下一节。
+
+### 砍源决策（2026-11-11）
+
+判据只有三条：**真实播放占比**、**独占词条**、**能不能自校验**。体积和码率单独看会
+误判（uk2 码率最高 65 kbps，反而最没用）。
+
+| 源 | 首选播放 | 独占词条 | 占用 | 文件名可自校验 | KB/词条 |
+|---|---:|---:|---:|---:|---:|
+| `ode2024` | 27.7% | 36,974 | 258 MB | 100% | 2.8 |
+| `tld_mw` | 24.4% | 40,990 | 370 MB | 100% | 2.5 |
+| `tld_snd` | 20.7% | 70,030 | 838 MB | 100% | 5.9 |
+| `tld_uk` | 11.7% | 8,950 | 630 MB | 100% | 9.0 |
+| `tld_ids` | 6.8% | 20,922 | 248 MB | 0% | 2.3 |
+| `tld_collins` | 5.1% | 15,029 | 402 MB | 39% | 6.5 |
+| `tld_ame` | 3.6% | 5,223 | 496 MB | 89% | 11.0 |
+| ~~`tld_uk2`~~ | ~~0.7%~~ | ~~2,291~~ | ~~649 MB~~ | ~~30%~~ | ~~28.7~~ |
+
+`tld_uk2` 三项全垫底：只负责 0.7% 的播放，独占 2,291 条（全库 338,029 的 0.68%），
+却吃 649 MB；70% 的文件名是 `ukl30144.mp3` 这种纯编号，错位无法被结构校验发现——
+`four` ← "Four by four." 就是这么漏进来的；同一条录音还按 65 kbps 存 mp3，体积是同
+内容 opus 的五六倍。
+
+处置：`DELETE FROM entries/android WHERE source='tld_uk2'`，分批 2,000 行提交
+（`_tmp/drop_source.py`），**不 VACUUM**——页会被标空闲、后续写入复用，但文件不缩小。
+代价是 2,291 个词条（其中 672 个单字，如 `Blairite`、`BFPO`、`Aga saga`）从此没有
+音频，这是事先确认过的取舍。
+
+**没动其他源的理由**：`tld_ids` 文件名 0% 可校验，但独占 20,922 条、扛 6.8% 播放，
+砍了比留着更疼；`tld_ame` 是第二差的，可它的独占里是 `AT&T`、`Aeroflot`、
+`Abbottabad` 这类专有名词，496 MB 换这些还算值。
+
+体检里还有一个反直觉的结果：**「一个词读好几个词」不是某个源的系统性问题**。
+每源随机抽 12 个单词词条量时长，中位数全在 0.85–1.41 s，最长 2.19 s，没有一条
+超过 3 s。真正的长尾个例来自 `_tmp/long_clips.tsv`（同源内体积 > 3 倍中位数的
+4,260 条），只能逐条听，不能按源定罪。
 
 ## 音频是怎么定位的
 

@@ -14,10 +14,13 @@ import sys
 
 # Lower number = tried first. ODE 2024 is a single, verified dictionary, so it
 # leads; the TLD packs follow roughly by recording quality (tld_uk is 44.1 kHz
-# / 64 kbps mp3). tld_uk2 (the LDOCE 64 kbps bank) sits last: it adds only 2,291
-# words no other source has, yet it is the one source with clips whose recording
-# does not match the headword (`four` -> "Four by four."), so it must never win
-# a lookup.
+# / 64 kbps mp3).
+#
+# `tld_uk2` (TLD.6) is gone: removed from the database on 2026-11-11. It was
+# last on this list on purpose -- it bought only 2,291 expressions for 649 MB,
+# 70% of its files are unverifiable numeric names, and it was the one source
+# with a confirmed wrong clip (`four` -> "Four by four."). Do not re-add it
+# unless a fresh audit says otherwise.
 PRIORITY = {
     "ode2024": 0,
     "ldoce_ame": 1,
@@ -29,7 +32,6 @@ PRIORITY = {
     "tld_mw": 7,
     "tld_ids": 8,
     "tld_snd": 9,
-    "tld_uk2": 10,
 }
 
 SCHEMA = """
@@ -110,7 +112,10 @@ def main():
     print("after :",
           con.execute("select source, count(*) from entries group by source "
                       "order by min(id)").fetchall())
-    print("quick_check:", con.execute("pragma quick_check").fetchone()[0])
+    # quick_check walks every blob page; it is opt-in because on the 5 GB db it
+    # costs more time than the reorder itself.
+    print("quick_check:",
+          con.execute("pragma quick_check").fetchone()[0] if args.check else "skipped")
     orphans_a = con.execute(
         "select count(*) from entries e left join android a "
         "on a.file=e.file and a.source=e.source where a.id is null").fetchone()[0]
