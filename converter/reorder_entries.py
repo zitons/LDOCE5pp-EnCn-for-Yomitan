@@ -30,7 +30,8 @@ PRIORITY = {
     "tld_ame": 5,
     "tld_collins": 6,
     "tld_mw": 7,
-    "tld_ids": 8,
+    "tld_ids": 8,      # 2026-11-11 起库里已无此源（keep_verified.py 全筛掉），
+                       # 留着是为了历史库仍能排序，不代表它还会出现
     "tld_snd": 9,
 }
 

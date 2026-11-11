@@ -212,23 +212,25 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 并成一个库，给 LDOCE 覆盖不到的词做补充（合并顺序见本节末尾）。
 构建器 `converter/build_tld_audio_db.py`（TLD 七源）+ `converter/build_ode_audio.py`（ODE）。
 
-现状：**977,609 行 / 338,029 词条 / 5.08 GB 文件**（`tld_uk2` 已整源删除，见下），
-`entries` 行序即优先级，`android` 与 `entries` 一一对应（0 孤立行）。
+现状：**778,478 行 / 301,559 词条 / 4.73 GB 文件**。2026-11-11 两轮清理后只剩
+5 个源在库（`tld_uk2` 整源删、`tld_ids` 整源筛掉、`tld_collins` 只留三分之一）。
+`entries` 行序即优先级，`android` 无被遗弃的 BLOB。
 
-### 为什么是 6 个音源
+### 现在库里是哪 5 个源
 
-词典只有一份 `TLD.mdx`，音频却分散在 7 个 `.mdd` 里，每个包是一个**独立来源**。
-2026-11-11 体检后砍掉 `TLD.6.mdd`，剩 6 个：
+词典只有一份 `TLD.mdx`，音频却分散在 7 个 `.mdd` 里。2026-11-11 按
+「文件名能不能对上词头」筛过一轮，7 个包里只剩 5 个还有内容：
 
-| .mdd | source | 文件数 | 格式 | 内容 |
-|---|---|---:|---|---|
-| `TLD.1.mdd` | `tld_ame` | 95,615 | mp3 | `/ameProns/*` 美音 |
-| `TLD.2.mdd` | `tld_uk` | 152,154 | spx | `media/english/uk_pron/*` 英音 |
-| `TLD.3.mdd` | `tld_collins` | 101,727 | spx | `COLmp3*` 柯林斯 |
-| `TLD.4.mdd` | `tld_mw` | 154,737 | spx | `mw_*` |
-| `TLD.5.mdd` | `tld_ids` | 118,174 | spx | 纯数字 ID |
-| ~~`TLD.6.mdd`~~ | ~~`tld_uk2`~~ | ~~78,879~~ | ~~mp3~~ | **已删，见「砍源决策」** |
-| `TLD.mdd` | `tld_snd` | 149,212 | spx | `snd*` |
+| .mdd | source | 现存行 | 原文件数 | 处理 |
+|---|---|---:|---:|---|
+| `TLD.1.mdd` | `tld_ame` | 108,191 | 95,615 | 逐行筛，删 15,262 |
+| `TLD.2.mdd` | `tld_uk` | 152,070 | 152,154 | 全留（100% 可校验） |
+| `TLD.3.mdd` | `tld_collins` | 34,751 | 101,727 | 逐行筛，删 64,857 |
+| `TLD.4.mdd` | `tld_mw` | 153,943 | 154,737 | 全留（100% 可校验） |
+| ~~`TLD.5.mdd`~~ | ~~`tld_ids`~~ | ~~0~~ | ~~118,174~~ | **整源筛掉：0% 可校验** |
+| ~~`TLD.6.mdd`~~ | ~~`tld_uk2`~~ | ~~0~~ | ~~78,879~~ | **整源删（体检垫底）** |
+| `TLD.mdd` | `tld_snd` | 146,156 | 149,212 | 全留（100% 可校验） |
+| — | `ode2024` | 183,367 | — | 全留（100% 可校验，带 UK/US） |
 
 不能并成一个 `tld` 标签：`android` 的主键语义是 `(source, file)`，而 **TLD.1 与 TLD.6
 有 8,753 个同名文件**（同一个词的美音版和英音版都叫 `xxx.mp3`）。合成一个 source
@@ -249,6 +251,19 @@ python converter/build_tld_audio_db.py --out yomitan_audio/tld.db
 参数：`--only <mdd>` 只处理一个包、`--limit N` 前 N 条、`--ffmpeg PATH`、`--tld DIR`、
 `--missing-only`（只补库里还没有的文件）、`--blacklist PATH`（默认 `converter/bad_clips.tsv`）。
 产物是**追加写入**已有库的，逐源重灌前先 `delete from entries/android where source=?`。
+
+**重建完整流程（顺序不能换）**：
+
+```bash
+python converter/build_tld_audio_db.py --out yomitan_audio/tld.db   # 灌 TLD 六包
+python converter/build_ode_audio.py --ode "..."                     # 追加 ode2024
+python converter/keep_verified.py --apply      # 只留能确认的行（先空跑看数）
+python converter/prune_blobs.py  --apply       # 清掉失去引用的 BLOB
+python converter/reorder_entries.py            # 行序 = 优先级（最后跑）
+```
+
+`keep_verified.py` 会把整源可校验率 < 99% 的源逐行筛，所以**每次重建都必须跑**，
+否则 `tld_ids` 那 11 万条纯编号录音会被灌回来。
 
 ### ODE 2024（第八个源，单独构建器）
 
@@ -436,6 +451,51 @@ ode2024 → ldoce_ame → ldoce_bre → oald10 → tld_uk → tld_ame → tld_co
 每源随机抽 12 个单词词条量时长，中位数全在 0.85–1.41 s，最长 2.19 s，没有一条
 超过 3 s。真正的长尾个例来自 `_tmp/long_clips.tsv`（同源内体积 > 3 倍中位数的
 4,260 条），只能逐条听，不能按源定罪。
+
+### 第二轮：只留「能确认读的是什么」的行（2026-11-11）
+
+用户口径：**文件名能对上词头（完全了解），或者带英美标记的，留下；其余删。**
+
+规则（`converter/keep_verified.py`）：
+
+1. 整源可校验率 ≥ 99% 的源全留 —— `ode2024` / `tld_mw` / `tld_snd` / `tld_uk`。
+   这几个源里有几百条缩写、连字符、短语因为检查太死没过，删了是误伤，所以整源豁免。
+2. 其余源逐行判，满足任一即留：
+   - 文件名归一化后含词头前 5 字符（短词要求整词出现）
+   - `speaker` 非空
+   - 文件名带 `gb` / `us` / `uk` / `ame` / `bre` / `en_gb` / `en_us` 标记
+
+结果：
+
+| 源 | 原行 | 删 | 留 |
+|---|---:|---:|---:|
+| `tld_ids` | 119,012 | 119,012 | **0** |
+| `tld_collins` | 99,608 | 64,857 | 34,751 |
+| `tld_ame` | 123,453 | 15,262 | 108,191 |
+| 其余四源 | 635,536 | 0 | 635,536 |
+
+合计删 **199,131 行**，36,470 个词条（10.8%，其中单字 20,950）彻底没音。失音的大头
+是 `tld_ids` 那批古语与缩写（`'cept`、`'nuff`、`'sblood`、`Abbasside`）。
+
+随后清掉因此变成孤儿的 BLOB：**198,920 条 / 575 MB**（`converter/prune_blobs.py`）。
+清洗后 778,478 行 / 301,559 词条 / 4.73 GB。被删的三元组留档在
+`_tmp/dropped_rows.tsv`，失音词条清单在 `_tmp/dead_expressions.txt`。
+
+**注意这里踩的坑**：孤儿统计写成 `android left join entries` 会退化成对每一行
+android 扫一遍 entries（entries 没有 `(file,source)` 索引），10 分钟都跑不完。
+正确写法是从 entries 取 live 集合，再用 `indexed by idx_android_file_source`
+扫覆盖索引（只含 file/source/rowid，不碰 BLOB 页），秒级完成。
+
+### 尚未处理：同文件名多份 BLOB
+
+`android` 里同一 `(source,file)` 存了多份不同的录音，点名 `tld_ame`：
+
+- `tld_ame` 30,615 条重复、`tld_collins` 880 条，其余源 0
+- 例：`tld_ame/ld45four.mp3` 同时有 1,728 B 和 2,299 B 两份
+- 成因仍是 `basename()`：不同目录下的同名文件（`/ameProns/four.mp3` 与别处的
+  `four.mp3`）进了同一个 key，播哪份取决于查询先返回哪行——**不确定**
+
+没动，因为无法判断哪份才是对的。
 
 ## 音频是怎么定位的
 
