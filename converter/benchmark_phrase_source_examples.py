@@ -27,9 +27,11 @@ def main():
     ap.add_argument('--seed',type=int,default=20261118)
     ap.add_argument('--exclude-sample',help='Frozen sample JSON to exclude for a disjoint holdout')
     ap.add_argument('--allow-source-definition-coverage',action='store_true')
+    ap.add_argument('--source-package',help='Freeze example selection and definition gold independently of compared packages')
     args=ap.parse_args();out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     pool=[];seen=set();defsets={}
-    with zipfile.ZipFile(args.r4) as z:
+    source_package = args.source_package or args.r4
+    with zipfile.ZipFile(source_package) as z:
         for name in z.namelist():
             if not re.fullmatch(r'term_bank_\d+\.json',name):continue
             for row in json.loads(z.read(name)):
@@ -63,6 +65,7 @@ def main():
               'criterion':'At any word start, retrieve the canonical ID or explicitly enabled source-definition-covered phrase ID, with >=2 matched words. No gold exact span annotation.',
               'definition_coverage_enabled':args.allow_source_definition_coverage,
               'definition_policy':'Same canonical ID, or another phrase entry containing every identical target definition, with at least one definition >=8 words. Source-context entries excluded. This is a conservative source-text proxy, not manual semantic annotation.',
+              'source_package_sha256':sha(source_package),
               'packages':{v:sha(getattr(args,v)) for v in ('r4','r5')},'dll_sha256':sha(args.dll),'sample_sha256':sha(out/'sample.json')}
     (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf8')
     engines={v:Engine(args.dll,getattr(args,v),out/('import_'+v),[Path(args.transforms)/n for n in ('en.json','en_irregular.json')]) for v in ('r4','r5')}

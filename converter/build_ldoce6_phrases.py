@@ -18,7 +18,7 @@ from urllib.parse import quote, unquote
 
 from lxml import html
 from phrase_alias_rules import enhanced_variants, full_alternatives, orthographic_forms
-from phrase_lookup_heads import collect_heads
+from phrase_lookup_heads import collect_heads, phrasal_particle_choices
 from supplement_phrase_sources import supplement_sources
 
 PRIMARY = {'phrasetext', 'lexunit', 'phrvbhwd', 'phrv'}
@@ -351,12 +351,39 @@ def initial_forms(word):
     return variants|irregular.get(word,set())
 
 
-def example_attests(alias, examples):
+def declared_plural_forms(body, word):
+    """Read a simple, explicitly printed noun plural from its own source head.
+
+    Never infer a suffix or take inflections from nested, unrelated headwords.
+    """
+    result = set()
+    def nodes(value):
+        if isinstance(value, list):
+            for item in value: yield from nodes(item)
+        elif isinstance(value, dict):
+            yield value
+            yield from nodes(value.get('content', []))
+    for head in nodes(body):
+        if head.get('data', {}).get('class') != 'l6p-entryhead': continue
+        parts = list(nodes(head.get('content', [])))
+        if not any(p.get('data', {}).get('class') == 'l6p-hwd' and
+                   plain(p).strip().casefold() == word.casefold() for p in parts): continue
+        if not any(p.get('data', {}).get('class') == 'l6p-pos' and
+                   plain(p).strip() == 'noun' for p in parts): continue
+        for part in parts:
+            if part.get('data', {}).get('class') != 'l6p-inflections': continue
+            m = re.fullmatch(r"plural\s+([\w'-]+)", plain(part).strip(' ()'))
+            if m: result.add(m[1])
+    return result
+
+
+def example_attests(alias, examples, declared_plurals=None, allow_be_tail=True, initial_verb=False):
     """Literal source-example evidence for uncertain lexical slash expansion.
 
     Flexible person/object placeholders and possessives are notation, not new
-    vocabulary. Only regular initial-verb endings are tolerated here; absence
-    of evidence sends a candidate to review rather than approving a guess.
+    vocabulary. Existing initial-verb evidence, an initial-be lookup tail, and
+    explicitly declared final noun plurals can validate basic source choices.
+    They never generate inflection aliases. Unattested choices stay in review.
     """
     alias=clean(alias.replace('↔',' ').replace('(', '').replace(')', ''))
     alias=re.sub(r'\betc\.?','',alias).strip(' .!?')
@@ -369,12 +396,21 @@ def example_attests(alias, examples):
             pattern.append(r"[\w'-]+(?:\s+[\w'-]+){0,4}")
         elif folded in {"somebody's","sb's","one's",'your'}:
             pattern.append(r"(?:your|his|her|its|their|our|my|[\w'-]+'s)")
-        elif i==0 and folded.isalpha() and len(folded)>2:
+        elif i==0 and folded.isalpha() and (len(folded)>2 or initial_verb):
             variants=initial_forms(folded)
             pattern.append('(?:'+'|'.join(re.escape(v) for v in sorted(variants))+')')
+        elif i == len(words)-1 and declared_plurals and folded in declared_plurals:
+            pattern.append('(?:'+'|'.join(re.escape(v) for v in sorted(
+                {folded} | set(declared_plurals[folded])))+')')
         else: pattern.append(re.escape(folded))
     expression=re.compile(r'(?<!\w)'+r'\s+'.join(pattern)+r'(?!\w)',re.I)
-    return any(expression.search(e) for e in examples)
+    if any(expression.search(e) for e in examples): return True
+    # Initial be already has a bounded lookup-head rule. Its attested tail can
+    # validate a source choice used with is/was/been, without adding those forms.
+    if allow_be_tail and words[0] == 'be' and len(words) >= 3:
+        tail = re.compile(r'(?<!\w)'+r'\s+'.join(pattern[1:])+r'(?!\w)', re.I)
+        return any(tail.search(e) for e in examples)
+    return False
 
 
 def rewrite_links(value, available):
@@ -533,6 +569,21 @@ def assemble(db_path, out, revision):
     aliases=defaultdict(lambda:defaultdict(set))
     review=[]
     collisions=[]
+    plural_evidence = {}
+    def attests(alias, examples):
+        # New evidence validates plain lookup forms. Do not multiply source
+        # notation such as "be five etc years" or parenthesized query keys.
+        if re.search(r'[/()]|\betc\b', alias):
+            return example_attests(alias, examples, allow_be_tail=False)
+        last = alias.split()[-1].casefold() if alias.split() else ''
+        if last not in plural_evidence:
+            forms = set()
+            for (body,) in db.execute('SELECT body FROM sources WHERE headword=?', (last,)):
+                if body: forms.update(declared_plural_forms(json.loads(body), last))
+            plural_evidence[last] = forms
+        first = alias.split()[0].casefold() if alias.split() else ''
+        return example_attests(alias, examples, plural_evidence,
+                               initial_verb='verb' in lexicon.get(first,set()))
     for phrase in phrases:
         variants,reasons=alias_variants(phrase)
         explicit_choices=explicit_parenthesized_choices(phrase)
@@ -541,7 +592,7 @@ def assemble(db_path, out, revision):
         review.extend((phrase,r) for r in reasons)
         for alias,rules in variants.items():
             if '/' in phrase and '/' not in alias and not safe_slash_slots(phrase) and not explicit_choices:
-                if not example_attests(alias,canonical[phrase]['example_texts']):
+                if not attests(alias,canonical[phrase]['example_texts']):
                     review.append((phrase,'unattested_slash_candidate: '+alias)); continue
                 rules.add('source_example_attested')
             elif '/' in phrase and '/' not in alias and explicit_choices:
@@ -553,7 +604,7 @@ def assemble(db_path, out, revision):
             proposed,_=alias_variants(form)
             safe=safe_slash_slots(form) or explicit_parenthesized_choices(form)
             return {a for a in proposed if '/' not in a and
-                    ('/' not in form or safe or example_attests(a,canonical[phrase]['example_texts']))}
+                    ('/' not in form or safe or attests(a,canonical[phrase]['example_texts']))}
         for side in full_alternatives(phrase):
             # A side with its own brackets or choices contributes its plain readings.
             for alias in ({side} if not re.search(r'[/()]',side) else set())|simple(side):
@@ -561,7 +612,7 @@ def assemble(db_path, out, revision):
                     collisions.append((alias,phrase,'existing_content_wins'));continue
                 aliases[alias][phrase].add('source_full_alternatives')
         enhanced,notes=enhanced_variants(phrase,identities[phrase],lexicon,preferred,
-            canonical[phrase]['example_texts'],simple,example_attests)
+            canonical[phrase]['example_texts'],simple,attests)
         review.extend((phrase,n) for n in notes)
         for alias,rules in enhanced.items():
             if alias in phrase_set or alias in contexts:
@@ -584,6 +635,10 @@ def assemble(db_path, out, revision):
     spellings = [(p, {p}) for p in phrases] + [(a, set(ts)) for a, ts in aliases.items()]
     separable_sources = [(raw, raw_to_canonical[raw]) for (raw,) in db.execute(
         "SELECT DISTINCT phrase FROM occurrences WHERE kind='phrvbhwd'")]
+    for raw, target in separable_sources:
+        for key in phrasal_particle_choices(raw):
+            if key not in phrase_set and key not in contexts:
+                aliases[key][target].add('source_phrasal_particle_choices')
     heads = collect_heads(spellings, separable_sources, phrase_set | set(contexts))
     for key, targets in heads.items():
         for target, rules in targets.items():
@@ -641,6 +696,7 @@ def assemble(db_path, out, revision):
         alias_rules=dict(Counter(rule for targets in aliases.values() for rules in targets.values() for rule in rules)),
         automatic_inflection_aliases=False,
         finite_pronoun_aliases=False,
+        source_choice_evidence=['source_examples', 'initial_be_lookup_tail', 'explicit_source_noun_plural'],
         supplemental_source_forms=dict(supplemental),
         policy='Only LDOCE6 source data. Explicit optional groups, unambiguous source alternatives, example-attested choices, marked separability, declared spellings/plurals and lowercase lookup. Bounded heads omit initial be, terminal generic object slots, or generic argument slots in original phrvbhwd headings while retaining all lexical words. Same-key alias targets merge; source content always wins. No pronoun enumeration, automatic inflections, arbitrary internal argument deletion or hyphen-to-space synthesis.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')

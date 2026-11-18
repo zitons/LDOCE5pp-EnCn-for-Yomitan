@@ -7,12 +7,66 @@ from pathlib import Path
 
 from lxml import html
 from build_ldoce6_phrases import (alias_variants, assemble, extract, sc, scope_for, example_attests,
-    plain, suppress_repeated_heading,explicit_parenthesized_choices)
+    plain, suppress_repeated_heading,explicit_parenthesized_choices, declared_plural_forms)
 from phrase_alias_rules import enhanced_variants, full_alternatives, grouped_slashes, optional_forms
 from supplement_phrase_sources import supplement_sources
 
 
 class PhraseBuildTests(unittest.TestCase):
+    def test_source_examples_validate_choices_without_generating_inflections(self):
+        self.assertTrue(example_attests('be tarred with the same brush',
+                        ["I'm tarred with the same brush as William."]))
+        self.assertTrue(example_attests('be simplicity itself', ['Loading it is simplicity itself.']))
+        self.assertFalse(example_attests('be kindness itself', ['Loading it is simplicity itself.']))
+        self.assertFalse(example_attests('get tarred with the same brush',
+                         ["I'm tarred with the same brush as William."]))
+        self.assertFalse(example_attests('be a', ['It is a problem.']))
+        self.assertTrue(example_attests('go to show something',
+                        ['It goes to show how people judge appearances.'], initial_verb=True))
+        self.assertFalse(example_attests('in style', ['ins style']))
+        self.assertFalse(example_attests('interested party', ['All interested parties are invited.']))
+        self.assertTrue(example_attests('interested party', ['All interested parties are invited.'],
+                        {'party': {'parties'}}))
+        self.assertFalse(example_attests('interested group', ['All interested groups are invited.'],
+                         {'party': {'parties'}}))
+
+    def test_source_choice_evidence_builds_basic_forms_only(self):
+        records = [
+            ['party', '<span class="entryhead"><span class="hwd">party</span><span class="pos">noun</span><span class="inflections">(plural parties)</span></span><span class="def">a group</span>'],
+            ['interested', '<span class="sense"><span class="lexunit">interested party/group</span><span class="def">someone affected by the result</span><span class="example">All interested parties are invited.</span></span>'],
+            ['tar', '<span class="sense"><span class="lexunit">be/get tarred with the same brush</span><span class="def">considered to have the same faults</span><span class="example">She was tarred with the same brush.</span></span>'],
+            ['itself', '<span class="sense"><span class="lexunit">be patience/kindness/simplicity etc itself</span><span class="def">be very patient, kind or simple</span><span class="example">Loading it is simplicity itself.</span></span>'],
+            ['go', '<span class="entryhead"><span class="hwd">go</span><span class="pos">verb</span></span><span class="sense"><span class="lexunit">go to show/prove/indicate etc something</span><span class="def">help to prove something</span><span class="example">It goes to show how people judge appearances.</span></span>'],
+            ['show', '<span class="entryhead"><span class="hwd">show</span><span class="pos">verb</span></span><span class="def">demonstrate</span>'],
+            ['prove', '<span class="entryhead"><span class="hwd">prove</span><span class="pos">verb</span></span><span class="def">demonstrate truth</span>'],
+            ['indicate', '<span class="entryhead"><span class="hwd">indicate</span><span class="pos">verb</span></span><span class="def">show</span>'],
+            ['swing', '<span class="phrvbentry"><span class="phrvbhwd">swing around/round</span><span class="def">turn something around</span><span class="example">He swung the boat around.</span></span>'],
+        ]
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t); src = root/'input.jsonl'; db = root/'source.sqlite'
+            src.write_text(''.join(json.dumps(x)+'\n' for x in records), encoding='utf8')
+            extract(src, db, cache=True); supplement_sources(src, db, cache=True)
+            report = assemble(db, root, 'test')
+            with zipfile.ZipFile(report['package']) as z:
+                rows = {r[0]: r for n in z.namelist() if n.startswith('term_bank_')
+                        for r in json.loads(z.read(n))}
+            for key in ['interested party', 'tarred with the same brush', 'simplicity itself',
+                        'go to show', 'swing around', 'swing round']:
+                self.assertIn(key, rows)
+            for key in ['interested parties', 'is simplicity itself', 'was tarred with the same brush',
+                        'interested group', 'kindness itself', 'get tarred with the same brush',
+                        'prove something', 'prove sth']:
+                self.assertNotIn(key, rows)
+
+    def test_declared_plural_evidence_stays_with_its_own_noun_head(self):
+        def span(cls, text): return {'data': {'class': 'l6p-'+cls}, 'content': text}
+        body = span('entryhead', [span('hwd', 'party'), span('pos', 'noun'),
+                                  span('inflections', '(plural parties)')])
+        self.assertEqual(declared_plural_forms(body, 'party'), {'parties'})
+        self.assertEqual(declared_plural_forms(body, 'group'), set())
+        body['content'][1] = span('pos', 'verb')
+        self.assertEqual(declared_plural_forms(body, 'party'), set())
+
     def test_same_spelling_senses_and_existing_lookup_targets_are_preserved(self):
         records = [
             ['put out', '<span class="entryhead"><span class="hwd">put out</span><span class="pos">adjective</span></span><span class="def">upset or offended</span>'],
@@ -126,6 +180,9 @@ class PhraseBuildTests(unittest.TestCase):
             {'rise from the dead','come back from the dead','return from the dead'})
         self.assertEqual(resolve('get to like/know/understand somebody'),
             {'get to like somebody','get to know somebody','get to understand somebody'})
+        lexicon.update({w:{'verb'} for w in ['show','prove','indicate']})
+        self.assertEqual(resolve('go to show/prove/indicate etc something'),
+            {'go to show something','go to prove something','go to indicate something'})
         self.assertEqual(resolve('be/go/keep on at somebody'),
             {'be on at somebody','go on at somebody','keep on at somebody'})
 

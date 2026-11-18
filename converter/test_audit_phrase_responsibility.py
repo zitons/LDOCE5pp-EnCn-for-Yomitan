@@ -1,9 +1,15 @@
 """Guard the boundary between finite lookup heads and unsupported deletion."""
 import unittest
-from phrase_lookup_heads import entrances, usable, collect_heads
+from phrase_lookup_heads import entrances, usable, collect_heads, phrasal_particle_choices
 
 
 class LookupHeadBoundaryTest(unittest.TestCase):
+    def test_explicit_phrasal_particle_choices_do_not_guess_other_slashes(self):
+        self.assertEqual(phrasal_particle_choices('swing around/round'), {'swing around','swing round'})
+        self.assertEqual(phrasal_particle_choices('fire/police station'), set())
+        self.assertEqual(phrasal_particle_choices('go to show/prove'), set())
+        self.assertEqual(phrasal_particle_choices('turn somebody out/in'), set())
+
     def accepted(self, text):
         return {k for k in entrances(text) if usable(k)}
 

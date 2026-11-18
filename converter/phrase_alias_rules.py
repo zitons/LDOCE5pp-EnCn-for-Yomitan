@@ -174,6 +174,12 @@ def grouped_slashes(form, lexicon, preferred):
                         (first[0]=='be' and len(first)==2) or
                         (first[-2]=='to' and 'verb' in lexicon.get(first[-1].casefold(),set()))):
                     prefix=first[:-1];alternatives=[first[-1:],*middle,last[:i]]
+        # An explicit etc boundary must not drop a shared infinitive prefix:
+        # go to show/prove/indicate etc something -> go to prove something.
+        if (alternatives is not None and not prefix and len(first)>1 and
+                first[-2]=='to' and 'verb' in lexicon.get(first[-1].casefold(),set()) and
+                all(len(x)==1 for x in [*middle,last])):
+            prefix=first[:-1];alternatives=[first[-1:],*middle,last]
     if alternatives is None:return set()
     return {clean(' '.join(prefix+a+tail)) for a in alternatives if a}
 

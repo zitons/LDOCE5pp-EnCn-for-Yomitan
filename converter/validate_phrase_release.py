@@ -30,12 +30,21 @@ def main():
         ap.add_argument('--'+name, required=True)
     ap.add_argument('--source-body-repair', action='store_true',
                     help='Allow additive source senses and alias targets; verify source completeness instead')
+    ap.add_argument('--source-choice-repair', action='store_true',
+                    help='Allow source-example-validated choice keys, with identical source bodies')
+    ap.add_argument('--removed-targets', help='Explicit reviewed ledger of incorrect target pairs to remove')
     args = ap.parse_args()
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     b5, a5, _ = read_package(args.baseline)
     b6, a6, rules6 = read_package(args.candidate)
     old_content, new_content = content_rows(args.baseline), content_rows(args.candidate)
+    corrections = json.loads(Path(args.removed_targets).read_text(encoding='utf8')) if args.removed_targets else []
+    allowed_removed = {(r['alias'],r['target']) for r in corrections}
+    actual_removed = {(key,target) for key,targets in a5.items() for target in targets-a6.get(key,set())}
+    assert actual_removed == allowed_removed, ('Unreviewed target loss or unapplied correction',actual_removed,allowed_removed)
+    if args.source_choice_repair:
+        assert old_content == new_content, 'Source-choice repair must not change source content'
     if args.source_body_repair:
         assert old_content.keys() == new_content.keys(), 'Source inventory changed'
         for key, old in old_content.items():
@@ -44,7 +53,7 @@ def main():
                 assert old[5] == new[5], ('Source context changed', key)
             assert set(definitions(old[5])) <= set(definitions(new[5])), ('Lost definitions', key)
             assert set(examples(old[5])) <= set(examples(new[5])), ('Lost examples', key)
-        assert all(v <= a6.get(k, set()) for k, v in a5.items()), 'Retained alias target lost'
+        assert set(a5) <= set(a6), 'Retained alias key lost'
         db = sqlite3.connect('file:'+str(Path(args.candidate).parent/'extraction.sqlite')+'?mode=ro', uri=True)
         source_checks = 0
         actual_definitions = {key: set(definitions(row[5])) for key,row in b6.items()}
@@ -65,6 +74,10 @@ def main():
     expected_rules = {'initial_be_lookup_head', 'terminal_object_lookup_head',
                       'explicit_separable_phrasal_head', 'source_lowercase_lookup',
                       'source_phrasal_argument_lookup_head'}
+    if args.source_choice_repair:
+        expected_rules.update({'source_notation', 'source_example_attested',
+                               'source_validated_local_choices', 'omit_etc_marker',
+                               'placeholder_abbreviation', 'source_phrasal_particle_choices'})
     assert all(rules6[k] <= expected_rules for k in added)
     assert all(target in b6 for targets in a6.values() for target in targets), 'Alias chain or missing target'
     cases = [(g, dict(query=k, span=k, targets=sorted(ts))) for g, mapping in (
@@ -99,6 +112,7 @@ def main():
               'source_occurrences_checked': source_checks if args.source_body_repair else None,
               'retained_aliases_checked': len(a5), 'added_aliases': len(added),
               'expanded_aliases': sum(a6[k] != v for k,v in a5.items()),
+              'reviewed_removed_target_pairs': corrections,
               'scan': 'max(128, query length), full span and frozen canonical target',
               'native': dict(counts), 'misses': misses, 'controls': controls}
     (out/'release_checks.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf8')

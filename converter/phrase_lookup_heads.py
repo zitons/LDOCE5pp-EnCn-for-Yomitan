@@ -42,6 +42,15 @@ def phrasal_lookup_head(raw):
     return core if usable(core) else None
 
 
+def phrasal_particle_choices(raw):
+    """An original two-token phrvbhwd with an explicit closed particle list."""
+    words = raw.split()
+    if len(words) != 2 or not re.fullmatch(r'\w+', words[0]): return set()
+    choices = words[1].split('/')
+    if len(choices) < 2 or not set(choices) <= PARTICLES: return set()
+    return {words[0]+' '+choice for choice in choices}
+
+
 def collect_heads(spellings, separable_sources, existing):
     """Return key -> target -> source-rule set, preserving existing content."""
     folded = {' '.join(k.casefold().split()) for k in existing}
