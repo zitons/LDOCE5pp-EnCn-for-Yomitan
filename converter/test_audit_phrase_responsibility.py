@@ -1,6 +1,6 @@
 """Guard the boundary between finite lookup heads and unsupported deletion."""
 import unittest
-from audit_phrase_responsibility import entrances, usable
+from phrase_lookup_heads import entrances, usable, collect_heads
 
 
 class LookupHeadBoundaryTest(unittest.TestCase):
@@ -19,6 +19,16 @@ class LookupHeadBoundaryTest(unittest.TestCase):
         self.assertEqual(self.accepted('be out of your depth'), {'out of your depth'})
         self.assertEqual(self.accepted('be attached to something'),
                          {'be attached to', 'attached to'})
+
+    def test_source_marker_and_content_collisions_control_internal_omission(self):
+        heads = collect_heads(
+            [('kick somebody out', {'kick somebody out'}),
+             ('put something at something', {'put something at something'})],
+            [('kick somebody \u2194 out', 'kick somebody out'),
+             ('endear somebody \u2194 to', 'endear somebody to somebody')], set())
+        self.assertEqual(set(heads), {'kick out'})
+        self.assertEqual(heads['kick out']['kick somebody out'], {'explicit_separable_phrasal_head'})
+        self.assertFalse(collect_heads([], [('kick somebody \u2194 out', 'kick somebody out')], {'KICK OUT'}))
 
 
 if __name__ == '__main__':

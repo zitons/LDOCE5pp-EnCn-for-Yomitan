@@ -13,29 +13,7 @@ from pathlib import Path
 
 from benchmark_phrase_versions import norm, sha, judge
 from probe_fushidicts import Engine
-
-
-OBJECT = r"(?:somebody|something|someone|sb|sth)(?:/(?:somebody|something|someone|sb|sth))*"
-PARTICLES = set('away back down in off on out over round through together up aside apart along around under'.split())
-
-
-def entrances(form):
-    """Drop a terminal object slot or leading copula; keep all lexical words."""
-    result = defaultdict(set)
-    forms = {form}
-    if form.startswith('be '):
-        forms.add(form[3:])
-        result[form[3:]].add('initial_be_lookup_head')
-    for value in forms:
-        shorter = re.sub(r'\s+' + OBJECT + r'$', '', value)
-        if shorter != value:
-            result[shorter].add('terminal_object_lookup_head')
-    return result
-
-
-def usable(key):
-    return len(key.split()) >= 2 and not re.search(
-        r'[/()\u2194]|\b(?:somebody|something|someone|sb|sth|etc|oneself)\b', key, re.I)
+from phrase_lookup_heads import entrances, usable, separable_head
 
 
 def main():
@@ -82,9 +60,9 @@ def main():
     for row in csv.DictReader(evidence_path.open(encoding='utf-8-sig'), delimiter='\t'):
         if row['source'] != 'phrvbhwd':
             continue
-        m = re.fullmatch(r'(\w+)\s+' + OBJECT + r'\s*\u2194\s*(\w+)', row['phrase_raw'])
-        if m and m[2] in PARTICLES:
-            add(m[1]+' '+m[2], row['phrase'], 'explicit_separable_phrasal_head', row['phrase_raw'])
+        key = separable_head(row['phrase_raw'])
+        if key:
+            add(key, row['phrase'], 'explicit_separable_phrasal_head', row['phrase_raw'])
     # Lowercase lookup variants are orthographic indexing, not pronoun expansion.
     for key, targets in list(evidence.items()):
         if key.lower() != key:

@@ -24,6 +24,8 @@ def main():
     ap=argparse.ArgumentParser()
     for arg in ('r4','r5','dll','transforms','output'):ap.add_argument('--'+arg,required=True)
     ap.add_argument('--sample',type=int,default=2000)
+    ap.add_argument('--seed',type=int,default=20261118)
+    ap.add_argument('--exclude-sample',help='Frozen sample JSON to exclude for a disjoint holdout')
     ap.add_argument('--allow-source-definition-coverage',action='store_true')
     args=ap.parse_args();out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     pool=[];seen=set();defsets={}
@@ -48,9 +50,15 @@ def main():
             allowed[key].update(norm(k) for k in containing)
             if len(containing)>1: evidence[key]={'accepted_ids':sorted(containing),'required_complete_definition_set':sorted(defs)}
         (out/'definition_coverage_evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf8')
-    sample=random.Random(20261118).sample(sorted(pool,key=lambda c:(c['target'],c['example'])),min(args.sample,len(pool)))
+    excluded=set()
+    if args.exclude_sample:
+        excluded={(c['target'],c['example']) for c in json.loads(Path(args.exclude_sample).read_text(encoding='utf8'))}
+    eligible=[c for c in pool if (c['target'],c['example']) not in excluded]
+    sample=random.Random(args.seed).sample(sorted(eligible,key=lambda c:(c['target'],c['example'])),min(args.sample,len(eligible)))
     (out/'sample.json').write_text(json.dumps(sample,ensure_ascii=False,indent=2),encoding='utf8')
-    manifest={'population':len(pool),'sample':len(sample),'seed':20261118,
+    manifest={'population':len(pool),'eligible_population':len(eligible),'excluded_examples':len(pool)-len(eligible),
+              'excluded_sample_sha256':sha(args.exclude_sample) if args.exclude_sample else None,
+              'sample':len(sample),'seed':args.seed,
               'selection':'Uniform sample of deduplicated (source canonical ID, source example), independent of alias matching.',
               'criterion':'At any word start, retrieve the canonical ID or explicitly enabled source-definition-covered phrase ID, with >=2 matched words. No gold exact span annotation.',
               'definition_coverage_enabled':args.allow_source_definition_coverage,

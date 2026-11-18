@@ -18,6 +18,7 @@ from urllib.parse import quote, unquote
 
 from lxml import html
 from phrase_alias_rules import enhanced_variants, full_alternatives, orthographic_forms
+from phrase_lookup_heads import collect_heads
 from supplement_phrase_sources import supplement_sources
 
 PRIMARY = {'phrasetext', 'lexunit', 'phrvbhwd', 'phrv'}
@@ -574,6 +575,15 @@ def assemble(db_path, out, revision):
             for value in candidates:
                 if value in phrase_set or value in contexts:continue
                 aliases[value][target].add(rule);supplemental[rule]+=1
+    # Finite source lookup entrances: retain lexical words and internal slots.
+    # Feed only the original spellings once, not recursively generated heads.
+    spellings = [(p, {p}) for p in phrases] + [(a, set(ts)) for a, ts in aliases.items()]
+    separable_sources = [(raw, raw_to_canonical[raw]) for (raw,) in db.execute(
+        "SELECT DISTINCT phrase FROM occurrences WHERE kind='phrvbhwd'")]
+    heads = collect_heads(spellings, separable_sources, phrase_set | set(contexts) | set(aliases))
+    for key, targets in heads.items():
+        for target, rules in targets.items():
+            aliases[key][target].update(rules)
     # A source context must not be shadowed by a query alias.
     for key in set(aliases)&set(contexts):del aliases[key]
     # fushidicts uses case-sensitive index keys and lowercased query variants.
@@ -628,7 +638,7 @@ def assemble(db_path, out, revision):
         automatic_inflection_aliases=False,
         finite_pronoun_aliases=False,
         supplemental_source_forms=dict(supplemental),
-        policy='Only LDOCE6 source data. Explicit optional groups, unambiguous source alternatives, example-attested choices, marked separability, declared spellings/plurals and lowercase lookup. No pronoun enumeration, automatic inflections, unmarked object/copula deletion or hyphen-to-space synthesis.')
+        policy='Only LDOCE6 source data. Explicit optional groups, unambiguous source alternatives, example-attested choices, marked separability, declared spellings/plurals and lowercase lookup. Bounded heads omit only initial be, terminal generic object slots, or marked separable phrasal objects. No pronoun enumeration, automatic inflections, arbitrary internal argument deletion or hyphen-to-space synthesis.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     db.close()
     print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)
