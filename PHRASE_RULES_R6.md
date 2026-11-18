@@ -1,5 +1,7 @@
 # r6：修复查词入口，规则与别名清单
 
+> 后续诊断：r6 还存在同名正文未合并、入口漏接义项的问题；“与 r5 正文一致”并不能证明原文义项完整。put out、cut up、lie down 三处已定位，正式 r6 尚未修正。最新责任划分和已验证案例见 [PHRASE_REMAINING_DIAGNOSIS.md](PHRASE_REMAINING_DIAGNOSIS.md)。下文记录的是 r6 当时的变更与测试结果，不应当作所有问题均已解决。
+
 这次补回的是有原文依据的通用查词入口，没有恢复代词和词形的穷举。像 `kick out` 只需建一个入口，`kicked him out` 交给现有 fushi 处理。r4、r5 原包保持冻结，r6 单独生成。
 
 成品：[LDOCE6_Phrases_2026.11.18-r6.zip](/C:/workspace/ldoce/yomitan_phrases/2026.11.18-r6/LDOCE6_Phrases_2026.11.18-r6.zip)。

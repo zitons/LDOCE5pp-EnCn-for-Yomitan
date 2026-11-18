@@ -1,0 +1,33 @@
+{
+  "already_correct_in_r6": {
+    "9": "put something away 已含进球义，符合 put the ball away。",
+    "809": "set the wheels in motion 已表示启动过程，与本句及括号中的解释一致。",
+    "899": "vote somebody out 已表示投票使人下台，符合 voted out of office。",
+    "923": "cut something off 已含切断义，符合手指被切断。",
+    "979": "knock something down 已含降价义，符合炉子从800降到550。",
+    "1601": "put something off 已含推迟义，符合比赛延期。"
+  },
+  "scoring_only": {
+    "408": "red-handed 可以直接查到，因测试要求至少两个词而被排除。"
+  },
+  "dictionary_can_address": {
+    "35": "put off 只连到部分子条目；补接原文总条目后可显示让乘客下车义。",
+    "384": "put off 只连到部分子条目；补接总条目后可显示干扰注意力义。",
+    "588": "put on 只连到部分子条目；总条目包含本句施加限制的义项。",
+    "830": "put out 规范卡片优先选择同名形容词独立条目，未并入原文16义项的短语动词正文。",
+    "864": "与35相同原句、不同目标词条；入口补接总条目后可显示让乘客下车义。",
+    "1061": "原文短语动词标题的固定部分是 drag out of，保留 out of 而省去通用宾语槽可查回。",
+    "1159": "cut off 未连接包含打断说话义的总条目，补接后可查回。",
+    "1365": "sweep away 未连接包含情绪影响义的总条目，补接后可查回。",
+    "1385": "put on 未连接含加税义的总条目，补接后可查回。",
+    "1487": "补接 knock somebody/something back 后已返回含花费很多钱义的卡片；原评分又因目标释义只有7词而不允许其他卡片代替。",
+    "1607": "put on 未连接含施加影响义的总条目，补接后可查回。",
+    "1727": "put away 未连接包含关进监狱义的总条目，补接后可查回。",
+    "1786": "see out 未连接包含送人出门义的总条目，补接后可查回。"
+  },
+  "matching_still_unresolved": {
+    "1387": "give yourself over to 与 give over、be given over to 不是同一义项；需识别反身代词并保留完整固定部分。",
+    "1702": "model yourself on 与 be modelled on 不是同一义项；需识别反身代词和动词词形。"
+  },
+  "notice": "人工对照本句义项，不等于通用词义消歧规则。诊断试验不修改正式r6；其余147个原引擎候选尚未全部逐条定位。"
+}
