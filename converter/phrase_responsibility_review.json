@@ -1,0 +1,37 @@
+{
+  "sample_seed": 20261118,
+  "dictionary_notation_candidates": {
+    "527": "be/get tarred with the same brush",
+    "1402": "interested party/group",
+    "1994": "be patience/kindness/simplicity etc itself"
+  },
+  "scoring_or_sense_review": {
+    "9": "put somebody/something away",
+    "35": "put somebody off (something)",
+    "384": "put somebody/something off",
+    "408": "red-handed",
+    "588": "put somebody/something on",
+    "809": "set/put something in motion",
+    "830": "put somebody out",
+    "864": "put somebody/something off",
+    "899": "vote somebody into/out of power/office/parliament etc",
+    "923": "cut somebody/something off",
+    "979": "knock somebody/something down",
+    "1061": "drag something out of somebody",
+    "1159": "cut somebody/something off",
+    "1365": "sweep somebody/something away",
+    "1385": "put somebody/something on",
+    "1387": "give yourself over to something",
+    "1487": "knock somebody back something",
+    "1601": "put somebody/something off",
+    "1607": "put something on something",
+    "1702": "model yourself on somebody",
+    "1727": "put somebody/something away",
+    "1786": "see somebody/something out"
+  },
+  "notes": {
+    "dictionary_notation_candidates": "Explicit source alternatives remain unresolved by the three tested entrance rules. These 3 cases are candidates, not measured dictionary rescues.",
+    "scoring_or_sense_review": "Other phrase entries are already retrieved and need sentence-level sense review. Case 408 has a one-word source lemma excluded by the benchmark's two-word minimum. These 22 cases are not counted as engine defects.",
+    "remaining": "The remaining 154 residual cases are engine capability candidates: argument/possessive/reflexive slots, head inflection in fixed phrases, or passive argument patterns. This is triage, not proof that an engine patch can solve them all. Source notation and engine capability may both be needed."
+  }
+}
