@@ -19,8 +19,6 @@ from urllib.parse import quote, unquote
 from lxml import html
 from phrase_alias_rules import enhanced_variants, full_alternatives, orthographic_forms
 from supplement_phrase_sources import supplement_sources
-from phrase_pronoun_aliases import apply_pronouns
-from apply_phrase_inflections import apply_inflections
 
 PRIMARY = {'phrasetext', 'lexunit', 'phrvbhwd', 'phrv'}
 EXTRACTION_VERSION = 2
@@ -215,8 +213,8 @@ def alias_variants(phrase, max_variants=64):
     """Conservative local alternatives, never arbitrary multiword slash scope.
 
     This function proposes candidates. Assembly validates lexical choices
-    against LDOCE6 parts of speech or source examples. Object omission has a
-    separate, deliberately limited rule for established lexical entries.
+    against explicit notation or source examples. Unmarked grammatical
+    constituents are never omitted.
     """
     result={phrase: {'original'}}
     review=[]
@@ -323,43 +321,6 @@ def safe_slash_slots(phrase):
     return bool(groups) and all(any(g<=f for f in families) for g in groups)
 
 
-def lexical_slash_slots(phrase, lexicon, preferred=None):
-    """Accept local choices with compatible parts of speech in LDOCE6 itself.
-
-    This does not infer multiword slash boundaries. Regular noun plurals are
-    reduced only for POS lookup, never exported as extra inflected query keys.
-    """
-    groups=[t.strip('(),.!?').split('/') for t in phrase.split() if '/' in t]
-    tokens=phrase.split()
-    articles={'a','an','the'}
-    if any(set(w.casefold() for w in g)&articles and not set(w.casefold() for w in g)<=articles for g in groups):
-        return False
-    def tags(word):
-        word=word.casefold()
-        result={preferred[word]} if preferred is not None and word in preferred else set(lexicon.get(word,set()))
-        if word.endswith('s') and not word.endswith('ss'):
-            roots={word[:-1]}
-            if word.endswith('es'): roots.add(word[:-2])
-            if word.endswith('ies'): roots.add(word[:-3]+'y')
-            for root in roots:
-                if 'noun' in lexicon.get(root,set()) and (preferred is None or preferred.get(root)=='noun'):
-                    result.add('noun')
-        return result
-    # Agreement and multiword boundaries cannot be inferred from POS alone.
-    for i,left in enumerate(tokens):
-        if '/' not in left: continue
-        alts=left.strip('(),.!?').casefold().split('/')
-        if not all('noun' in tags(w) for w in alts): continue
-        following=tokens[i+1].strip('(),.!?').casefold() if i+1<len(tokens) else ''
-        if 'noun' in tags(following): return False  # hat/football boots
-        plurals={w.endswith('s') and ('noun' in lexicon.get(w[:-1],set()) or
-                 w.endswith('ies') and 'noun' in lexicon.get(w[:-3]+'y',set())) for w in alts}
-        if len(plurals)>1 and (i and tokens[i-1].casefold() in {'a','an'} or
-                              'verb' in tags(following)):
-            return False  # your heart/thoughts go ... needs agreement, not concatenation
-    return bool(groups) and all(bool(set.intersection(*(tags(w) for w in group))) for group in groups)
-
-
 def explicit_parenthesized_choices(phrase):
     found=False
     for group in re.findall(r'\(([^()]*)\)',phrase):
@@ -367,17 +328,6 @@ def explicit_parenthesized_choices(phrase):
             phrase=phrase.replace('('+group+')','')
             found=True
     return found and '/' not in phrase
-
-
-def omit_terminal_object(phrase):
-    if re.search(r'[/()↔]',phrase): return None
-    match=re.search(r'\s+(?:somebody|something|sb|sth)$',phrase)
-    if not match: return None
-    base=clean(phrase[:match.start()]); words=base.split()
-    preps={'to','of','for','with','from','in','on','at','into','onto','against','about',
-           'over','under','through','around','round','upon','between','among','without','beyond'}
-    fixed=[w for w in words if w not in {'somebody','something','sb','sth'}]
-    return base if len(words)>=3 and len(fixed)>=2 and words[-1] in preps else None
 
 
 def initial_forms(word):
@@ -581,35 +531,23 @@ def assemble(db_path, out, revision):
     collisions=[]
     for phrase in phrases:
         variants,reasons=alias_variants(phrase)
-        accepted={phrase}
-        pos_compatible=lexical_slash_slots(phrase,lexicon,preferred) if '/' in phrase else False
         explicit_choices=explicit_parenthesized_choices(phrase)
         for raw in identities[phrase]:
             if raw!=phrase: variants.setdefault(raw,set()).add('source_separability_notation')
         review.extend((phrase,r) for r in reasons)
         for alias,rules in variants.items():
-            if '/' in phrase and '/' not in alias and not safe_slash_slots(phrase) and not pos_compatible and not explicit_choices:
+            if '/' in phrase and '/' not in alias and not safe_slash_slots(phrase) and not explicit_choices:
                 if not example_attests(alias,canonical[phrase]['example_texts']):
                     review.append((phrase,'unattested_slash_candidate: '+alias)); continue
                 rules.add('source_example_attested')
-            elif '/' in phrase and '/' not in alias and pos_compatible:
-                rules.add('source_pos_compatible')
             elif '/' in phrase and '/' not in alias and explicit_choices:
                 rules.add('source_parenthesized_choices')
             if alias in phrase_set or alias in contexts:
                 collisions.append((alias,phrase,'existing_content_wins')); continue
             aliases[alias][phrase].update(rules)
-            accepted.add(alias)
-        if canonical[phrase]['definitions'] and canonical[phrase]['kinds'] & {'key','lexunit'}:
-            # Only explicit lexical entries get this limited prefix lookup.
-            # Never strip objects from a generic bare phrasal-verb pattern.
-            for form in accepted:
-                base=omit_terminal_object(form)
-                if base and base not in phrase_set and base not in contexts:
-                    aliases[base][phrase].add('terminal_object_placeholder_omitted')
         def simple(form):
             proposed,_=alias_variants(form)
-            safe=safe_slash_slots(form) or lexical_slash_slots(form,lexicon,preferred) or explicit_parenthesized_choices(form)
+            safe=safe_slash_slots(form) or explicit_parenthesized_choices(form)
             return {a for a in proposed if '/' not in a and
                     ('/' not in form or safe or example_attests(a,canonical[phrase]['example_texts']))}
         for side in full_alternatives(phrase):
@@ -636,12 +574,10 @@ def assemble(db_path, out, revision):
             for value in candidates:
                 if value in phrase_set or value in contexts:continue
                 aliases[value][target].add(rule);supplemental[rule]+=1
-    pronoun_stats=apply_pronouns(phrase_set,aliases,contexts)
-    inflection_stats=apply_inflections(db,phrase_set,aliases,preferred)
     # A source context must not be shadowed by a query alias.
     for key in set(aliases)&set(contexts):del aliases[key]
     # fushidicts uses case-sensitive index keys and lowercased query variants.
-    # Lowercase keys let inflected lowercase input reach capitalized lemmas.
+    # Lowercase keys let lowercase input reach capitalized source lemmas.
     for alias,targets in list(aliases.items()):
         lower=alias.lower()
         if lower!=alias and lower not in phrase_set and lower not in contexts:
@@ -689,11 +625,10 @@ def assemble(db_path, out, revision):
         rows=len(rows),package=str(package.resolve()),bytes=package.stat().st_size,
         sha256=hashlib.sha256(package.read_bytes()).hexdigest(),
         alias_rules=dict(Counter(rule for targets in aliases.values() for rules in targets.values() for rule in rules)),
-        automatic_inflection_aliases=True,
-        inflection_generation=dict(inflection_stats),
-        finite_pronoun_generation=dict(pronoun_stats),
+        automatic_inflection_aliases=False,
+        finite_pronoun_aliases=False,
         supplemental_source_forms=dict(supplemental),
-        policy='Only LDOCE6 source data; no LDOCE5++ input to extraction or alias generation. Source choice groups, separability, spelling, explicit pronoun slots (including the generic possessive your) and POS-constrained inflections become direct canonical aliases. Dictionary notation is never inflected; arbitrary names and numeric ranges are not enumerated.')
+        policy='Only LDOCE6 source data. Explicit optional groups, unambiguous source alternatives, example-attested choices, marked separability, declared spellings/plurals and lowercase lookup. No pronoun enumeration, automatic inflections, unmarked object/copula deletion or hyphen-to-space synthesis.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     db.close()
     print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)

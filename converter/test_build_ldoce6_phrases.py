@@ -7,12 +7,35 @@ from pathlib import Path
 
 from lxml import html
 from build_ldoce6_phrases import (alias_variants, assemble, extract, sc, scope_for, example_attests,
-    plain, lexical_slash_slots, omit_terminal_object, suppress_repeated_heading,explicit_parenthesized_choices)
+    plain, suppress_repeated_heading,explicit_parenthesized_choices)
 from phrase_alias_rules import enhanced_variants, full_alternatives, grouped_slashes, optional_forms
 from supplement_phrase_sources import supplement_sources
 
 
 class PhraseBuildTests(unittest.TestCase):
+    def test_no_guessed_inflections_pronouns_or_unmarked_omissions(self):
+        records = [
+            ['give', '<span class="entryhead"><span class="hwd">give</span><span class="pos">verb</span><span class="pasttense">gave</span></span><span class="sense"><span class="lexunit">give somebody a hand</span><span class="def">help someone</span></span>'],
+            ['be', '<span class="sense"><span class="lexunit">be to do something</span><span class="def">an arrangement</span></span>'],
+            ['endear', '<span class="sense"><span class="lexunit">endear somebody to somebody</span><span class="def">make someone liked</span></span>'],
+            ['re-form', '<span class="entryhead"><span class="hwd">re-form</span><span class="pos">verb</span></span><span class="def">form again</span>'],
+            ['Diana, Princess of Wales', '<span class="entryhead"><span class="hwd">Diana, Princess of Wales</span><span class="lexvar">Princess Di, Princess Diana, Lady Di</span><span class="lexvar">Lady Diana</span></span><span class="def">a princess</span>'],
+        ]
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t); src=root/'input.jsonl'; db=root/'extraction.sqlite'
+            src.write_text(''.join(json.dumps(x)+'\n' for x in records),encoding='utf8')
+            extract(src,db,cache=True); supplemental=supplement_sources(src,db,cache=True)
+            report=assemble(db,root,'test')
+            with zipfile.ZipFile(report['package']) as z:
+                rows={r[0]:r for n in z.namelist() if n.startswith('term_bank_') for r in json.loads(z.read(n))}
+            for key in ['give him a hand','gave somebody a hand','give a hand','being to do something',
+                        'to do something','endear to','re form','Princess Di, Princess Diana, Lady Di']:
+                self.assertNotIn(key,rows,key)
+            for key in ['give somebody a hand','give sb a hand','be to do something','re-form','Lady Diana']:
+                self.assertIn(key,rows,key)
+            self.assertFalse(report['automatic_inflection_aliases'])
+            self.assertEqual(supplemental['counts']['ambiguous_declared_form_skipped'],1)
+
     def test_complete_slash_alternatives_preserve_phrase_boundaries(self):
         self.assertEqual(full_alternatives('make up your mind/make your mind up'),
                          {'make up your mind', 'make your mind up'})
@@ -28,7 +51,7 @@ class PhraseBuildTests(unittest.TestCase):
     def test_source_separable_slots_do_not_need_all_surface_objects(self):
         aliases,_=enhanced_variants('pen somebody/something up/in',
             ['pen somebody/something ↔ up/in'],{}, {},[],lambda s:[],example_attests)
-        for key in ['pen up','pen in','pen up somebody','pen somebody in','pen in sth']:
+        for key in ['pen up somebody','pen somebody in','pen in sth']:
             self.assertIn(key,aliases)
         self.assertNotIn('pen him in',aliases)  # Runtime supplies actual objects.
 
@@ -43,7 +66,7 @@ class PhraseBuildTests(unittest.TestCase):
             report=assemble(db,root,'test')
             with zipfile.ZipFile(report['package']) as z:
                 rows={r[0]:r for n in z.namelist() if n.startswith('term_bank_') for r in json.loads(z.read(n))}
-            self.assertEqual(rows['self explanatory'][5],[['self-explanatory',['redirect']]])
+            self.assertNotIn('self explanatory',rows)
             self.assertEqual(rows['a level'][5],[['A level',['redirect']]])
             self.assertEqual(rows['courts martial'][5],[['court martial',['redirect']]])
             self.assertNotIn('a levels',rows)
@@ -87,14 +110,16 @@ class PhraseBuildTests(unittest.TestCase):
         aliases,_=enhanced_variants('bring somebody down',['bring somebody ↔ down'],{}, {},[],lambda s:[],example_attests)
         self.assertIn('bring down somebody',aliases)
         self.assertIn('bring down sb',aliases)
-        self.assertIn('bring down',aliases)
+        self.assertNotIn('bring down',aliases)
         aliases,_=enhanced_variants('be at your wits’ end!',['be at your wits’ end!'],{}, {},[],lambda s:[],example_attests)
-        self.assertIn("at your wits' end",aliases)
+        self.assertIn("be at your wits' end",aliases)
         self.assertNotIn("at wits' end",aliases)
         aliases,_=enhanced_variants('hang by a thread',['hang by a thread'],{}, {},[],lambda s:[],example_attests)
         self.assertNotIn('hanging by a thread',aliases)
         aliases,_=enhanced_variants('Dylan, Bob',['Dylan, Bob'],{}, {},[],lambda s:[],example_attests)
-        self.assertIn('Bob Dylan',aliases)
+        self.assertNotIn('Bob Dylan',aliases)
+        aliases,_=enhanced_variants('Daily Mirror, The',['Daily Mirror, The'],{}, {},[],lambda s:[],example_attests)
+        self.assertIn('The Daily Mirror',aliases)
 
     def test_headword_not_duplicated_and_metadata_has_real_separators(self):
         source=html.fromstring('''<span class="entryhead"><span class="hwd">abandon</span><span
@@ -109,22 +134,14 @@ class PhraseBuildTests(unittest.TestCase):
         self.assertEqual(homnum['style']['verticalAlign'],'super')
         self.assertNotIn('abandon',plain(suppress_repeated_heading(body,'abandon')))
 
-    def test_source_pos_choices_and_limited_placeholder_omission(self):
-        lexicon={'criticism':{'noun'},'charge':{'noun','verb'},'accusation':{'noun'},
-                 'have':{'verb'},'know':{'verb'},'boy':{'noun'},'clever':{'adjective'}}
-        self.assertTrue(lexical_slash_slots('answer criticism/charges/accusations etc',lexicon))
-        self.assertTrue(lexical_slash_slots('have/know all the answers',lexicon))
-        self.assertFalse(lexical_slash_slots("there's a good boy/clever dog etc",lexicon))
+    def test_explicit_choices_and_required_constituents(self):
         self.assertTrue(explicit_parenthesized_choices("(hard/hot/close) on somebody's heels"))
         self.assertFalse(explicit_parenthesized_choices('(have a look/take a look)'))
-        self.assertEqual(omit_terminal_object('abandon yourself to something'),'abandon yourself to')
-        self.assertEqual(omit_terminal_object('be hard on sb'),'be hard on')
-        self.assertIsNone(omit_terminal_object('take something'))
-        self.assertIsNone(omit_terminal_object('give somebody something'))
-        self.assertFalse(lexical_slash_slots('hang up your hat/football boots',{'hat':{'noun'},'football':{'noun'},'boots':{'noun'}}))
-        self.assertFalse(lexical_slash_slots('hang up your hat/football boots',{'hat':{'noun'},'football':{'noun'},'boot':{'noun'}}))
-        self.assertFalse(lexical_slash_slots('your heart/thoughts go out',{'heart':{'noun'},'thought':{'noun'},'go':{'verb'}}))
-        self.assertFalse(lexical_slash_slots('bring charges/a lawsuit',{'charge':{'noun'},'a':{'noun','determiner'}}))
+        for phrase,bad in [('endear somebody to somebody','endear to'),
+                           ("a word in somebody's ear",'a word in ear'),
+                           ('be hard on somebody','hard on somebody')]:
+            aliases,_=enhanced_variants(phrase,[phrase],{}, {},[],lambda s:[],example_attests)
+            self.assertNotIn(bad,aliases)
 
     def test_hang_uses_its_own_sense_and_preserves_subsenses(self):
         source=html.fromstring('''<div><span class="sense"><span class="sensenum">8</span>

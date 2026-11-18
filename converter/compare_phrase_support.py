@@ -87,6 +87,7 @@ def main():
     ap.add_argument('--ldoce6',required=True); ap.add_argument('--ldoce5',required=True)
     ap.add_argument('-o','--output',required=True)
     ap.add_argument('--previous',help='Previous LDOCE6 package whose useful query keys must all survive')
+    ap.add_argument('--allow-query-removals',action='store_true',help='Audit deliberate removal of unsafe aliases; still record every lost query')
     args=ap.parse_args(); out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
     d6=load(args.ldoce6,True); d5=load(args.ldoce5)
     report={'normalization':'casefold and whitespace only; punctuation/parentheses retained for literal query support',
@@ -122,7 +123,9 @@ def main():
                      scope='Query support only; not a linguistic correctness proof for every alias.')
         (out.parent/'upgrade_report.json').write_text(json.dumps(upgrade,ensure_ascii=False,indent=2),encoding='utf8')
         (out.parent/'added_multiword_queries.txt').write_text(''.join(k+'\n' for k in sorted(allq-oldq)),encoding='utf8')
-        assert not lost, {'lost_previous_queries':lost}
+        (out.parent/'removed_multiword_queries.txt').write_text(''.join(k+'\n' for k in lost),encoding='utf8')
+        if not args.allow_query_removals:
+            assert not lost, {'lost_previous_queries':lost}
     # Literal queries useful to an end user, verified against package rows.
     probes=['hang by a thread','hanging by a thread','abandon yourself to something','abandon yourself to sth',
             'answer criticism','answer charges',"hot on somebody's heels","on sb's heels",'camping equipment']

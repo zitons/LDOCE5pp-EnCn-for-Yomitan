@@ -35,8 +35,6 @@ def orthographic_forms(form):
     variants={straight}
     for s in list(variants):
         variants.add(s.rstrip(' !?.…'))
-    # A spaced spelling is useful even when the source uses a hyphen.
-    variants.update(re.sub(r'(?<=\w)-(?=\w)',' ',s) for s in list(variants))
     return {clean(s) for s in variants if s.strip()}
 
 
@@ -194,7 +192,10 @@ def enhanced_variants(phrase, raw_forms, lexicon, preferred, examples, simple, a
             proposals=simple(form)
             grouped=grouped_slashes(form,lexicon,preferred)
             for candidate in grouped:
-                add(candidate,'grouped_multiword_alternatives');resolved.add(candidate)
+                if attests(candidate, examples):
+                    add(candidate,'source_example_attested');resolved.add(candidate)
+                else:
+                    review.append('unattested_grouped_candidate: '+candidate)
             for candidate in proposals:
                 if not re.search(r'[/()]',candidate):
                     add(candidate,'source_validated_local_choices');resolved.add(candidate)
@@ -205,7 +206,7 @@ def enhanced_variants(phrase, raw_forms, lexicon, preferred, examples, simple, a
         if '↔' not in raw:continue
         forms=optional_forms(raw)
         for form in forms:
-            candidates={form}|set(simple(form))|grouped_slashes(form,lexicon,preferred)|separable_forms(form)
+            candidates={form}|set(simple(form))|separable_forms(form)
             for candidate in candidates:
                 if candidate in separable_forms(form):
                     original_order=clean(candidate.replace('↔',' '))
@@ -218,27 +219,15 @@ def enhanced_variants(phrase, raw_forms, lexicon, preferred, examples, simple, a
                     else:value=clean(m[1]+' '+m[3]+' '+m[2])
                     resolved.add(value)
                     add(value,'source_separable_object_position')
-    # Source keys such as 'Smith, John' and 'X, the' explicitly encode order.
-    if phrase.count(',')==1 and not re.search(r'[/()\d]|\betc\b',phrase) and (phrase[0].isupper() or phrase.rsplit(',',1)[1].strip().casefold()=='the'):
+    # Only an explicitly trailing article is an unambiguous indexing order.
+    # A capitalized comma can also belong to a title; do not guess name order.
+    if phrase.count(',')==1 and not re.search(r'[/()\d]|\betc\b',phrase) and phrase.rsplit(',',1)[1].strip().casefold() in {'a','an','the'}:
         left,right=phrase.split(',',1)
         if re.fullmatch(r"[\w .'’-]+",left) and re.fullmatch(r"[\w .'’-]+",right.strip()):
             value=clean(right+' '+left);resolved.add(value);add(value,'source_comma_order')
     for form in sorted(resolved):
         if re.search(r'[/()↔]',form):continue
         forms={form}
-        if form.startswith('be ') and len(form.split())>=3:
-            value=form[3:];forms.add(value);add(value,'lookup_omit_initial_be')
-        for value in list(forms):
-            # Query shorthand only: retain lexical possessives and 'your'.
-            # Do not delete sentence subjects or infinitive-clause subjects.
-            pattern=rf"\b{OBJECT}(?:'s)?\b"
-            base=re.sub(rf'\s+{OBJECT}$','',value)
-            if not re.match(rf'^{OBJECT}\b',value) and not re.search(rf'\b(?:for|of)\s+{OBJECT}\s+to\b',value):
-                base=re.sub(pattern,'',base)
-            base=clean(base)
-            fixed=[w for w in base.split() if w not in {'a','an','the','to','of','in','on','at','for','with','by'}]
-            if base!=value and len(base.split())>=2 and len(fixed)>=1:
-                forms.add(base);add(base,'lookup_omit_generic_object')
         for value in list(forms):
             short=re.sub(r"\bsome(?:body|thing)(?:'s)?\b",lambda m: m[0].replace('somebody','sb').replace('something','sth'),value)
             forms.add(short)

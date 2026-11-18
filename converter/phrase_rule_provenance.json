@@ -52,5 +52,16 @@
     "Resolve independent separable object/particle choices and repeated-head whole phrase alternatives; retain uncertain notation for review.",
     "Keep lowercased lookup aliases for source-capitalized spellings. Every generated alias resolves directly to existing source content.",
     "Validate native full-input hits against the actual source canonical target; mark absent source patterns separately from engine failures."
+  ],
+  "active_revision": "r5",
+  "active_policy": [
+    "Historical r3/r4 rule lists below are superseded by this policy.",
+    "No generated pronoun, possessive or reflexive substitutions; no automatic verb/noun inflections.",
+    "No unmarked deletion of objects, possessives or initial be; retain explicit optional brackets.",
+    "No synthesized hyphen-to-space spellings; preserve declared source spelling variants.",
+    "No comma-list or slash-list guessing for declared forms; record ambiguous source forms for review.",
+    "No POS-only acceptance of slash candidates or guessed inversion of capitalized names.",
+    "Retain bounded explicit notation, full alternatives, source-example-attested choices, marked separability, trailing-article indexing and lowercase lookup.",
+    "Report unhandled input patterns together for engine work rather than enumerate surface spellings."
   ]
 }

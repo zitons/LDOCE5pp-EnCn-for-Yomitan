@@ -39,28 +39,24 @@ def main():
     assert 'hang by a thread' in entries
     assert alias_count==report['alias_entries']
     assert actual<=rowkeys,{'source_queries_missing':sorted(actual-rowkeys)}
-    assert report['automatic_inflection_aliases'] is True
-    assert 'hanging by a thread' in rowkeys
+    assert report['automatic_inflection_aliases'] is False
+    assert report['finite_pronoun_aliases'] is False
+    assert 'hanging by a thread' not in rowkeys
     assert "there's a good boy dog" not in rowkeys,'Ambiguous slash scope created a bogus phrase'
     assert 'hang up your hat boots etc' not in rowkeys,'Multiword slash boundary was lost'
     assert 'work up an appetite thirst sweat' not in rowkeys,'Repeated-article alternative was incorrectly expanded'
-    positive=['bring down somebody',"can't stand the sight of somebody",'hate the sight of something',
-              'hang up your football boots','work up a thirst','rise from the dead','come back from the dead',
-              'get to know somebody','Bob Dylan','fire engines','give him a hand','gave him a hand',
-              'self explanatory','pen up','penned him in','put her foot down','hung by a thread',
-              'leaps of faith','ordering me out','tie-ins','make up his mind','made up her mind',
-              'bowled him a googly','kicked him out']
-    negative=["be sick can't hate the sight of",'be sick of stand the sight of','run h the length of something',
-              'str walk the length of sth','come back the dead','a shot across a warning shot',
-              'bring down on somebody something','go somebody','worked permit','gived him a hand',
-              'orderring me out','kick out them','givens to doing','leaping of faith',
-              'give us a digs','thanking you letter','pulled sb in','be him']
+    positive=['hang by a thread','abandon ship','give (somebody) a hand',
+              'self-explanatory','make up your mind','make your mind up']
+    negative=['give him a hand','gave him a hand','how can me do something',
+              'being to do something','endear to','a word in ear','re form',
+              'Princess Di, Princess Diana, Lady Di','worked permit','gived him a hand',
+              'kick out them','givens to doing','leaping of faith']
     assert all(k in rowkeys for k in positive),[k for k in positive if k not in rowkeys]
     assert not any(k in rowkeys for k in negative),[k for k in negative if k in rowkeys]
     entries=dict(sorted(entries.items(),key=lambda item:(item[0]!='abandon',item[0])))
     (out/'render_samples.json').write_text(json.dumps({'entries':entries,'css':css},ensure_ascii=False),encoding='utf-8')
     audit=dict(source_counts=extract,baseline_exact_match=bool(args.baseline),all_source_queries_retained=True,
-               automatic_inflection_aliases=True,ambiguous_slash_negative_control=True,
+               automatic_inflection_aliases=False,ambiguous_slash_negative_control=True,
                enhanced_positive_controls=positive,enhanced_negative_controls=negative,duplicate_keys=0,
                duplicate_sequences=0,package_rows=len(rowkeys),render_samples=len(entries))
     (out/'coverage_audit.json').write_text(json.dumps(audit,ensure_ascii=False,indent=2),encoding='utf-8')

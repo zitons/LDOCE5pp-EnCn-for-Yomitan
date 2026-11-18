@@ -22,7 +22,7 @@ def compound_key(key):
 
 def supplement_sources(path,db_path,cache=False):
     db=sqlite3.connect(db_path);db.row_factory=sqlite3.Row
-    counts=Counter();examples=[]
+    counts=Counter();examples=[];rejected=[]
     db.executescript('''CREATE TABLE IF NOT EXISTS source_query_forms(
       alias TEXT,target TEXT,rule TEXT,record_id INTEGER,xpath TEXT,
       PRIMARY KEY(alias,target,rule,record_id));
@@ -105,7 +105,12 @@ def supplement_sources(path,db_path,cache=False):
                             label.drop_tree()
                     value=clean(copy.text_content()).strip(' ,;')
                     values=[value]
-                    if ', ' in value and ',' not in key and not value[0].isupper():values=value.split(', ')
+                    # Commas may mean a list, an inverted name or a literal title.
+                    # Preserve separate source nodes; never guess string boundaries.
+                    if re.search(r'[,/]|\bor\b',value):
+                        counts['ambiguous_declared_form_skipped']+=1
+                        rejected.append([value,key,rule])
+                        continue
                     for alias in values:
                         alias=clean(alias)
                         if not alias or alias==key or alias.startswith('-') or len(alias)>160:continue
@@ -117,4 +122,4 @@ def supplement_sources(path,db_path,cache=False):
         if rid%5000==0:print(f'supplemented through source record {rid:,}',flush=True)
     db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)',('supplemental_sources_version','2'))
     db.commit();db.close()
-    return {'counts':dict(counts),'examples':examples,'policy':'Source compound headwords and explicit entry-head variants/plurals only; no automatic inflections.'}
+    return {'counts':dict(counts),'examples':examples,'ambiguous_forms_for_review':rejected,'policy':'Source compound headwords and explicit entry-head variants/plurals only; no automatic inflections.'}

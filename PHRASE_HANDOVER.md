@@ -1,63 +1,58 @@
-# 交接：短语提取（LDOCE6 英英版 ↔ LDOCE5++）
+# 交接：LDOCE6 短语词典
 
-> 更新于 2026-11-18。工程根目录 `C:\workspace\ldoce`；实现工作区 `_tmp\ldoce6-phrases-work`，分支 `feat/ldoce6-phrases`。下列产物路径相对工程根目录。
+> 更新于 2026-11-18。当前采用 r5，r4 因机械展开被撤回。r4 的格式检查通过不代表语言正确；不要再将其 28 万新增入口作为覆盖改进成果。
 
-## r4 已完成验收
+工程根目录 `C:\workspace\ldoce`；实施工作区 `_tmp\ldoce6-phrases-work`，分支 `feat/ldoce6-phrases`。以下产物相对工程根目录。
 
-r4 已完成交付验收。独立从 52,745 条源记录重新提取、补充并构建，解压后的 42 个包成员与交付包逐字节一致；ZIP 时间戳导致容器 SHA 不同。复建证据见 `yomitan_phrases/2026.11.18-r4/rebuild_verification.json`。
+## r5：只保留可靠且通用的来源规则
 
-- 成品：[LDOCE6_Phrases_2026.11.18-r4.zip](yomitan_phrases/2026.11.18-r4/LDOCE6_Phrases_2026.11.18-r4.zip)，12,796,579 字节。
-- SHA256：`d42a44f54c6559d5d6857ebba2e13df3605563b5f1b7b14039d4cb87f2b2ee96`。
-- 32,889 个规范短语、7,346 个来源上下文、340,366 个别名键，共 380,601 行。别名/目标共 345,879 对，5,231 个别名有多个目标。
-- 大小写/空白规范化并排除来源上下文后，多词查询键 357,131；较 r3 的 71,426 新增 285,705，旧查询丢失 0。
-- 与 5++ 比较新增覆盖 5,132 个查询，5++ 独有从 21,660 降为 16,528。这是查询键覆盖，不是释义覆盖率或语言学正确率。
+用户要求：不可靠的机械修改去掉；Fushi 无法处理的输入集中汇报，不再穷举实际代词和词形去绕过引擎限制。
 
-## 实现与用户约束
+已移除：
 
-只使用 LDOCE6 生成内容和别名，5++ 仅用于离线研究与比较。保留源释义和原入口，别名直接跳转到已有目标；不能因为 Fushi 能还原某输入就省略有价值的词典入口。
+- 代词、所有格、反身代词枚举，以及与动词词形的交叉组合；相关生成模块已删除。
+- 自动动词变形、推测名词复数。源明确声明的复数/拼写仍保留。
+- 未标可选的宾语、所有格、首部 be 删除，包括 r3 遗留规则。
+- 一律连字符转空格、只凭词性相同批准斜杠组合、仅凭大写逗号猜人名倒序。
+- 将逗号/斜杠混合的声明变体直接当作完整入口。14 个有歧义的源声明另列待审，不猜其边界。
 
-1. 补源 entryhead 明确变体、复数和连字符复合词；剔除 at-link popup 后取元数据，防止其他词条污染。
-2. 根据完整词头及所在义项的同形异义词性限制动词词形、可数名词复数。源明确词形优先，不机械拼接未知不规则过去式。
-3. 补有限人称、物称、所有格和反身代词入口，也包括泛指 your（如 put her foot down）。这取代 r3 完全保留 your 的政策；不穷举任意名字或名词短语。
-4. 补可分动词独立宾语/小品词选项、重复首词的整句斜杠备选，以及大写源词头的小写查询入口。
-5. 不对 sb/sth、未解析斜杠等词典记号机械变形。5,311 条待审查记录保留在 review.tsv；不声称每条别名已逐条语言学审核。
+保留：原始短语和释义；明确括号可选项、可判定的源斜杠选项、源例句支持的备选、↔ 标明的可分结构、源明确声明的独立变体/复数、sb/sth 记号缩写、标点编码规范化、明确后置冠词索引及小写查询键。未解决的词典记号保留原文并列入 review.tsv。
 
-## 已完成检查
+## 成品与验证
 
-- 27 项回归测试通过，覆盖完整斜杠备选、词性约束、错误词形和 popup 污染控制。
-- 核心提取与原清单完全一致，所有源查询保留，键与序列无重复。
-- 官方 Yomitan Schema 全部 380,601 行通过；54,488 条内部链接无无效目标或重定向链。
-- 实际 StructuredContentGenerator 渲染 13 个样例通过：[render_samples.html](yomitan_phrases/2026.11.18-r4/render_samples.html)。本轮未启动 Flutter UI。
-- 原版 fushidicts 复测：2,353 个复数查询在扫描长度 16 / 128 时完整目标命中 2,048 / 2,340；57 个可分动词查询为 19 / 32。
-- 54 个典型案例中有 52 个源规范目标有效，16 / 128 时命中 22 / 34，2 例缺少完整源模式。固定探针不是全词典覆盖率，扫描长度不代表所有 UI 默认配置。
+- [LDOCE6_Phrases_2026.11.18-r5.zip](yomitan_phrases/2026.11.18-r5/LDOCE6_Phrases_2026.11.18-r5.zip)，10,234,140 字节。
+- SHA256：`47c780943de1b542551decc0a9c2f8119d10c79752b905f3743f465d5bc2ebfa`。
+- 32,889 个规范短语、7,346 个来源上下文、33,912 个别名，共 74,147 行。493 个别名有多个源目标，不强行选择单一义项。
+- 规范短语清单、释义/例句数量、来源父词条与 r4 完全一致；别名从 340,366 减至 33,912。
+- 规范化多词查询键为 55,079，较 r4 有意删除 302,052 个；移除记录见 removed_multiword_queries.txt。不以查询数量作为质量指标。
+- 11 项当前回归测试通过。已删除专门验证被撤销枚举逻辑的旧测试；新增整个构建流程的禁止生成测试。
+- 全部 74,147 行官方 Schema 通过、54,488 条内部链接无无效目标或重定向链、13 个实际生成器渲染样例通过。
+- 复用已验证的源提取数据库，再重读完整源缓存重建声明变体；未重新下载源数据。
+- 2,353 个复数查询在扫描长度 16 / 128 时命中 2,048 / 2,340，与 r4 相同；57 个可分查询为 15 / 25。
+- 54 个探针中 52 个规范目标有效，128 时 11 个命中、41 个未命中，另 2 个源模式缺失。未命中者集中列于 [FUSHI_QUERY_GAPS.md](FUSHI_QUERY_GAPS.md)。未修改 Fushi 或发布远端包。
 
-旧会话的 32/54 更正为 34/54：两例 take … by surprise 应对比源规范目标 take somebody/something by surprise，旧探针错用了查询别名。这次修正判定，包内容未改变。
+报告目录：`yomitan_phrases/2026.11.18-r5/`。主要报告为 build_report.json、cleanup_audit.json、coverage_audit.json、upgrade_report.json、comparison/support_report.json、supplemental_source_report.json、engine_gaps/gap_probes.json、coverage_report.json。review.tsv 中 11,441 条是待审记录，不是确定错误条目数。
 
-18 个剩余引擎候选及源范围问题见 [FUSHI_QUERY_GAPS.md](FUSHI_QUERY_GAPS.md)。未修改 Fushi、未发 PR、未发布远端包。
+## 复跑
 
-## 报告与复跑
-
-报告位于 `yomitan_phrases/2026.11.18-r4/`：build_report.json、coverage_audit.json、upgrade_report.json、comparison/support_report.json、coverage_report.json、engine_gaps/gap_probes.json、engine_gaps/remaining_for_engine.tsv、official_schema_LDOCE6_Phrases_2026.11.18-r4_d42a44f5.json。aliases.tsv 逐条记录目标/规则，evidence.tsv 保留源证据。
-
-以下 PowerShell 命令在实施工作区运行；根目录还有无关工作，不能一并覆盖或提交。
+在实施工作区运行：
 
 ```powershell
 $r = 'C:\workspace\ldoce'
 $py = "$r\venv\Scripts\python.exe"
-$out = "$r\yomitan_phrases\2026.11.18-r4"
-$pkg = "$out\LDOCE6_Phrases_2026.11.18-r4.zip"
-# 全量构建；复用现有提取可加 --reuse-extraction。
-& $py -X utf8 converter/build_ldoce6_phrases.py -i "$r\_tmp\phrase_audit\records.jsonl" --cache -o $out --revision 2026.11.18-r4 --supplement-sources
+$out = "$r\yomitan_phrases\2026.11.18-r5"
+$pkg = "$out\LDOCE6_Phrases_2026.11.18-r5.zip"
+# 完整构建；已有 extraction.sqlite 可加 --reuse-extraction。
+& $py -X utf8 converter/build_ldoce6_phrases.py -i "$r\_tmp\phrase_audit\records.jsonl" --cache -o $out --revision 2026.11.18-r5 --supplement-sources
 & $py -X utf8 -m unittest discover -s converter -p 'test_*phrase*.py'
 & $py -X utf8 converter/audit_ldoce6_phrase_build.py $out --baseline "$r\_tmp\phrase_audit\core_all_comparison.tsv"
-& $py -X utf8 converter/compare_phrase_support.py --ldoce6 $pkg --ldoce5 "$r\yomitan_full\LDOCE5pp_Yomitan_2026.10.03.zip" --previous "$r\yomitan_phrases\2026.11.18-r3\LDOCE6_Phrases_2026.11.18-r3.zip" -o "$out\comparison"
+& $py -X utf8 converter/compare_phrase_support.py --ldoce6 $pkg --ldoce5 "$r\yomitan_full\LDOCE5pp_Yomitan_2026.10.03.zip" --previous "$r\yomitan_phrases\2026.11.18-r4\LDOCE6_Phrases_2026.11.18-r4.zip" --allow-query-removals -o "$out\comparison"
 node "$r\converter\audit_2026_09_14\official_schema.mjs" $pkg
 node converter/render_phrase_samples.mjs $r "$out\render_samples.json" "$out\render_samples.html"
-& $py -X utf8 converter/audit_fushidicts_coverage.py --dll "$r\_tmp\fushi-engine-build\Release\fushidicts_ffi.dll" --package $pkg --output "$r\_tmp\fushi-engine-probes\r4" --transforms 'C:\workspace\fushi\fushi\assets\transforms' --queries "$r\yomitan_phrases\2026.11.18-r3\remaining_5_only.tsv"
-& $py -X utf8 converter/audit_fushidicts_gaps.py --revision r4 --package $pkg --import-dir "$r\_tmp\fushi-engine-probes\r4" --output "$out\engine_gaps" --dll "$r\_tmp\fushi-engine-build\Release\fushidicts_ffi.dll" --transforms 'C:\workspace\fushi\fushi\assets\transforms'
+& $py -X utf8 converter/audit_fushidicts_gaps.py --revision r5 --package $pkg --import-dir "$r\_tmp\fushi-engine-probes\r5" --output "$out\engine_gaps" --dll "$r\_tmp\fushi-engine-build\Release\fushidicts_ffi.dll" --transforms 'C:\workspace\fushi\fushi\assets\transforms'
 ```
 
-ZIP 时间戳影响重建 SHA，应比较解压后的成员内容。r3 历史提交为 `8c4b17e`。
+当前构建有意撤除不可靠旧入口，因此比较时明确传 --allow-query-removals，并输出完整删除清单。全部原始源查询仍要求保留。根目录其他工作不得一并覆盖或提交。
 
 以下 r3 及早期内容保留作历史记录；发生冲突时，以本节最新用户约束和最终验收结果为准。
 

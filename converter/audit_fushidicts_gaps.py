@@ -70,7 +70,7 @@ ARBITRARY = ('Mary', 'John', 'your brother', 'the man in red', 'the thief', 'the
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--revision', default='r3')
+    ap.add_argument('--revision', required=True)
     ap.add_argument('--package', required=True)
     ap.add_argument('--import-dir', required=True)
     ap.add_argument('--output', required=True)
@@ -115,14 +115,14 @@ def main():
                                      'full_input_other_phrase_only' if case['full_match_any']['128'] else 'no_generic_slot_substitution')
                 arbitrary = (case['category'] in ('inserted_modifier', 'passive_or_reordered') or any(s in case['input'] for s in ARBITRARY))
                 case['dictionary_scope'] = ('可为这一个固定字面写法增加别名，但无法穷举任意名字或名词短语。'
-                                            if arbitrary else '有限代词或所有格写法可通过明确的词典别名补充；待新包复测。')
+                                            if arbitrary else '不再枚举代词或所有格入口；保留源模式，集中交由引擎匹配处理。')
                 if category == 'head_inflection_without_particle':
-                    case['dictionary_scope'] = '词典内可加动词头的有限实际词形入口；单加原形或代词别名不保证引擎能还原动词头。'
+                    case['dictionary_scope'] = '不再自动生成整条短语的词形别名；需要引擎还原动词头后匹配源模式。'
             source_valid = case['canonical_in_source_phrases'] and case['canonical_direct_full_hit']
             if not source_valid:
                 case['diagnosis'] = 'source_pattern_absent'
                 case['dictionary_scope'] = '完整目标未提取成规范词条，不能据此归因于引擎；需先核对源义项和提取范围。'
-            case['engine_followup_candidate'] = source_valid and not passed and (case['category'] in ('inserted_modifier', 'passive_or_reordered') or any(s in case['input'] for s in ARBITRARY))
+            case['engine_followup_candidate'] = source_valid and not passed
         report = {
             'revision': args.revision,
             'scope': 'Unmodified native DLL, real importer and native lookup; isolated imported phrase dictionary only, no app data or UI.',
