@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from lxml import html
+from phrase_alias_rules import enhanced_variants
 
 PRIMARY = {'phrasetext', 'lexunit', 'phrvbhwd', 'phrv'}
 EXTRACTION_VERSION = 2
@@ -603,6 +604,18 @@ def assemble(db_path, out, revision):
                 base=omit_terminal_object(form)
                 if base and base not in phrase_set and base not in contexts:
                     aliases[base][phrase].add('terminal_object_placeholder_omitted')
+        def simple(form):
+            proposed,_=alias_variants(form)
+            safe=safe_slash_slots(form) or lexical_slash_slots(form,lexicon,preferred) or explicit_parenthesized_choices(form)
+            return {a for a in proposed if '/' not in a and
+                    ('/' not in form or safe or example_attests(a,canonical[phrase]['example_texts']))}
+        enhanced,notes=enhanced_variants(phrase,identities[phrase],lexicon,preferred,
+            canonical[phrase]['example_texts'],simple,example_attests)
+        review.extend((phrase,n) for n in notes)
+        for alias,rules in enhanced.items():
+            if alias in phrase_set or alias in contexts:
+                collisions.append((alias,phrase,'existing_content_wins'));continue
+            aliases[alias][phrase].update(rules)
     available=phrase_set|set(contexts)|set(aliases)
     rows=[]
     for phrase in phrases:
@@ -617,7 +630,7 @@ def assemble(db_path, out, revision):
     title='LDOCE6 English Phrases'
     index={'title':title,'format':3,'revision':revision,'sequenced':True,
            'sourceLanguage':'en','targetLanguage':'en','description':
-           'Source-attested LDOCE6 phrases with local definitions/examples, source contexts and conservative aliases.'}
+           'Source-attested LDOCE6 phrases with local definitions/examples, source contexts and structure-aware query aliases.'}
     package=out/f'LDOCE6_Phrases_{revision}.zip'
     with zipfile.ZipFile(package,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
         z.writestr('index.json',dump(index)); z.writestr('styles.css',CSS)
@@ -643,7 +656,7 @@ def assemble(db_path, out, revision):
         sha256=hashlib.sha256(package.read_bytes()).hexdigest(),
         alias_rules=dict(Counter(rule for targets in aliases.values() for rules in targets.values() for rule in rules)),
         automatic_inflection_aliases=False,
-        policy='Only LDOCE6 source data; no LDOCE5++ input to extraction or alias generation. No arbitrary placeholder omission or numeric expansion.')
+        policy='Only LDOCE6 source data; no LDOCE5++ input to extraction or alias generation. Explicit choice groups, marked separability, orthography and bounded query shorthand; lexical possessives/your retained. No automatic inflections or numeric expansion.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     db.close()
     print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)

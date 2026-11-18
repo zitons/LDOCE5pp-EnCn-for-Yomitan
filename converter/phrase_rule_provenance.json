@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-18",
+  "implementation": "Independent reconstruction and improvement from observed LDOCE5++ source redirects; not the original compiler source.",
+  "upstream_search": {
+    "author_in_local_mdx_description": "Fetched and Edited by Farefear090807; modified by Sunny1; 2022-01-05",
+    "original_compiler_found": false,
+    "inspected_public_sources": [
+      "https://github.com/ciscorn/ldoce5viewer/blob/master/ldoce5viewer/ldoce5/extract.py",
+      "https://github.com/yu7777/mdx_dictionaries_support_FastWordQuery/blob/master/LDOCE5.py",
+      "https://forum.freemdict.com/t/topic/9947"
+    ],
+    "result": "Found viewer/search/format-conversion code and an ACTIV modification discussion, not the author's phrase-alias generator. No code from these projects is incorporated."
+  },
+  "local_source_audit": {
+    "source": "extract/LDOCE5++ V 2-15.mdx.txt",
+    "all_48371_useful_multiword_alias_keys_found_in_source": true,
+    "observational_model_exact_set_reproductions": [
+      {"target": "have/keep your beady eye(s) on somebody/something", "aliases": 40},
+      {"target": "be well/favourably/kindly disposed (to/towards somebody/something)", "aliases": 65},
+      {"target": "be sick of/can't stand/hate the sight of somebody/something", "aliases": 40},
+      {"target": "run/stretch/walk etc the (full) length of something", "aliases": 30}
+    ],
+    "scope": "Four families reproduced exactly; does not establish that all upstream rules have been recovered."
+  },
+  "improvements": [
+    "Treat multiword choices as groups rather than independent slash-bearing tokens.",
+    "Match etc only as a complete marker word, preserving words such as stretch.",
+    "Use LDOCE6 part-of-speech and source-example evidence; retain uncertain notation for review.",
+    "Move generic objects only when the original LDOCE6 separability marker permits it; preserve following prepositional complements.",
+    "Allow bounded query shorthand for initial be and generic objects; retain lexical your and sentence/infinitive subjects.",
+    "Normalize source punctuation/hyphens and explicit comma-order names.",
+    "Do not automatically add past, progressive or plural forms, or invent lexical synonyms."
+  ],
+  "runtime_input": "Only LDOCE6 extraction.sqlite. LDOCE5++ is used exclusively for offline comparison and rule research."
+}

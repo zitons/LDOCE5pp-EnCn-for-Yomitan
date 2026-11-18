@@ -8,9 +8,54 @@ from pathlib import Path
 from lxml import html
 from build_ldoce6_phrases import (alias_variants, assemble, extract, sc, scope_for, example_attests,
     plain, lexical_slash_slots, omit_terminal_object, suppress_repeated_heading,explicit_parenthesized_choices)
+from phrase_alias_rules import enhanced_variants, grouped_slashes, optional_forms
 
 
 class PhraseBuildTests(unittest.TestCase):
+    def test_group_boundaries_and_etc_are_words(self):
+        lexicon={w:{p} for w,p in [('hat','noun'),('football','noun'),('boots','noun'),('briefcase','noun'),
+            ('appetite','noun'),('thirst','noun'),('sweat','noun'),('run','verb'),('stretch','verb'),
+            ('walk','verb'),('hate','verb'),('look','noun'),('take','verb'),('have','verb'),('camping','noun'),
+            ('gear','noun'),('equipment','noun'),('fire','noun'),('police','noun'),('station','noun')]}
+        lexicon.update({w:{'verb'} for w in ['rise','come','return','like','know','understand','get','go','keep']})
+        lexicon['sweat']={'noun','verb'};lexicon['like']={'verb','preposition'}
+        preferred={w:next(iter(ps)) for w,ps in lexicon.items()}
+        preferred['sweat']='verb';preferred['like']='preposition'
+        resolve=lambda s:grouped_slashes(s,lexicon,preferred)
+        self.assertEqual(resolve('hang up your hat/football boots/briefcase etc'),
+            {'hang up your hat','hang up your football boots','hang up your briefcase'})
+        self.assertEqual(resolve('work up an appetite/a thirst/a sweat'),
+            {'work up an appetite','work up a thirst','work up a sweat'})
+        self.assertEqual(resolve("be sick of/can't stand/hate the sight of somebody/something"),
+            {p+' the sight of '+o for p in ['be sick of',"can't stand",'hate'] for o in ['somebody','something']})
+        self.assertEqual(resolve('run/stretch/walk etc the length of something'),
+            {v+' the length of something' for v in ['run','stretch','walk']})
+        self.assertEqual(resolve('have a look/take a look'),{'have a look','take a look'})
+        self.assertFalse(resolve('camping gear/equipment'))
+        self.assertFalse(resolve('fire/police station'))
+        self.assertFalse(resolve('a shot across the bows/a warning shot'))
+        self.assertFalse(resolve('a wide variation/difference/gap etc'))
+        self.assertEqual(resolve('rise/come back/return from the dead'),
+            {'rise from the dead','come back from the dead','return from the dead'})
+        self.assertEqual(resolve('get to like/know/understand somebody'),
+            {'get to like somebody','get to know somebody','get to understand somebody'})
+        self.assertEqual(resolve('be/go/keep on at somebody'),
+            {'be on at somebody','go on at somebody','keep on at somebody'})
+
+    def test_enhanced_lookup_preserves_lexical_words_and_uses_source_marker(self):
+        self.assertEqual(optional_forms('eye(s)'),{'eye','eyes'})
+        aliases,_=enhanced_variants('bring somebody down',['bring somebody ↔ down'],{}, {},[],lambda s:[],example_attests)
+        self.assertIn('bring down somebody',aliases)
+        self.assertIn('bring down sb',aliases)
+        self.assertIn('bring down',aliases)
+        aliases,_=enhanced_variants('be at your wits’ end!',['be at your wits’ end!'],{}, {},[],lambda s:[],example_attests)
+        self.assertIn("at your wits' end",aliases)
+        self.assertNotIn("at wits' end",aliases)
+        aliases,_=enhanced_variants('hang by a thread',['hang by a thread'],{}, {},[],lambda s:[],example_attests)
+        self.assertNotIn('hanging by a thread',aliases)
+        aliases,_=enhanced_variants('Dylan, Bob',['Dylan, Bob'],{}, {},[],lambda s:[],example_attests)
+        self.assertIn('Bob Dylan',aliases)
+
     def test_headword_not_duplicated_and_metadata_has_real_separators(self):
         source=html.fromstring('''<span class="entryhead"><span class="hwd">abandon</span><span
           class="hyphenation frequent">a<span class="hs0"></span>ban<span class="hs0"></span>don</span><span
