@@ -19,6 +19,7 @@ from urllib.parse import quote, unquote
 from lxml import html
 
 PRIMARY = {'phrasetext', 'lexunit', 'phrvbhwd', 'phrv'}
+EXTRACTION_VERSION = 2
 INTERNAL = re.compile(r'^(faq-|guideword$|word-set-|boxes of )', re.I)
 CLASS = "contains(concat(' ',normalize-space(@class),' '),$c)"
 SELECT = html.etree.XPath('//*[' + ' or '.join(
@@ -29,7 +30,8 @@ DROP = {'at-link','buttons','popup-button','arrow','entrymenu','pope_menu',
         'verbtable','collobox','thesbox','thescollobox','chwd'}
 STYLE_CLASSES = ('entryhead','sense','subsense','sensenum','lexunit','phrasetext',
                  'phrvbhwd','example','nodeword','def','defbold','gloss','pos','gram',
-                 'registerlab','geo','collo','propform','colloinexa','signpost','hwd')
+                 'registerlab','geo','collo','propform','colloinexa','signpost','hwd',
+                 'homnum','proncodes','pron','freq','level','ac','gram','inflections')
 
 
 def clean(text):
@@ -62,6 +64,10 @@ def sc(node):
     cls=classes(node)
     if tag in {'script','style','head','link','meta','img','audio','source'} or cls & DROP:
         return ''
+    if 'hyphenation' in cls:
+        parent=node.getparent()
+        if parent is not None and 'entryhead' in classes(parent) and find(parent,'hwd'):
+            return ''  # Source CSS supplies syllable dots; this is not a second headword.
     kids=[]
     if node.text: kids.append(re.sub(r'\s+',' ',node.text))
     for child in node:
@@ -70,8 +76,14 @@ def sc(node):
         if child.tail: kids.append(re.sub(r'\s+',' ',child.tail))
     if tag=='br': return {'tag':'br'}
     if not kids: return ''
+    if 'entryhead' in cls:
+        visible=[v for v in kids if plain(v).strip()]
+        kids=list(itertools.chain.from_iterable(([v,' '] for v in visible)))
+        if kids: kids.pop()
     if tag in {'html','body'}: return kids
     style_cls=next((c for c in STYLE_CLASSES if c in cls),None)
+    if 'homnum' in cls:
+        return element('span',kids,'homnum',style={'verticalAlign':'super','fontSize':'0.75em'})
     if tag=='a':
         href=node.get('href','')
         if href.startswith('entry://'):
@@ -128,7 +140,10 @@ def extract(path, db_path, cache=False, limit=None):
       CREATE TABLE sources(record_id INTEGER PRIMARY KEY, headword TEXT, body TEXT, defs TEXT, examples TEXT);
       CREATE TABLE occurrences(phrase TEXT, record_id INTEGER, parent TEXT, kind TEXT,
         xpath TEXT, sense TEXT, body TEXT, defs TEXT, examples TEXT);
+      CREATE TABLE lexical_pos(word TEXT, pos TEXT, PRIMARY KEY(word,pos));
+      CREATE TABLE metadata(name TEXT PRIMARY KEY, value TEXT);
     ''')
+    db.execute('INSERT INTO metadata VALUES(?,?)',('extraction_version',str(EXTRACTION_VERSION)))
     counts=Counter()
     with db:
         for rid,(key,source) in enumerate(iter_records(path,cache),1):
@@ -166,6 +181,15 @@ def extract(path, db_path, cache=False, limit=None):
             # Popup material was extracted above and is never mixed into a sense.
             for pop in root.xpath('//*[@class="at-link"]'):
                 pop.getparent().remove(pop)
+            for head in find(root,'entryhead'):
+                hwds=find(head,'hwd')
+                if not hwds: continue
+                word=clean(hwds[0].text_content()).casefold()
+                if ' ' in word: continue
+                labels=[p for p in head if 'pos' in classes(p)]
+                for label in labels:
+                    for pos in re.findall(r'\b(?:noun|verb|adjective|adverb|preposition|pronoun|conjunction|determiner|exclamation|modal)\b',label.text_content()):
+                        db.execute('INSERT OR IGNORE INTO lexical_pos VALUES(?,?)',(word,pos))
             main_body=dump(sc(root))
             ds,es=metrics(root)
             db.execute('INSERT INTO sources VALUES(?,?,?,?,?)',(rid,key,main_body,dump(ds),dump(es)))
@@ -186,9 +210,9 @@ PLACEHOLDERS = {'somebody':'sb','something':'sth',"somebody's":"sb's","something
 def alias_variants(phrase, max_variants=64):
     """Conservative local alternatives, never arbitrary multiword slash scope.
 
-    Multiword slash alternatives require attestation as an exact key elsewhere
-    in LDOCE6; this function leaves them in the review queue. Dropping sb/sth
-    objects is intentionally not a rule: it often changes meaning/transitivity.
+    This function proposes candidates. Assembly validates lexical choices
+    against LDOCE6 parts of speech or source examples. Object omission has a
+    separate, deliberately limited rule for established lexical entries.
     """
     result={phrase: {'original'}}
     review=[]
@@ -213,6 +237,8 @@ def alias_variants(phrase, max_variants=64):
     expanded=set(forms)
     for form in sorted(forms):
         tokens=form.split()
+        if any('/' in a and '/' in b for a,b in zip(tokens,tokens[1:])):
+            review.append('multiword_slash_boundary'); continue
         choices=[]
         ambiguous=False
         for token in tokens:
@@ -226,6 +252,7 @@ def alias_variants(phrase, max_variants=64):
             suffix=' '.join(tokens[len(choices)+1:])
             if (any(not a or re.search(r'[\d$£€%()]',a) for a in alts)
                     or any(' ' + a + ' ' in ' ' + prefix + ' ' for a in alts)
+                    or any(' ' + a + ' ' in ' ' + suffix + ' ' for a in alts)
                     or bool(set(prefix.split()) & set(suffix.split()))
                     or 'or' in prefix.split()
                     or (len(tokens)==1 and not all(a in PLACEHOLDERS for a in alts))):
@@ -283,12 +310,70 @@ def link_reference_text(value, target):
 
 
 def safe_slash_slots(phrase):
-    groups=[set(t.strip('(),.!?').split('/')) for t in phrase.split() if '/' in t]
+    groups=[set(t.strip('(),.!?').casefold().split('/')) for t in phrase.split() if '/' in t]
     families=[{'somebody','something',"somebody's","something's"},
               {'him','her','me','us','them','you'}, {'his','her','my','our','their','your','its'},
+              {'i','he','she','it','we','they','you'}, {'a','an','the'},
               {'in','on','at','by','from','with','for','to','into','onto','of','upon'},
               {'can','could','will','would','shall','should','may','might','must'}]
     return bool(groups) and all(any(g<=f for f in families) for g in groups)
+
+
+def lexical_slash_slots(phrase, lexicon, preferred=None):
+    """Accept local choices with compatible parts of speech in LDOCE6 itself.
+
+    This does not infer multiword slash boundaries. Regular noun plurals are
+    reduced only for POS lookup, never exported as extra inflected query keys.
+    """
+    groups=[t.strip('(),.!?').split('/') for t in phrase.split() if '/' in t]
+    tokens=phrase.split()
+    articles={'a','an','the'}
+    if any(set(w.casefold() for w in g)&articles and not set(w.casefold() for w in g)<=articles for g in groups):
+        return False
+    def tags(word):
+        word=word.casefold()
+        result={preferred[word]} if preferred is not None and word in preferred else set(lexicon.get(word,set()))
+        if word.endswith('s') and not word.endswith('ss'):
+            roots={word[:-1]}
+            if word.endswith('es'): roots.add(word[:-2])
+            if word.endswith('ies'): roots.add(word[:-3]+'y')
+            for root in roots:
+                if 'noun' in lexicon.get(root,set()) and (preferred is None or preferred.get(root)=='noun'):
+                    result.add('noun')
+        return result
+    # Agreement and multiword boundaries cannot be inferred from POS alone.
+    for i,left in enumerate(tokens):
+        if '/' not in left: continue
+        alts=left.strip('(),.!?').casefold().split('/')
+        if not all('noun' in tags(w) for w in alts): continue
+        following=tokens[i+1].strip('(),.!?').casefold() if i+1<len(tokens) else ''
+        if 'noun' in tags(following): return False  # hat/football boots
+        plurals={w.endswith('s') and ('noun' in lexicon.get(w[:-1],set()) or
+                 w.endswith('ies') and 'noun' in lexicon.get(w[:-3]+'y',set())) for w in alts}
+        if len(plurals)>1 and (i and tokens[i-1].casefold() in {'a','an'} or
+                              'verb' in tags(following)):
+            return False  # your heart/thoughts go ... needs agreement, not concatenation
+    return bool(groups) and all(bool(set.intersection(*(tags(w) for w in group))) for group in groups)
+
+
+def explicit_parenthesized_choices(phrase):
+    found=False
+    for group in re.findall(r'\(([^()]*)\)',phrase):
+        if '/' in group and not re.search(r'\s|\d',group) and all(group.split('/')):
+            phrase=phrase.replace('('+group+')','')
+            found=True
+    return found and '/' not in phrase
+
+
+def omit_terminal_object(phrase):
+    if re.search(r'[/()↔]',phrase): return None
+    match=re.search(r'\s+(?:somebody|something|sb|sth)$',phrase)
+    if not match: return None
+    base=clean(phrase[:match.start()]); words=base.split()
+    preps={'to','of','for','with','from','in','on','at','into','onto','against','about',
+           'over','under','through','around','round','upon','between','among','without','beyond'}
+    fixed=[w for w in words if w not in {'somebody','something','sb','sth'}]
+    return base if len(words)>=3 and len(fixed)>=2 and words[-1] in preps else None
 
 
 def initial_forms(word):
@@ -350,8 +435,21 @@ def rewrite_links(value, available):
     return value
 
 
+def suppress_repeated_heading(value, phrase):
+    if isinstance(value,list):
+        return [new for v in value if (new:=suppress_repeated_heading(v,phrase))!='']
+    if not isinstance(value,dict): return value
+    labels={'l6p-hwd','l6p-lexunit','l6p-phrasetext','l6p-phrvbhwd'}
+    if value.get('data',{}).get('class') in labels and clean(plain(value).replace('↔',' '))==phrase:
+        return ''
+    value=dict(value)
+    if 'content' in value: value['content']=suppress_repeated_heading(value['content'],phrase)
+    if value.get('data',{}).get('class')=='l6p-entryhead' and not plain(value).strip(): return ''
+    return value
+
+
 CSS='''
-[data-sc-class="l6p-root"] {line-height:1.45;color:var(--text-color,inherit)}
+[data-sc-class="l6p-root"] {line-height:1.45;color:var(--text-color,inherit);overflow-wrap:anywhere}
 [data-sc-class="l6p-title"] {font-size:1.15em;font-weight:bold;margin-bottom:.5em}
 [data-sc-class="l6p-sense"],[data-sc-class="l6p-subsense"] {margin:.4em 0}
 [data-sc-class="l6p-example"] {display:block;font-style:italic;margin:.35em 0 .35em .8em}
@@ -363,7 +461,11 @@ CSS='''
 [data-sc-class="l6p-italic"] {font-style:italic;margin-right:.3em}
 [data-sc-class="l6p-origin"] {font-size:.85em;margin:.5em 0;opacity:.8}
 [data-sc-class="l6p-context"] {margin-top:.6em}
-[data-sc-class="l6p-entryhead"] {font-size:1.05em;margin:.5em 0;font-weight:bold}
+[data-sc-class="l6p-entryhead"] {display:block;font-size:1.05em;margin:.5em 0;font-weight:normal;line-height:1.65}
+[data-sc-class="l6p-proncodes"] {white-space:normal;font-weight:normal;overflow-wrap:anywhere}
+[data-sc-class="l6p-freq"],[data-sc-class="l6p-ac"] {font-size:.8em;border:1px solid currentColor;border-radius:3px;padding:0 .25em}
+[data-sc-class="l6p-level"] {font-size:.9em;letter-spacing:.02em}
+[data-sc-class="l6p-gram"] {font-size:.9em;font-weight:normal}
 '''
 
 
@@ -375,6 +477,12 @@ def write_tsv(path, fields, rows):
 def assemble(db_path, out, revision):
     db=sqlite3.connect(db_path)
     db.row_factory=sqlite3.Row
+    version=db.execute('SELECT value FROM metadata WHERE name=?',('extraction_version',)).fetchone()
+    if not version or int(version[0])!=EXTRACTION_VERSION: raise ValueError('Extraction version changed; rebuild without --reuse-extraction')
+    lexicon=defaultdict(set)
+    preferred={}
+    for word,pos in db.execute('SELECT word,pos FROM lexical_pos ORDER BY rowid'):
+        lexicon[word].add(pos); preferred.setdefault(word,pos)
     raw_phrases=[r[0] for r in db.execute('SELECT DISTINCT phrase FROM occurrences ORDER BY phrase')]
     identities=defaultdict(list)
     for p in raw_phrases: identities[clean(p.replace('↔',' '))].append(p)
@@ -448,14 +556,14 @@ def assemble(db_path, out, revision):
         children.append(element('div',['Source: ',*origin] if origin else 'LDOCE6','origin'))
         canonical[phrase]=dict(content=element('div',children,'root'),parents=parents,
                                definitions=len(seen_defs),examples=len(seen_examples),
-                               status=status,example_texts=seen_examples)
+                               status=status,example_texts=seen_examples,kinds={r['kind'] for r in occurrences})
     contexts={}
     context_queue=sorted(required_sources-phrase_set)
     queued=set(context_queue)
     for parent in context_queue:
         rows=list(db.execute('SELECT * FROM sources WHERE headword=? ORDER BY record_id',(parent,)))
         if not rows: raise ValueError(f'Missing source context: {parent}')
-        children=[element('div',parent,'title')]
+        children=[] if any('"class":"l6p-entryhead"' in r['body'] for r in rows) else [element('div',parent,'title')]
         for r in rows:
             body=json.loads(r['body'])
             children.append(body)
@@ -469,23 +577,38 @@ def assemble(db_path, out, revision):
     collisions=[]
     for phrase in phrases:
         variants,reasons=alias_variants(phrase)
+        accepted={phrase}
+        pos_compatible=lexical_slash_slots(phrase,lexicon,preferred) if '/' in phrase else False
+        explicit_choices=explicit_parenthesized_choices(phrase)
         for raw in identities[phrase]:
             if raw!=phrase: variants.setdefault(raw,set()).add('source_separability_notation')
         review.extend((phrase,r) for r in reasons)
         for alias,rules in variants.items():
-            if '/' in phrase and '/' not in alias and not safe_slash_slots(phrase):
+            if '/' in phrase and '/' not in alias and not safe_slash_slots(phrase) and not pos_compatible and not explicit_choices:
                 if not example_attests(alias,canonical[phrase]['example_texts']):
                     review.append((phrase,'unattested_slash_candidate: '+alias)); continue
                 rules.add('source_example_attested')
+            elif '/' in phrase and '/' not in alias and pos_compatible:
+                rules.add('source_pos_compatible')
+            elif '/' in phrase and '/' not in alias and explicit_choices:
+                rules.add('source_parenthesized_choices')
             if alias in phrase_set or alias in contexts:
                 collisions.append((alias,phrase,'existing_content_wins')); continue
             aliases[alias][phrase].update(rules)
+            accepted.add(alias)
+        if canonical[phrase]['definitions'] and canonical[phrase]['kinds'] & {'key','lexunit'}:
+            # Only explicit lexical entries get this limited prefix lookup.
+            # Never strip objects from a generic bare phrasal-verb pattern.
+            for form in accepted:
+                base=omit_terminal_object(form)
+                if base and base not in phrase_set and base not in contexts:
+                    aliases[base][phrase].add('terminal_object_placeholder_omitted')
     available=phrase_set|set(contexts)|set(aliases)
     rows=[]
     for phrase in phrases:
         tag='phrase-reference' if canonical[phrase]['status'] in {'cross_reference','reference_only'} else 'phrase'
         rows.append([phrase,'',tag,'',10,[{'type':'structured-content','content':
-            rewrite_links(canonical[phrase]['content'],available)}],len(rows),''])
+            rewrite_links(suppress_repeated_heading(canonical[phrase]['content'],phrase),available)}],len(rows),''])
     for parent,content in contexts.items():
         rows.append([parent,'','source-context','',-5,[{'type':'structured-content','content':
             rewrite_links(content,available)}],len(rows),''])
@@ -518,6 +641,8 @@ def assemble(db_path, out, revision):
         ambiguous_alias_entries=sum(len(v)>1 for v in aliases.values()),review_items=len(review),
         rows=len(rows),package=str(package.resolve()),bytes=package.stat().st_size,
         sha256=hashlib.sha256(package.read_bytes()).hexdigest(),
+        alias_rules=dict(Counter(rule for targets in aliases.values() for rules in targets.values() for rule in rules)),
+        automatic_inflection_aliases=False,
         policy='Only LDOCE6 source data; no LDOCE5++ input to extraction or alias generation. No arbitrary placeholder omission or numeric expansion.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     db.close()

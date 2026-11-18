@@ -23,7 +23,8 @@ def main():
         assert actual==baseline,{'missing':sorted(baseline-actual),'extra':sorted(actual-baseline)}
     probes=['hang by a thread','abandon ship','abandon yourself to something','camping gear/equipment',
             'do a 180','be hard on somebody','day after day/year after year etc','a hot date',
-            "(hard/hot/close) on somebody's heels",'answer criticism/charges/accusations etc']
+            "(hard/hot/close) on somebody's heels",'answer criticism/charges/accusations etc',
+            'abandon','answer','act']
     entries={}; rowkeys=set(); sequences=set(); alias_count=0
     with zipfile.ZipFile(report['package']) as z:
         css=z.read('styles.css').decode('utf-8')
@@ -33,12 +34,15 @@ def main():
                 assert r[0] not in rowkeys,('duplicate key',r[0]); rowkeys.add(r[0])
                 assert r[6] not in sequences,('duplicate sequence',r[6]); sequences.add(r[6])
                 if r[4]<-5: alias_count+=1
-                elif r[0] in probes and r[2]=='phrase': entries[r[0]]=r[5][0]['content']
+                elif r[0] in probes and r[2] in {'phrase','source-context'}: entries[r[0]]=r[5][0]['content']
     assert 'hang by a thread' in entries
     assert alias_count==report['alias_entries']
     assert actual<=rowkeys,{'source_queries_missing':sorted(actual-rowkeys)}
     assert 'hanging by a thread' not in rowkeys,'Inflected-form aliases must remain disabled'
     assert "there's a good boy dog" not in rowkeys,'Ambiguous slash scope created a bogus phrase'
+    assert 'hang up your hat boots etc' not in rowkeys,'Multiword slash boundary was lost'
+    assert 'work up an appetite thirst sweat' not in rowkeys,'Repeated-article alternative was incorrectly expanded'
+    entries=dict(sorted(entries.items(),key=lambda item:(item[0]!='abandon',item[0])))
     (out/'render_samples.json').write_text(json.dumps({'entries':entries,'css':css},ensure_ascii=False),encoding='utf-8')
     audit=dict(source_counts=extract,baseline_exact_match=bool(args.baseline),all_source_queries_retained=True,
                automatic_inflection_aliases=False,ambiguous_slash_negative_control=True,duplicate_keys=0,

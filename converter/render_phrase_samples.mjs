@@ -27,6 +27,16 @@ for(const [phrase,content] of Object.entries(input.entries)){
 const hang=results['hang by a thread'];
 if(!hang?.text.includes('very dangerous situation')||!hang.text.includes('his life hanging by a thread'))throw new Error('hang by a thread lost its meaning/example');
 if(!hang.links.some(h=>h.includes('query=hang')))throw new Error('Missing source link');
+if(input.entries.abandon){
+    const heads=[...dom.window.document.querySelectorAll('article[data-phrase="abandon"] [data-sc-class="l6p-entryhead"]')];
+    if(heads.length!==2)throw new Error('abandon lost a homonym');
+    for(const head of heads){
+        if((head.textContent.match(/\babandon\b/g)||[]).length!==1)throw new Error('Duplicate abandon headword');
+        if(head.querySelector('[data-sc-class="l6p-homnum"]')?.style.verticalAlign!=='super')throw new Error('Homonym number not superscript');
+    }
+    if(!heads[0].textContent.replace(/\s+/g,' ').startsWith('abandon 1 /'))throw new Error('Metadata separators lost');
+    results.abandon.heads=heads.map(h=>h.textContent);
+}
 const style=dom.window.document.createElement('style');
 style.textContent=`body{font:16px/1.5 system-ui;margin:2em auto;max-width:850px;padding:1em}article{padding:1em 0;border-bottom:1px solid #aaa}${input.css}`;
 dom.window.document.head.append(style);

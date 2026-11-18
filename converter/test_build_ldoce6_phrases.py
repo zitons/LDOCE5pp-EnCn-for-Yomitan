@@ -6,10 +6,41 @@ import zipfile
 from pathlib import Path
 
 from lxml import html
-from build_ldoce6_phrases import alias_variants, assemble, extract, sc, scope_for, example_attests
+from build_ldoce6_phrases import (alias_variants, assemble, extract, sc, scope_for, example_attests,
+    plain, lexical_slash_slots, omit_terminal_object, suppress_repeated_heading,explicit_parenthesized_choices)
 
 
 class PhraseBuildTests(unittest.TestCase):
+    def test_headword_not_duplicated_and_metadata_has_real_separators(self):
+        source=html.fromstring('''<span class="entryhead"><span class="hwd">abandon</span><span
+          class="hyphenation frequent">a<span class="hs0"></span>ban<span class="hs0"></span>don</span><span
+          class="homnum frequent">1</span><span class="proncodes">/<span class="pron">əˈbændən</span>/</span><span
+          class="level tooltip">●●○</span><span class="freq">W3</span><span class="ac">AWL</span><span
+          class="pos">verb</span><span class="gram">[transitive]</span></span>''')
+        body=sc(source)
+        self.assertEqual(plain(body),'abandon 1 /əˈbændən/ ●●○ W3 AWL verb [transitive]')
+        self.assertEqual(plain(body).count('abandon'),1)
+        homnum=next(x for x in body['content'] if isinstance(x,dict) and x.get('data',{}).get('class')=='l6p-homnum')
+        self.assertEqual(homnum['style']['verticalAlign'],'super')
+        self.assertNotIn('abandon',plain(suppress_repeated_heading(body,'abandon')))
+
+    def test_source_pos_choices_and_limited_placeholder_omission(self):
+        lexicon={'criticism':{'noun'},'charge':{'noun','verb'},'accusation':{'noun'},
+                 'have':{'verb'},'know':{'verb'},'boy':{'noun'},'clever':{'adjective'}}
+        self.assertTrue(lexical_slash_slots('answer criticism/charges/accusations etc',lexicon))
+        self.assertTrue(lexical_slash_slots('have/know all the answers',lexicon))
+        self.assertFalse(lexical_slash_slots("there's a good boy/clever dog etc",lexicon))
+        self.assertTrue(explicit_parenthesized_choices("(hard/hot/close) on somebody's heels"))
+        self.assertFalse(explicit_parenthesized_choices('(have a look/take a look)'))
+        self.assertEqual(omit_terminal_object('abandon yourself to something'),'abandon yourself to')
+        self.assertEqual(omit_terminal_object('be hard on sb'),'be hard on')
+        self.assertIsNone(omit_terminal_object('take something'))
+        self.assertIsNone(omit_terminal_object('give somebody something'))
+        self.assertFalse(lexical_slash_slots('hang up your hat/football boots',{'hat':{'noun'},'football':{'noun'},'boots':{'noun'}}))
+        self.assertFalse(lexical_slash_slots('hang up your hat/football boots',{'hat':{'noun'},'football':{'noun'},'boot':{'noun'}}))
+        self.assertFalse(lexical_slash_slots('your heart/thoughts go out',{'heart':{'noun'},'thought':{'noun'},'go':{'verb'}}))
+        self.assertFalse(lexical_slash_slots('bring charges/a lawsuit',{'charge':{'noun'},'a':{'noun','determiner'}}))
+
     def test_hang_uses_its_own_sense_and_preserves_subsenses(self):
         source=html.fromstring('''<div><span class="sense"><span class="sensenum">8</span>
           <span class="def">a neighbouring, unrelated definition</span></span>
@@ -33,6 +64,11 @@ class PhraseBuildTests(unittest.TestCase):
         aliases,review=alias_variants('have a look/take a look')
         self.assertNotIn('have a take a look',aliases)
         self.assertIn('ambiguous_slash',review)
+        for phrase,bad in [('work up an appetite/a thirst/a sweat','work up an appetite thirst sweat'),
+                           ('hang up your hat/football boots/briefcase etc','hang up your hat boots etc')]:
+            aliases,review=alias_variants(phrase)
+            self.assertNotIn(bad,aliases)
+            self.assertIn('multiword_slash_boundary',review)
         self.assertFalse(example_attests("there's a good boy dog",["There's a good boy!", "There's a clever dog!"]))
         aliases,review=alias_variants('$100/50 a clip')
         self.assertNotIn('$50 a clip',aliases)
