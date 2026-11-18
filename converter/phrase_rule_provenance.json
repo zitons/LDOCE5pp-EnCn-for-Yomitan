@@ -15,10 +15,22 @@
     "source": "extract/LDOCE5++ V 2-15.mdx.txt",
     "all_48371_useful_multiword_alias_keys_found_in_source": true,
     "observational_model_exact_set_reproductions": [
-      {"target": "have/keep your beady eye(s) on somebody/something", "aliases": 40},
-      {"target": "be well/favourably/kindly disposed (to/towards somebody/something)", "aliases": 65},
-      {"target": "be sick of/can't stand/hate the sight of somebody/something", "aliases": 40},
-      {"target": "run/stretch/walk etc the (full) length of something", "aliases": 30}
+      {
+        "target": "have/keep your beady eye(s) on somebody/something",
+        "aliases": 40
+      },
+      {
+        "target": "be well/favourably/kindly disposed (to/towards somebody/something)",
+        "aliases": 65
+      },
+      {
+        "target": "be sick of/can't stand/hate the sight of somebody/something",
+        "aliases": 40
+      },
+      {
+        "target": "run/stretch/walk etc the (full) length of something",
+        "aliases": 30
+      }
     ],
     "scope": "Four families reproduced exactly; does not establish that all upstream rules have been recovered."
   },
@@ -31,5 +43,14 @@
     "Normalize source punctuation/hyphens and explicit comma-order names.",
     "Do not automatically add past, progressive or plural forms, or invent lexical synonyms."
   ],
-  "runtime_input": "Only LDOCE6 extraction.sqlite. LDOCE5++ is used exclusively for offline comparison and rule research."
+  "runtime_input": "Only LDOCE6 extraction.sqlite. LDOCE5++ is used exclusively for offline comparison and rule research.",
+  "improvements_scope": "The improvements list above describes the r3 baseline; r4 additions below supersede its no-inflection and lexical-your policies.",
+  "r4_additions": [
+    "Supplement explicit source head variants, compound keys, grammatical classes and declared inflections after excluding foreign popup entries.",
+    "Expand finite object, possessive and reflexive slots, including generic your; keep arbitrary names and noun phrases out of generated aliases.",
+    "Add first-verb inflections and countable noun plurals constrained by complete head and sense homograph evidence; source forms override regular fallback.",
+    "Resolve independent separable object/particle choices and repeated-head whole phrase alternatives; retain uncertain notation for review.",
+    "Keep lowercased lookup aliases for source-capitalized spellings. Every generated alias resolves directly to existing source content.",
+    "Validate native full-input hits against the actual source canonical target; mark absent source patterns separately from engine failures."
+  ]
 }

@@ -86,6 +86,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--ldoce6',required=True); ap.add_argument('--ldoce5',required=True)
     ap.add_argument('-o','--output',required=True)
+    ap.add_argument('--previous',help='Previous LDOCE6 package whose useful query keys must all survive')
     args=ap.parse_args(); out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
     d6=load(args.ldoce6,True); d5=load(args.ldoce5)
     report={'normalization':'casefold and whitespace only; punctuation/parentheses retained for literal query support',
@@ -108,6 +109,20 @@ def main():
     allq={norm(k) for k in d6['body']|d6['aliases']|d6['references']}
     q5={norm(k) for k in d5['body']|d5['aliases']|d5['references']}
     report['query_overlap']=dict(shared=len(allq&q5),only6=len(allq-q5),only5=len(q5-allq))
+    if args.previous:
+        previous=load(args.previous,True)
+        oldq={norm(k) for k in previous['body']|previous['aliases']|previous['references']}
+        lost=sorted(oldq-allq)
+        upgrade=dict(normalization='casefold and whitespace only; source contexts excluded',
+                     previous_queries=len(oldq),current_queries=len(allq),
+                     added_queries=len(allq-oldq),lost_queries=len(lost),
+                     previous_only5=len(q5-oldq),current_only5=len(q5-allq),
+                     newly_covered_5_queries=len((q5-oldq)&allq),
+                     current_only6=len(allq-q5),current_shared=len(allq&q5),
+                     scope='Query support only; not a linguistic correctness proof for every alias.')
+        (out.parent/'upgrade_report.json').write_text(json.dumps(upgrade,ensure_ascii=False,indent=2),encoding='utf8')
+        (out.parent/'added_multiword_queries.txt').write_text(''.join(k+'\n' for k in sorted(allq-oldq)),encoding='utf8')
+        assert not lost, {'lost_previous_queries':lost}
     # Literal queries useful to an end user, verified against package rows.
     probes=['hang by a thread','hanging by a thread','abandon yourself to something','abandon yourself to sth',
             'answer criticism','answer charges',"hot on somebody's heels","on sb's heels",'camping equipment']

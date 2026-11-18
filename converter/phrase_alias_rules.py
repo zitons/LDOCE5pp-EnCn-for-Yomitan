@@ -40,6 +40,54 @@ def orthographic_forms(form):
     return {clean(s) for s in variants if s.strip()}
 
 
+def separable_forms(raw):
+    """Resolve independent object/particle slots only with an explicit ↔."""
+    if raw.count('↔')!=1:return set()
+    objects=rf"\b{OBJECT}(?:/{OBJECT})+\b"
+    forms={raw}
+    for _ in range(3):
+        expanded=set()
+        for form in forms:
+            m=re.search(objects,form)
+            if m:
+                expanded.update(form[:m.start()]+w+form[m.end():] for w in m[0].split('/'))
+            else:expanded.add(form)
+        forms=expanded
+    particles={'away','back','down','in','off','on','out','over','round','through','together','up','aside','apart','along','around','under'}
+    expanded=set()
+    for form in forms:
+        left,right=form.split('↔');tokens=right.split()
+        if tokens and '/' in tokens[0] and set(tokens[0].split('/'))<=particles:
+            expanded.update(clean(left+' ↔ '+p+' '+' '.join(tokens[1:])) for p in tokens[0].split('/'))
+        else:expanded.add(form)
+    return {f for f in expanded if '/' not in f}
+
+
+def full_alternatives(phrase):
+    """Whole wordings joined by slashes: make up your mind/make your mind up.
+
+    Every side repeats the same first word, which a word-level choice never
+    does (be mad about/for/on somebody has one-word sides).
+    """
+    sides=[];depth=0;start=0
+    for i,ch in enumerate(phrase):
+        if ch=='(':depth+=1
+        elif ch==')':depth-=1
+        elif ch=='/' and depth==0:
+            sides.append(phrase[start:i]);start=i+1
+    sides.append(phrase[start:])
+    if len(sides)<2 or depth:return set()
+    sides=[clean(s) for s in sides]
+    sides[-1]=re.sub(r'\s+etc$','',sides[-1])
+    plain=[re.sub(r'\([^()]*\)','',s).split() for s in sides]
+    if any(len(words)<2 for words in plain):return set()
+    first={words[0].casefold() for words in plain}
+    if len(first)!=1:return set()
+    # be supposed to do/be something: the short side borrows the long one's words.
+    if first<={'be','the','a','an','to','of'} and any(len(words)<3 for words in plain):return set()
+    return set(sides)
+
+
 def grouped_slashes(form, lexicon, preferred):
     """Resolve a whole choice group, preserving multiword alternatives.
 
@@ -157,8 +205,11 @@ def enhanced_variants(phrase, raw_forms, lexicon, preferred, examples, simple, a
         if '↔' not in raw:continue
         forms=optional_forms(raw)
         for form in forms:
-            candidates={form}|set(simple(form))|grouped_slashes(form,lexicon,preferred)
+            candidates={form}|set(simple(form))|grouped_slashes(form,lexicon,preferred)|separable_forms(form)
             for candidate in candidates:
+                if candidate in separable_forms(form):
+                    original_order=clean(candidate.replace('↔',' '))
+                    resolved.add(original_order);add(original_order,'source_separable_independent_slots')
                 m=re.fullmatch(rf'(.+?)\s+({OBJECT})\s*↔\s*(.+)',candidate)
                 if m and not re.search(r'[/()]',candidate):
                     suffix=m[3].split()

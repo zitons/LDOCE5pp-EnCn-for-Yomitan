@@ -8,10 +8,50 @@ from pathlib import Path
 from lxml import html
 from build_ldoce6_phrases import (alias_variants, assemble, extract, sc, scope_for, example_attests,
     plain, lexical_slash_slots, omit_terminal_object, suppress_repeated_heading,explicit_parenthesized_choices)
-from phrase_alias_rules import enhanced_variants, grouped_slashes, optional_forms
+from phrase_alias_rules import enhanced_variants, full_alternatives, grouped_slashes, optional_forms
+from supplement_phrase_sources import supplement_sources
 
 
 class PhraseBuildTests(unittest.TestCase):
+    def test_complete_slash_alternatives_preserve_phrase_boundaries(self):
+        self.assertEqual(full_alternatives('make up your mind/make your mind up'),
+                         {'make up your mind', 'make your mind up'})
+        self.assertEqual(full_alternatives('keep something quiet/keep quiet (about something)'),
+                         {'keep something quiet', 'keep quiet (about something)'})
+        self.assertEqual(full_alternatives('stand firm/stand fast etc'), {'stand firm', 'stand fast'})
+        self.assertEqual(full_alternatives('a shot across the bows/a warning shot (across the bows)'),
+                         {'a shot across the bows', 'a warning shot (across the bows)'})
+        for phrase in ('be mad about/for/on somebody', 'be supposed to do/be something',
+                       'answer criticism/charges/accusations etc'):
+            self.assertFalse(full_alternatives(phrase), phrase)
+
+    def test_source_separable_slots_do_not_need_all_surface_objects(self):
+        aliases,_=enhanced_variants('pen somebody/something up/in',
+            ['pen somebody/something ↔ up/in'],{}, {},[],lambda s:[],example_attests)
+        for key in ['pen up','pen in','pen up somebody','pen somebody in','pen in sth']:
+            self.assertIn(key,aliases)
+        self.assertNotIn('pen him in',aliases)  # Runtime supplies actual objects.
+
+    def test_compounds_case_and_declared_plural_have_source_evidence(self):
+        records=[['self-explanatory','<span class="entryhead"><span class="hwd">self-explanatory</span><span class="orthvar">self‧explanatory</span><span class="buttons"><span class="at-link"><span class="lexvar">unrelated vocabulary</span></span></span></span><span class="def">easy to understand</span>'],
+            ['A level','<span class="entryhead"><span class="hwd">A level</span></span><span class="def">an examination</span>'],
+            ['court martial','<span class="entryhead"><span class="hwd">court martial</span><span class="inflections"><span class="pluralform"><span class="italic">plural </span>courts martial</span></span></span><span class="def">a military court</span>']]
+        with tempfile.TemporaryDirectory() as t:
+            root=Path(t);src=root/'input.jsonl';db=root/'source.sqlite'
+            src.write_text(''.join(json.dumps(x)+'\n' for x in records),encoding='utf8')
+            extract(src,db,cache=True);supplement_sources(src,db,cache=True)
+            report=assemble(db,root,'test')
+            with zipfile.ZipFile(report['package']) as z:
+                rows={r[0]:r for n in z.namelist() if n.startswith('term_bank_') for r in json.loads(z.read(n))}
+            self.assertEqual(rows['self explanatory'][5],[['self-explanatory',['redirect']]])
+            self.assertEqual(rows['a level'][5],[['A level',['redirect']]])
+            self.assertEqual(rows['courts martial'][5],[['court martial',['redirect']]])
+            self.assertNotIn('a levels',rows)
+            self.assertNotIn('explained',rows)
+            self.assertNotIn('unrelated vocabulary',rows)
+            self.assertIn('selfexplanatory',rows)
+            self.assertNotIn('self‧explanatory',rows)
+
     def test_group_boundaries_and_etc_are_words(self):
         lexicon={w:{p} for w,p in [('hat','noun'),('football','noun'),('boots','noun'),('briefcase','noun'),
             ('appetite','noun'),('thirst','noun'),('sweat','noun'),('run','verb'),('stretch','verb'),

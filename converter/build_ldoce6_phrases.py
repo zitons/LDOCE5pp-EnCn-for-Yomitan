@@ -17,7 +17,10 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from lxml import html
-from phrase_alias_rules import enhanced_variants
+from phrase_alias_rules import enhanced_variants, full_alternatives, orthographic_forms
+from supplement_phrase_sources import supplement_sources
+from phrase_pronoun_aliases import apply_pronouns
+from apply_phrase_inflections import apply_inflections
 
 PRIMARY = {'phrasetext', 'lexunit', 'phrvbhwd', 'phrv'}
 EXTRACTION_VERSION = 2
@@ -515,7 +518,7 @@ def assemble(db_path, out, revision):
             evidence.append((phrase,r['phrase'],r['parent'],r['kind'],r['record_id'],r['xpath'],r['sense'],len(defs),len(examples)))
             if r['body'] and (defs or examples): rich.append((r,defs,examples))
         # A dedicated source entry contains the complete phrase's own senses.
-        dedicated=[x for x in rich if x[0]['kind']=='key']
+        dedicated=[x for x in rich if x[0]['kind'] in {'key','compound-key'}]
         candidates=dedicated or sorted(rich,key=lambda x:(-bool(x[1]),-len(x[1]),-len(x[2])))
         selected=[]; seen_defs=set(); seen_examples=set()
         for r,defs,examples in candidates:
@@ -609,6 +612,12 @@ def assemble(db_path, out, revision):
             safe=safe_slash_slots(form) or lexical_slash_slots(form,lexicon,preferred) or explicit_parenthesized_choices(form)
             return {a for a in proposed if '/' not in a and
                     ('/' not in form or safe or example_attests(a,canonical[phrase]['example_texts']))}
+        for side in full_alternatives(phrase):
+            # A side with its own brackets or choices contributes its plain readings.
+            for alias in ({side} if not re.search(r'[/()]',side) else set())|simple(side):
+                if alias in phrase_set or alias in contexts:
+                    collisions.append((alias,phrase,'existing_content_wins'));continue
+                aliases[alias][phrase].add('source_full_alternatives')
         enhanced,notes=enhanced_variants(phrase,identities[phrase],lexicon,preferred,
             canonical[phrase]['example_texts'],simple,example_attests)
         review.extend((phrase,n) for n in notes)
@@ -616,6 +625,31 @@ def assemble(db_path, out, revision):
             if alias in phrase_set or alias in contexts:
                 collisions.append((alias,phrase,'existing_content_wins'));continue
             aliases[alias][phrase].update(rules)
+    # Explicit lexical variants/plurals are source facts, never inferred forms.
+    supplemental=Counter()
+    has_forms=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_query_forms'").fetchone()
+    if has_forms:
+        for alias,target,rule in db.execute('SELECT alias,target,rule FROM source_query_forms ORDER BY alias,target,rule'):
+            target=raw_to_canonical.get(target,target)
+            if target not in phrase_set:continue
+            candidates={alias}|orthographic_forms(alias)
+            for value in candidates:
+                if value in phrase_set or value in contexts:continue
+                aliases[value][target].add(rule);supplemental[rule]+=1
+    pronoun_stats=apply_pronouns(phrase_set,aliases,contexts)
+    inflection_stats=apply_inflections(db,phrase_set,aliases,preferred)
+    # A source context must not be shadowed by a query alias.
+    for key in set(aliases)&set(contexts):del aliases[key]
+    # fushidicts uses case-sensitive index keys and lowercased query variants.
+    # Lowercase keys let inflected lowercase input reach capitalized lemmas.
+    for alias,targets in list(aliases.items()):
+        lower=alias.lower()
+        if lower!=alias and lower not in phrase_set and lower not in contexts:
+            for target in targets:aliases[lower][target].add('source_lowercase_lookup')
+    for phrase in phrases:
+        lower=phrase.lower()
+        if lower!=phrase and lower not in phrase_set and lower not in contexts:
+            aliases[lower][phrase].add('source_lowercase_lookup')
     available=phrase_set|set(contexts)|set(aliases)
     rows=[]
     for phrase in phrases:
@@ -655,8 +689,11 @@ def assemble(db_path, out, revision):
         rows=len(rows),package=str(package.resolve()),bytes=package.stat().st_size,
         sha256=hashlib.sha256(package.read_bytes()).hexdigest(),
         alias_rules=dict(Counter(rule for targets in aliases.values() for rules in targets.values() for rule in rules)),
-        automatic_inflection_aliases=False,
-        policy='Only LDOCE6 source data; no LDOCE5++ input to extraction or alias generation. Explicit choice groups, marked separability, orthography and bounded query shorthand; lexical possessives/your retained. No automatic inflections or numeric expansion.')
+        automatic_inflection_aliases=True,
+        inflection_generation=dict(inflection_stats),
+        finite_pronoun_generation=dict(pronoun_stats),
+        supplemental_source_forms=dict(supplemental),
+        policy='Only LDOCE6 source data; no LDOCE5++ input to extraction or alias generation. Source choice groups, separability, spelling, explicit pronoun slots (including the generic possessive your) and POS-constrained inflections become direct canonical aliases. Dictionary notation is never inflected; arbitrary names and numeric ranges are not enumerated.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     db.close()
     print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)
@@ -671,12 +708,16 @@ def main():
     ap.add_argument('--revision',default='2026.11.18')
     ap.add_argument('--reuse-extraction',action='store_true')
     ap.add_argument('--limit',type=int)
+    ap.add_argument('--supplement-sources',action='store_true',help='Add source compound keys and explicitly declared query forms')
     args=ap.parse_args()
     out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
     db=out/'extraction.sqlite'
     if not args.reuse_extraction:
         report=extract(args.input,db,args.cache,args.limit)
         (out/'extraction_report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    if args.supplement_sources:
+        supplemental=supplement_sources(args.input,db,args.cache)
+        (out/'supplemental_source_report.json').write_text(json.dumps(supplemental,ensure_ascii=False,indent=2),encoding='utf8')
     assemble(db,out,args.revision)
 
 
