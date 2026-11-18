@@ -3,7 +3,8 @@
 给 [Hoshi Reader](https://github.com/HuangAntimony/Hoshi-Reader-Android) 用的
 发音库。**与 Yomitan 词典包是两件独立成品。**
 
-有两个版本：**单源版**（只用 LDOCE5 词头发音）与**合并版**（再并入第三方 OALD10 音频）。
+当前成品只有一份：**`yomitan_audio/tld.db`**（2026-11-18 重建，6 个源）。
+更早的两版（LDOCE 单源版、LDOCE+OALD 合并版）留在文件里作历史参考。
 
 ## 为什么需要单独做
 
@@ -11,9 +12,75 @@ Yomitan 的 structured-content **没有 audio tag**，所以音频塞不进词�
 （详见 `HANDOVER.md` §9.9）。Hoshi 另有一套**本地音频数据库**机制绕开这个限制：
 导入一个 `android.db`，它自己按词条查表取音频。
 
-## 成品
+## 当前成品（2026-11-18 重建）
 
-### 合并版（推荐）
+| 文件 | 大小 | 内容 |
+|---|---:|---|
+| `yomitan_audio/tld.db` | **3.01 GiB** | 819,439 行 / 809,089 条音频 / **221,641 个词头** / 6 个源 |
+
+整个库只有 **6 个源，全部逐词录音**，没有任何一个是从连续朗读里切出来的：
+
+| source | 内容 | 行数 | 音频文件 | 体积 | 中位时长 | 串烧率 |
+|---|---|---:|---:|---:|---:|---:|
+| `webster` | 韦氏 | 223,337 | 222,389 | 807 MB | 1.04 s | 0.7% |
+| `lpd3` | 朗文发音词典 3 版 | 135,575 | 134,551 | 435 MB | 1.02 s | **0.1%** |
+| `cepd18` | 剑桥英语发音词典 18 版 | 120,948 | 119,320 | 386 MB | 0.97 s | **0.0%** |
+| `vocab` | Vocabulary.com | 84,796 | 82,973 | 316 MB | 1.26 s | 1.1% |
+| `collins` | 柯林斯 | 71,416 | 66,489 | 200 MB | 1.26 s | 1.2% |
+| `ode2024` | 牛津 ODE 2024 | 183,367 | 183,367 | 258 MB | 1.08 s | **0.02%** |
+
+前五个源来自同一个包 **5 in 1 English Pronunciation Dictionary**（281,569 词条，
+`Sound.mdd` 3.0 GB / 735,715 个 `.spx`），包内已经按词典分节标注，所以按词典拆成
+5 个 source，而不是并成一个 —— Hoshi 的音源选择器因此能分别试听、单独禁用。
+
+`speaker` 列的口音来源：`ode2024` 是词典自带字段；5in1 的英美靠路径
+（`uk_pron/` / `us_pron/`）与文件名（`_Uk` 后缀、`uk_` 前缀）；**`collins` 在包内
+只有一个喇叭、没有任何口音标记，所以 `speaker` 留 NULL，不猜**。
+
+### 为什么换掉 TLD 七包
+
+2026-11-11 ~ 15 那版（见下文「历史」）用的是 The Little Dict 的 7 个包。实测下来
+它们**同源同病**：都是拿词典方的连续朗读素材按文件名切块，切点卡在词头、结尾不管，
+于是 0.3%–1.73% 的音频会「一个词读一长串」（`ideally` 那条 16.33 秒，读了 17 个
+相邻词头；`convokes` 9.86 秒读 7 个）。而且这批缺陷**在 mdd 原始数据里就有**，
+不是构建脚本引入的 —— 从 `TLD.1.mdd` 里取出的 `\ameProns\ideally.mp3` 与库内副本
+逐字节相同（md5 `65d0b48c…`）。
+
+5 in 1 的听感和体检都更好：
+
+| 指标 | TLD 七包 | 5 in 1 |
+|---|---|---|
+| 串烧率（各源加权） | 0.3%–1.73% | **0.0%–1.2%** |
+| 最长单条 | 33.29 s（`tld_mw`） | 9.43 s |
+| 采样率 | 统一 16 k（spx） | 11k / 16k / 22k / 32k / 44.1k |
+| 英美标记 | 靠文件名猜 | 包内分节 + `_Uk` / `uk_` 前缀 |
+| 词头覆盖 | 301,559 | 221,641 |
+
+代价是**丢 77,572 个词头**：`tld_snd`（Vocabulary.com）那 51,201 个化学名/缩写
+（`19-nortestosterone`、`2,4-D`、`A1c`）、`tld_uk` 那 18,103 个**屈折形式**
+（`abandoning`、`abandons`）。换来的是常用词全部有 5–6 条跨词典录音，且没有串烧。
+
+### 构建
+
+```bash
+# 1) 灌 5in1 五个源（单 writer 架构，见脚本 docstring）
+python converter/build_five1_audio2.py --apply --workers 6
+
+# 2) 重建精简库：只留 6 个源，只建 Hoshi 真正用到的两个索引
+python converter/rebuild_compact.py --apply
+```
+
+第 1 步 **66 分钟**跑完 627,091 条音频（缺的 189 个是包里本来就没有的 Vocabulary
+数字编号）；第 2 步 **49 秒**完成（`INSERT..SELECT` 到新库 + 索引最后建 + 关日志，
+不走 DELETE+VACUUM）。
+
+## 历史成品（LDOCE 单源 / 合并版，2026-09）
+
+> ⚠️ 下面两份是 2026-09 的产物，已被 `tld.db` 取代；文件仍在
+> `yomitan_audio/` 下，仅供回退参考。
+
+### 合并版（2026-09，已废弃）
+
 
 | 文件 | 大小 | 说明 |
 |---|---:|---|
@@ -35,7 +102,7 @@ bytes   1,689,235,456
 - Hoshi 的**音源选择器会列出三条**，可分别试听、单独禁用
 - 换词条查词时按 `source` 字母序取第一个命中的：`ldoce_ame` → `ldoce_bre` → `oald10`
 
-### 单源版
+### 单源版（2026-09，已废弃）
 
 | 文件 | 大小 | 说明 |
 |---|---:|---|
@@ -54,8 +121,11 @@ bytes   457,568,256
 ## 怎么用
 
 Hoshi Reader → `Settings` → `Advanced` → `Audio` → `Local Audio: Enable` →
-`Import` → 选 `android.db`（或 `android_merged.db`）。
+`Import` → 选 **`yomitan_audio/tld.db`**。
 Hoshi 会自动把 `Local` 源排到默认源之前。
+
+导入后建议先查这几个词试听（每个词都有 6 个源的录音可选）：`apple`、`schedule`、
+`four`、`tomato`、`improve`。
 
 ## 数据库格式
 
@@ -90,8 +160,13 @@ CREATE TABLE android (          -- Hoshi: loadAudio()
    分支，正是我们要的精确匹配。若填假读音反而会引入错误匹配。
 4. **`entries` 的每一行都必须能在 `android` 里取到 blob** —— 否则 Hoshi 匹配成功却播不出声。
    生成器对此有硬断言（`assert orphan == 0`）。
+5. **索引只需要两个** —— `expr_idx(expression)` 与 `file_idx(android.file)`，正好对应
+   Hoshi 的 `WHERE expression = ?` 和 `WHERE file = ?`。旧库还挂着 `src_idx`、
+   `idx_entries_expr_read`、`idx_android_file_source` 三个用不上的索引，白占
+   300–400 MB（`entries` 141 万行、`android` 140 万行，每个索引都要存一遍键）。
+   `rebuild_compact.py` 只建前两个。
 
-## 重建
+## 重建（LDOCE 单源版，历史）
 
 ```bash
 # 依赖：mdict-utils（.mdd 读取）、Python 3.11+
@@ -148,7 +223,7 @@ blob 是否真是音频（ID3/MPEG 帧同步/OggS）、重复行、与词典包�
 > 抢占 `variants` 后把 2,091 个表达式配到了别的词条的音频——靠"新旧库逐表达式
 > 对比文件分配"抓出，而只比较匹配/不匹配集合的探针对此完全盲目。
 
-## 合并多个音频库
+## 合并多个音频库（历史用法，当前成品用不上）
 
 ```bash
 python converter/merge_audio_db.py \
@@ -206,7 +281,12 @@ entries  92,544 + 124,979 = 217,523  →  216,862        （差 661 行）
 逐字节   三音源各抽样 40 个 blob 与原始库比对：byte-differ 0，not-found 0
 ```
 
-## TLD 音频库（The little dict）
+## TLD 音频库（The little dict）—— 历史，已被 5 in 1 取代
+
+> ⚠️ 本节记录 2026-11-11 ~ 15 的 TLD 七包方案。**2026-11-18 起已整体废弃**：
+> 库里只剩 `ode2024` + 5in1 五个源。保留本节是因为下面这些坑（错误匹配、
+> 区块录音、chained 逻辑流、文件名不可校验）换任何源都可能再遇到。
+
 
 第三份成品：`yomitan_audio/tld.db`，把 The little dict 的 7 个媒体包 + ODE 2024
 并成一个库，给 LDOCE 覆盖不到的词做补充（合并顺序见本节末尾）。
@@ -559,7 +639,10 @@ capability. Capable. capableness. capably, capacious..."`，`boot` 是
 ## 边界
 
 - **未做真机 Hoshi 导入验收**：格式依据是源码 + 本地 SQL 复现 Hoshi 的查询逻辑，
-  尚未在 Android 设备上实际导入播放。
-- 未做 `.spx`（1,842 个）—— Hoshi 不支持，转码会引入额外依赖且收益 <1%。
-- 未做例句音频（`exaProns`，86,450 个）—— 按要求只做词头发音。
-- 音频版权归 **Pearson Education Limited**，同词典本体，仅供私有研究使用。
+  尚未在 Android 设备上实际导入播放（2026-11-18 这版同样没做）。
+- 5in1 的音频在包内全是 `.spx`，构建时统一转 **Opus 24 kbps / 48 kHz 单声道**
+  （源本身只有 18–30 kbps，转码不降质）。Hoshi 只发现 `.mp3/.opus/.ogg`。
+- 未收录 5in1 里的 189 个缺失文件（Vocabulary 数字编号等，包里本来就没有）。
+- 未做例句音频，只做词头发音。
+- 音频版权归各词典出版方（Merriam-Webster / Cambridge / Pearson / Collins /
+  Vocabulary.com / Oxford），同词典本体，仅供私有研究使用。
