@@ -468,9 +468,12 @@ def assemble(db_path, out, revision):
             defs=json.loads(r['defs']); examples=json.loads(r['examples'])
             evidence.append((phrase,r['phrase'],r['parent'],r['kind'],r['record_id'],r['xpath'],r['sense'],len(defs),len(examples)))
             if r['body'] and (defs or examples): rich.append((r,defs,examples))
-        # A dedicated source entry contains the complete phrase's own senses.
+        # Dedicated entries lead, but other same-spelling source occurrences may
+        # contain a different part of speech or additional phrasal-verb senses.
         dedicated=[x for x in rich if x[0]['kind'] in {'key','compound-key'}]
-        candidates=dedicated or sorted(rich,key=lambda x:(-bool(x[1]),-len(x[1]),-len(x[2])))
+        candidates=dedicated + sorted(
+            [x for x in rich if x[0]['kind'] not in {'key','compound-key'}],
+            key=lambda x:(-bool(x[1]),-len(x[1]),-len(x[2])))
         selected=[]; seen_defs=set(); seen_examples=set()
         for r,defs,examples in candidates:
             if set(defs)<=seen_defs and set(examples)<=seen_examples: continue
@@ -575,12 +578,13 @@ def assemble(db_path, out, revision):
             for value in candidates:
                 if value in phrase_set or value in contexts:continue
                 aliases[value][target].add(rule);supplemental[rule]+=1
-    # Finite source lookup entrances: retain lexical words and internal slots.
+    # Finite source lookup entrances; internal generic slots are omitted only
+    # from source-tagged phrasal-verb headings, never arbitrary expressions.
     # Feed only the original spellings once, not recursively generated heads.
     spellings = [(p, {p}) for p in phrases] + [(a, set(ts)) for a, ts in aliases.items()]
     separable_sources = [(raw, raw_to_canonical[raw]) for (raw,) in db.execute(
         "SELECT DISTINCT phrase FROM occurrences WHERE kind='phrvbhwd'")]
-    heads = collect_heads(spellings, separable_sources, phrase_set | set(contexts) | set(aliases))
+    heads = collect_heads(spellings, separable_sources, phrase_set | set(contexts))
     for key, targets in heads.items():
         for target, rules in targets.items():
             aliases[key][target].update(rules)
@@ -638,7 +642,7 @@ def assemble(db_path, out, revision):
         automatic_inflection_aliases=False,
         finite_pronoun_aliases=False,
         supplemental_source_forms=dict(supplemental),
-        policy='Only LDOCE6 source data. Explicit optional groups, unambiguous source alternatives, example-attested choices, marked separability, declared spellings/plurals and lowercase lookup. Bounded heads omit only initial be, terminal generic object slots, or marked separable phrasal objects. No pronoun enumeration, automatic inflections, arbitrary internal argument deletion or hyphen-to-space synthesis.')
+        policy='Only LDOCE6 source data. Explicit optional groups, unambiguous source alternatives, example-attested choices, marked separability, declared spellings/plurals and lowercase lookup. Bounded heads omit initial be, terminal generic object slots, or generic argument slots in original phrvbhwd headings while retaining all lexical words. Same-key alias targets merge; source content always wins. No pronoun enumeration, automatic inflections, arbitrary internal argument deletion or hyphen-to-space synthesis.')
     (out/'build_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     db.close()
     print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)

@@ -48,9 +48,17 @@ def main():
     positive=['hang by a thread','abandon ship','give (somebody) a hand',
               'self-explanatory','make up your mind','make your mind up']
     negative=['give him a hand','gave him a hand','how can me do something',
-              'being to do something','endear to','a word in ear','re form',
+              'being to do something','a word in ear','re form',
               'Princess Di, Princess Diana, Lady Di','worked permit','gived him a hand',
               'kick out them','givens to doing','leaping of faith']
+    # The original source really tags endear ... to ... as phrvbhwd. It is a
+    # supported lookup core only in releases adopting source-phrasal heads.
+    if report['alias_rules'].get('source_phrasal_argument_lookup_head'):
+        assert db.execute("SELECT 1 FROM occurrences WHERE phrase=? AND kind='phrvbhwd'",
+                          ('endear somebody to somebody',)).fetchone()
+        positive.append('endear to')
+    else:
+        negative.append('endear to')
     assert all(k in rowkeys for k in positive),[k for k in positive if k not in rowkeys]
     assert not any(k in rowkeys for k in negative),[k for k in negative if k in rowkeys]
     entries=dict(sorted(entries.items(),key=lambda item:(item[0]!='abandon',item[0])))

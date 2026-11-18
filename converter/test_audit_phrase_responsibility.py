@@ -25,10 +25,24 @@ class LookupHeadBoundaryTest(unittest.TestCase):
             [('kick somebody out', {'kick somebody out'}),
              ('put something at something', {'put something at something'})],
             [('kick somebody \u2194 out', 'kick somebody out'),
-             ('endear somebody \u2194 to', 'endear somebody to somebody')], set())
-        self.assertEqual(set(heads), {'kick out'})
+             ('put something at something', 'put something at something')], set())
+        self.assertEqual(set(heads), {'kick out', 'put at'})
         self.assertEqual(heads['kick out']['kick somebody out'], {'explicit_separable_phrasal_head'})
         self.assertFalse(collect_heads([], [('kick somebody \u2194 out', 'kick somebody out')], {'KICK OUT'}))
+
+    def test_source_heads_merge_targets_and_preserve_fixed_words(self):
+        heads = collect_heads([('put somebody away', {'put somebody away'})], [
+            ('put somebody/something away', 'put somebody/something away'),
+            ('put something away', 'put something away'),
+            ('drag something out of somebody', 'drag something out of somebody'),
+            ("cramp somebody's style", "cramp somebody's style"),
+            ('give somebody a hand', 'give somebody a hand')], set())
+        self.assertEqual(set(heads['put away']),
+                         {'put somebody/something away', 'put something away'})
+        self.assertIn('drag out of', heads)
+        self.assertIn('give a hand', heads)  # Only when explicitly a phrvbhwd.
+        self.assertNotIn('cramp style', heads)
+        self.assertNotIn('endear to', heads)
 
 
 if __name__ == '__main__':

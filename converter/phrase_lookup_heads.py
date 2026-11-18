@@ -31,6 +31,17 @@ def separable_head(raw):
     return m[1]+' '+m[2] if m and m[2] in PARTICLES else None
 
 
+def phrasal_lookup_head(raw):
+    """Use only an original phrvbhwd: omit generic arguments, keep lexical words.
+
+    This lookup core does not assert that an object can move across a particle.
+    Possessive slots and unresolved source alternatives remain unsupported.
+    """
+    core = re.sub(r"(?<![\w'\u2019])" + OBJECT + r"(?![\w'\u2019])", '', raw)
+    core = ' '.join(core.replace('\u2194', ' ').split()).lower()
+    return core if usable(core) else None
+
+
 def collect_heads(spellings, separable_sources, existing):
     """Return key -> target -> source-rule set, preserving existing content."""
     folded = {' '.join(k.casefold().split()) for k in existing}
@@ -38,7 +49,7 @@ def collect_heads(spellings, separable_sources, existing):
 
     def add(key, target, rule):
         key = ' '.join(key.split())
-        if usable(key) and key.casefold() not in folded:
+        if usable(key) and key.casefold() not in folded and key.casefold() != ' '.join(target.casefold().split()):
             result[key][target].add(rule)
 
     for form, targets in spellings:
@@ -47,7 +58,9 @@ def collect_heads(spellings, separable_sources, existing):
                 for rule in rules:
                     add(key, target, rule)
     for raw, target in separable_sources:
-        key = separable_head(raw)
+        key = phrasal_lookup_head(raw)
         if key:
-            add(key, target, 'explicit_separable_phrasal_head')
+            rule = ('explicit_separable_phrasal_head' if separable_head(raw)
+                    else 'source_phrasal_argument_lookup_head')
+            add(key, target, rule)
     return result

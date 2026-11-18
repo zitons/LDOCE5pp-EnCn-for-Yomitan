@@ -13,6 +13,30 @@ from supplement_phrase_sources import supplement_sources
 
 
 class PhraseBuildTests(unittest.TestCase):
+    def test_same_spelling_senses_and_existing_lookup_targets_are_preserved(self):
+        records = [
+            ['put out', '<span class="entryhead"><span class="hwd">put out</span><span class="pos">adjective</span></span><span class="def">upset or offended</span>'],
+            ['put', '<span class="phrvbentry"><span class="phrvbhwd">put out</span><span class="def">cause extra work for someone</span></span>'
+             '<span class="phrvbentry"><span class="phrvbhwd">put somebody away</span><span class="def">send someone to prison</span></span>'
+             '<span class="phrvbentry"><span class="phrvbhwd">put something away</span><span class="def">store something</span></span>'],
+            ['drag', '<span class="phrvbentry"><span class="phrvbhwd">drag something out of somebody</span><span class="def">force someone to tell you something</span></span>'],
+        ]
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t); src = root/'input.jsonl'; db = root/'source.sqlite'
+            src.write_text(''.join(json.dumps(x)+'\n' for x in records), encoding='utf8')
+            extract(src, db, cache=True); supplement_sources(src, db, cache=True)
+            report = assemble(db, root, 'test')
+            with zipfile.ZipFile(report['package']) as z:
+                rows = {r[0]: r for n in z.namelist() if n.startswith('term_bank_')
+                        for r in json.loads(z.read(n))}
+            body = plain(rows['put out'][5])
+            self.assertIn('upset or offended', body)
+            self.assertIn('cause extra work for someone', body)
+            self.assertEqual({x[0] for x in rows['put away'][5]},
+                             {'put somebody away', 'put something away'})
+            self.assertEqual(rows['drag out of'][5],
+                             [['drag something out of somebody', ['redirect']]])
+
     def test_no_guessed_inflections_pronouns_or_unmarked_omissions(self):
         records = [
             ['give', '<span class="entryhead"><span class="hwd">give</span><span class="pos">verb</span><span class="pasttense">gave</span></span><span class="sense"><span class="lexunit">give somebody a hand</span><span class="def">help someone</span></span>'],
