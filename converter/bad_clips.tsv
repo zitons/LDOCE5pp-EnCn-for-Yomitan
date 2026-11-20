@@ -1,0 +1,10 @@
+﻿# 错配音频黑名单 —— 录音内容与词头不符的 (source, file, expression) 三元组。
+# 格式（TAB 分隔）：source <TAB> file <TAB> expression <TAB> reason
+# 以 # 开头的行为注释。build_tld_audio_db.py 与 apply_blacklist.py 都会读它。
+# 判定依据：ASR 转写结果与词头不符，且原始 mdd 记录本身完好（不是抽取损坏）。
+# 完整复核流水（含判为 OK / AMBIG / UNSURE 的条目）见同目录 asr_findings.tsv。
+tld_uk2	ukl30144.mp3	four	ASR="Four by four."，录音属于 four by four，uk2 无该词条
+tld_uk2	usl30139.mp3	four	ASR="Four by four."，同上（美音版）
+tld_ame	ld41cachet.mp3	cache	ASR="Cachet."，pack 按前缀把 cachet 的录音挂给了 cache
+tld_collins	COLmp3en_gb_grandaddy.opus	grandad	ASR="Granddaddy."，同上（grandad 挂到 grandaddy）
+tld_collins	COLmp3en_us_to.opus	tout	ASR="Two."，该文件被 to/too/tout/two 共用，tout /taʊt/ 读音不同，属错挂

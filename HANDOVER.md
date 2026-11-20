@@ -5,6 +5,171 @@
 
 ---
 
+## 当前工作区补充（2026.10.23 · TLD 音频库两处致命缺陷，都不是「音质」问题）
+
+> ⚠️ **本条为最新状态**。`yomitan_audio/tld.db` 曾被两次构建 bug 污染，
+> 表现都是「有声音，但声音不对」。用户反馈的「音质出问题了」实为**接错音频**。
+
+### 缺陷一：mdd 块解码失败时游标不前进（TLD.1.mdd / mp3 源）
+
+`build_tld_audio_db.py` 的 `blocks_of()` 遇到 zlib 解不开的块直接 `continue`，
+而调用方只在**成功产出块**时才 `base += len(raw)`。但 keylist 里的偏移是**整条解压流的
+绝对位置**，跳块不推进游标 → 之后每条记录都按错位切片：**长度对、内容错**。
+
+- TLD.1.mdd 6,423 块中 17 块损坏（占文件 0.3%），但第一块坏块之后
+  **69,165 / 95,616 = 72.3% 的键全部错位**；
+- 库内 `tld_ame` 123,509 行里 **86,457 行（70.0%）首字节不是任何音频头**；
+- 对照 `ocelot.mp3`：mdd 原始记录头 `fff340c4`（合法 MP3 帧），库里是 `02dcf4a6…`。
+
+**修法**：`blocks_of()` 改为产出 `(offsets, keylist, start, size, raw)`，
+`start` 由块大小表**前缀和**算出、**每块无条件 `pos += ds`**；坏块 `raw=None`，
+调用方只跳过该块内的键并累计 `lost_keys`。修后 `tld_ame` 123,454 行、0 非法头。
+真正损失 **219 个键（0.23%）**，即坏块内的数据本身。
+
+### 缺陷二：批量转码没写 `-map`（5 个 spx 源）
+
+`transcode_batch()` 为省掉 67 万次进程启动，一次给 ffmpeg 传 N 个 `-i` + N 个输出路径，
+**但没有 `-map`**。ffmpeg 的默认流选择从「它认为最好的输入」取音频，
+**输出与输入不成对**。mp3 源不走转码（原样拷贝）所以没事，5 个 spx 源全错。
+
+判据不能只看「音频头合法」——错接的 blob 照样是合法 Opus。用**包络相关性**：
+
+| source | 与自己的音频 | 与下一条记录 | 判定 |
+|---|---:|---:|---|
+| tld_ame (mp3) | 0.972 | 0.633 | 正常 |
+| tld_uk2 (mp3) | 1.000 | 0.614 | 正常 |
+| tld_ids | 0.492 | 0.405 | 错 |
+| tld_mw | 0.232 | 0.361 | 错 |
+| tld_uk | 0.119 | 0.100 | 错 |
+| tld_snd | 0.011 | -0.034 | 错 |
+| tld_collins | -0.032 | -0.029 | 错 |
+
+**修法**：每个输出加 `-map {i}:a`；再加**时长门禁**
+`|src − opus| ≤ 0.12 + 5%·src`，不过就丢弃并计数（不再静默写入）。
+修后五个源各取 8 个文件重转并比相关：**40/40 全对，corr 0.843–1.000**。
+
+> 顺带修：`ogg_granule()` 的 pre-skip 读偏移原为 `b[37:39]`（错位），
+> 导致时长门禁把所有输出判死、批量转码返回 0 条。
+
+### 缺陷三：时长门禁的「源时长」用了最后一页 granule（误杀 1%）
+
+修完缺陷二重建后，门禁拒收 uk 869、collins 247、snd 1,476、mw 309、ids 248，
+合计 **3,149 个文件（0.36%）**。抽样检查发现这些文件**转码是忠实的**：
+`colmp3en_us_harmonic` 源文件解码 9.90 s，Opus 也是 9.90 s——但按 granule 算出来只有
+1.20 s，被判成「长度不符」。
+
+根因：部分 Collins / snd 条目把单词 + 几个例句串成了**多条 chained 逻辑流**
+（该文件有 5 个 BOS 页），最后一页的 granule 只覆盖最后一条链。
+
+**修法**：
+1. `source_duration()` 改为**读 Ogg 段表数包**（每包 `fpp × frame_size` 采样，
+   减掉每条链的 1 + extra_headers 个头部包），实测偏差 ≤ 2%。
+2. 仍不符时用 `decoded_duration()` **解码复核**（`ffmpeg -i src -f null -`），
+   只有解码也对不上才丢。
+3. 新增 `--missing-only`：只补库里还没有的文件，3,149 个文件 12.7 分钟补齐，
+   不必重跑 2.5 小时。
+
+**结果**：7 个源的行数与修前**完全一致**（881,796 行 / 303,378 表达式，0 孤立行），
+`_tmp/accept.py` 每源抽 200 条：mp3 源 byte-exact 200/200，opus 源
+corr_own 0.997–0.999（min 0.980）、corr_nxt 0.48–0.69，10,500 条抽样 0 个坏头。
+
+### 复现与验收脚本
+
+| 脚本 | 作用 |
+|---|---|
+| `converter/build_tld_audio_db.py` | 构建器（三处缺陷均已修，含音频头 + 时长双门禁、`--missing-only`） |
+| `_tmp/fast_audit.py` | 按文件名**只解压所属块**取记录（`Mdd` 类），比整包遍历快两个数量级 |
+| `_tmp/accept.py` | 终验：mp3 比字节、opus 比包络相关，并与「下一条记录」对照 |
+| `_tmp/topup_missing.py` | 用 `--missing-only` 补齐被误拒的文件，不重跑全量 |
+
+**教训**：① 在「全局绝对偏移 + 跳块」的结构里，跳过一块等于把后面全部拖下水，
+损失比例要按「坏块之后的键数」算，不是按「坏块数 / 总块数」；
+② 批量调用外部工具时，**输出与输入的对应关系必须显式写死**，默认行为会静默错配；
+③ 音频校验只查 magic 是不够的，要查「这条音频是不是这个词的」；
+④ **用自己的估算当门禁，先证明估算本身对**——granule 在多链 Ogg 上只覆盖最后一条链，
+用它当基准会误杀 1% 的完好文件；估算 + 解码复核两段式才既快又不误判。
+
+---
+
+## 当前工作区补充（2026.10.20 · 撤回「组内例句回拉」）
+
+> ⚠️ **本条为最新状态**。下一节（10.19）讲的是「组头不再多占一级」，
+> 但它同时把组内例句**拉回了普通例句列**，本节讲为什么那一步是错的、怎么撤回的。
+
+### 一、问题
+
+77ccda7 修层级时做了两步：组头从例句列表里拿出来当独立块（对），再把它
+自己那张 `ld-exlist` 用 `margin-left:-1.1em` 拉回父列（错）。后一步的本意是
+「让组内例句落回普通例句列」，实际把破折号送到了**组头左边**：
+
+| | 组头 | 组内列表 | 关系 |
+|---|---:|---:|---|
+| 10.19（回拉到普通列） | 63.0 | 46.5 | 列表在组头**左** 16.5px |
+| 10.20（本版，留在组头列） | 63.0 | 63.0 | 同列；例句圆点在组头内 6.8px（standard）/ 11.6px（compact） |
+
+（420px 宽、bilingual-standard 实测；旧版的 16.5px 就是 `1.1em`。）
+
+于是一个义项下挂两个搭配组时，屏幕顺序成了「破折号 → 组头 → 破折号 → 组头」，
+分组只剩加粗一条线索；`abscond` 的语法组例句看起来像义项自带的例句。
+面板里的搭配组（`ld-collocate` 25,059 / `ld-exponent` 7,589）本来就是
+「组头与例句圆点同列」，正文和面板因此成了两套排法 —— 撤掉回拉后两边终于一致。
+
+### 二、改法
+
+删掉两条规则（standard / compact 各一条）：
+
+```css
+[data-sc-class="ld-gramexa"] > [data-sc-class="ld-exlist"],
+[data-sc-class="ld-colloexa"] > [data-sc-class="ld-exlist"] { margin-left:-1.1em }
+```
+
+组内列表于是留在组头所在列，层级单调递增：义项 0 → 组头 1.1em → 例句（组头内）。
+代价（已知并接受）：组内例句比同级普通例句右 1.1em（16.5px），窄弹窗里长例句多折一点。
+影响面：`ld-colloexa` 7,270（5,936 带例句）、`ld-gramexa` 16,411（16,342 带例句），
+合计 9,043 个词条。
+
+### 三、判据反向（三处，缺一处就自相矛盾）
+
+| 位置 | 旧 | 新 |
+|---|---|---|
+| `regress_group_geometry.py` A | `head − list == 1.1em` | `head − list == 0` |
+| 同上 B | 组列表与同级普通列表同列 | 组列表比普通列表右 1.1em |
+| 同上 C | 组内首条与普通首条同列 | 组内首条比普通首条右 1.1em |
+| `regress_hanging_indent.check_groups` | 必须有 `-1.1em` 回拉 | **出现负 margin 即失败** |
+| `regression_suite.has_alignment_fix` | 有回拉才算合格包 | 有回拉即判不合格 |
+
+正负对照：10.19 旧包在新 `group_geometry` 下 A/B/C 全红（15 / 5 / 5 个），
+新源码对新判据 PASS；`hanging_indent` 拿旧 `styles.css` 跑会报
+`inner list pulled back (-1.1em)`。
+
+### 四、重建（revision 2026.10.20）
+
+| 产物 | 构建 | 大小 |
+|---|---|---:|
+| `2026-10-20-group-column/bilingual-standard/LDOCE5pp_Yomitan_2026.10.20.zip` | 865.3 s | 60.6 MB |
+| `2026-10-20-group-column/bilingual-compact/LDOCE5pp_Yomitan_2026.10.20_compact.zip` | 938 s | 60.6 MB |
+| `2026-10-20-group-column/mono-standard/LDOCE5pp_Yomitan_2026.10.20_EN.zip` | 850.2 s | 51.4 MB |
+| `2026-10-20-group-column/mono-compact/LDOCE5pp_Yomitan_2026.10.20_compact_EN.zip` | 914 s | 51.4 MB |
+
+四份均 `rows=245,933`、`dangling=0`、`query_links=1,947,613`、`seq_ok=1`、
+`[OK] Validation passed.`（banks：双语 51、单语 49）。
+
+**内容零变化可直接证明**：与 10.19 的 bilingual-standard 逐成员比 sha256，
+55 个成员里只有 `styles.css`（30,157 → 30,745 B）与 `index.json`（标题/版本）不同，
+其余全部逐字节相同 —— 这轮只动了样式。
+
+### 五、验收
+
+- **7 道包级门禁 × 4 份 = 28 次**，全部 exit 0；`css_fallback` PASS；
+  `hanging_indent`（双变体、静态 + 浏览器）PASS。
+- 发布套件 `regression_suite.py`：标准线 18 项全 exit 0、无 SKIP；紧凑线同。
+- **面板与正文已自动统一**（撤掉回拉的副产品）：展开 `<details>` 量 3 个词条、
+  39 个面板组头（`ld-collocate` / `ld-exponent`），组内列表一律落在组头的
+  **文字列**（`left + padding-left`，偏差 0.0），例句圆点再内缩 6.78px ——
+  与正文「组头 63 → 列表 63 → 圆点 69.78」是同一套。面板不需要再改。
+
+---
+
 ## 当前工作区补充（2026.10.19 · 四变体重建 + 一条「判据反转」的门禁缺陷）
 
 > ⚠️ **本条为最新状态**。上一节（10.17 晚·例证层级修复）讲的是改了什么，
@@ -31,7 +196,7 @@ FAIL: no package on disk carries the alignment fix -- both alignment gates would
 | 对象 | 要求 |
 |---|---|
 | `ld-ex` / `ld-ex-good` / `ld-ex-bad` | **任一条**样式规则（基规则或祖先限定规则）解析出 ≥1.0em 左缩进；若最后一条 `::before` 真的画了标记，则必须悬挂 |
-| `ld-gramexa` / `ld-colloexa` | 基规则 `display:block` 且左缩进 = 1.1em；**无**画出标记的 `::before`；其直接子 `ld-exlist` 必须 `margin-left:-1.1em` |
+| `ld-gramexa` / `ld-colloexa` | 基规则 `display:block` 且左缩进 = 1.1em；**无**画出标记的 `::before`；其直接子 `ld-exlist` 必须 `margin-left:-1.1em`（**10.20 已反转**为「不得为负」，见上一节） |
 
 两处都按**层叠里最后一条**声明判断（早先按「第一条匹配」判断，会被后置的
 inline 覆盖绕过）。正负对照：当前源码 standard / compact + 本次四个包 = True；
@@ -44,11 +209,11 @@ inline 覆盖绕过）。正负对照：当前源码 standard / compact + 本次
 `converter/regress_group_geometry.py` 把它固化（复用 `regress_alignment` 的
 jsdom + Chrome 管线，每组 3 条一页避免 CDP 超大 evaluate 掉线）：
 
-| 检查 | 判据 |
+| 检查 | 判据（**10.20 已改为右表口径**，见上一节） |
 |---|---|
-| A 头步进 | `head.left - 组内列表.left` == 1.1 × 组头 font-size（±0.8px） |
-| B 列表同列 | 组的 `ld-exlist` 与同级普通 `ld-exlist` 同一 left |
-| C 条目同列 | 组内首条 `li.ld-ex` 与同级普通列表首条同一 left |
+| A 头步进 | ~~`head.left - 组内列表.left` == 1.1 × font-size~~ → 现为 **`head − list == 0`** |
+| B 列表同列 | ~~与同级普通列表同列~~ → 现为 **比普通列表右 1.1em** |
+| C 条目同列 | ~~与普通列表首条同列~~ → 现为 **比普通首条右 1.1em** |
 
 四份新包各测 215 个组头（其中 102 个有同级普通列表可比），全 0 失败；
 **旧包作为阳性对照全数失败**（`step=-23.27`，期望 `16.01`，即组头比自己的例句还靠左）。
@@ -93,9 +258,17 @@ definitionTags 提示照旧（未截断，属已知项）。
 
 ### 五、这轮发现但**没动**的两处
 
-1. `[data-sc-class="ld-phrase"]` 是**死规则**：全量 245,933 行里该 class 出现
-   0 次，converter 里也只有这条 CSS 提到它（8bd429c 刚以同样理由删过三个
-   从未生成的类）。删它需要重跑四份构建，视觉零影响，留待下次顺手处理。
+1. `[data-sc-class="ld-phrase"]` 是**死规则**，而且是个**潜在复发点**：全量 245,933
+   行里该 class 出现 0 次，但它的声明是「`display:block` + 加粗 + 左竖线 +
+   `margin-left:1.9em`」—— 1.9em 正好比组头深一级，正是 2026.10.18 修掉的那类
+   缺陷。将来任何一条代码路径吐出 `ld-phrase`，就会当场复现「多一级」。
+   **2026.10.20 复核后仍不动**，理由不是「1 条无所谓」：标准表 15 个、紧凑表
+   30 个类名在包内从未出现（`ld-table/td/th/para/xref/block`、
+   `ld-corpexa-encyc/online/phrases`、`ld-sense-merge`——它还被 `~=` 规则引用，
+   属预留、`ld-reg/syntax/infllab/pos-ital/pron-ame/pron-bre` 等），单删一条只会
+   让「哪条算死规则」变随意；删了还必须重跑四份，否则 `regress_content` 的
+   「CSS == 当前 `generate_css()`」会判红。→ 与下一次**本来就**要重建的改动合并，
+   做法是「预留类白名单 + 死类门禁」一次性清，而不是一条条手工删。
 2. `_make_release.py` 的默认 `REL_TAG` / `REL_ASSETS` 仍指向 2026.09.13 的两份
    standard 包；发布 2026.10.19 必须显式给四个 `REL_ASSETS`。
 
@@ -103,7 +276,7 @@ definitionTags 提示照旧（未截断，属已知项）。
 
 1. 发布 `v2026.10.19`：`REL_TAG` / `REL_NAME` / `REL_ASSETS`（四份，分号分隔）
    跑 `_make_release.py --dry-run` 先看清单，再正式发。
-2. 删 `ld-phrase` 死规则（与下次重建一起做）。
+2. 清死类：`ld-phrase` 等（按「预留类白名单 + 死类门禁」一次性处理，与下次重建一起做）。
 3. 上一节「发布待办」1–5 条其余项不变。
 
 ---
@@ -293,19 +466,31 @@ definitionTags 提示照旧（未截断，属已知项）。
 standard 与 compact 的 term bank 逐字节相同（be5d808c… / 9392b7c0…）——
 compact 只差 CSS + title，10.16 那次跨天构建与其余同代码状态。
 
-### 发布待办
+### 发布记录（2026.10.19 已完成）
 
-1. REL_TAG=v2026.10.17、REL_NAME、REL_ASSETS=<四份 zip 分号分隔> 跑
-   converter/_make_release.py（compact 两份不在默认列表，必须显式传）
-2. 重写 _release_notes.md（现仍是 10.12 的）
+已于 **2026-10-19** 以 `v2026.10.19` 发布（release id 417407346，tag 指向合并
+PR #11 后的 main `4130e6d`），四份资产：
+
+| 资产 | 大小 |
+|---|---:|
+| `LDOCE5pp_Yomitan_2026.10.19.zip`（双语 standard） | 63,550,517 B |
+| `LDOCE5pp_Yomitan_2026.10.19_compact.zip`（双语 compact） | 63,555,577 B |
+| `LDOCE5pp_Yomitan_2026.10.19_EN.zip`（纯英文 standard） | 53,949,614 B |
+| `LDOCE5pp_Yomitan_2026.10.19_compact_EN.zip`（纯英文 compact） | 53,954,684 B |
+
+来源目录 `yomitan_fixed/2026-10-19-hierarchy/`；bilingual/standard 由 compact
+孪生包派生（term bank 逐字节相同，仅 styles.css 与 title 不同，已用 10 词双构建
+对照验证等价）。发版说明 `_release_notes.md` 已重写为面向读者的口径。
+
+仍待办：
+
 3. 【未做】#3 六处工具变体感知：check_state / final_report /
    3×package_probe / verify_fixed 都调 generate_css() 无参，对 compact 包
    会误报 CSS 不匹配（方法：照 regress_content 的 _variants 循环，
    按包内 title 判变体）
-4. 产物目录语义：standard 包在 2026-10-09-margin-left/ 下是历史名，
-   newest_fixed_package() 按包内 CSS 判不受影响，但人看目录会误判；
-   建议发布目录改 yomitan_fixed/<发布日>/<variant>/
-5. 产物已在 feature 分支提交推送（c866e46），PR #10 分支停在 9fc6a27
+4. 【已改进】产物目录已按 `yomitan_fixed/<发布日>/<variant>/` 组织
+   （`2026-10-19-hierarchy/{bilingual,mono}-{standard,compact}/`）
+5. 产物在 PR #11 合并后已进 main
 
 ---
 

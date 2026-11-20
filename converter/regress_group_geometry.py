@@ -1,22 +1,28 @@
 """Rendered geometry of example GROUPS, measured in Yomitan's real context.
 
 The hierarchy fix (77ccda7) moved a group head out of the example list: the head
-is now a sibling BLOCK that takes one small step, and its own <ul> is pulled back
-to the parent column so its examples land where every other example does. That is
-a CSS-only invariant once the DOM is right, so nothing checked it: regress_hierarchy
-proves the DOM shape, but a later tweak to the pull-back (or to the head's step)
-would silently put the group's examples on a different column again -- exactly the
-defect that started this round (measured l=106 vs l=81 on 'run').
+is now a sibling BLOCK that takes one small step, and its own <ul> used to be
+pulled back so its examples landed on the ordinary example column. That
+pull-back was dropped on 2026.10.20: it put the group's bullets 16.5px LEFT of
+their own head, so a sense with two groups read bullet/head/bullet/head. The DOM
+shape is proven by regress_hierarchy, but the columns are pure CSS, and a later
+tweak to the head's step (or the return of a pull-back) would silently flatten
+the hierarchy again -- exactly the defect that started this round (measured
+l=106 vs l=81 on 'run').
 
 Asserts, on every group head sampled from a built package:
 
-  A. HEAD STEP   -- head.left - its own exlist.left == 1.1em of the head's font
-                    size. One gutter step, not the 1.6em example indent and not a
-                    second full level.
-  B. LIST PARITY -- the group's exlist starts on the same column as a plain
-                    exlist that is a sibling of the group.
-  C. ITEM PARITY -- the first example of the group starts on the same column as
-                    the first example of a sibling plain list.
+  A. LIST ON HEAD -- the group's own exlist starts on the head's column
+                    (delta 0). A non-zero delta means the list is either pulled
+                    back under the parent (negative) or indented a second time
+                    (positive); both read as a wrong level.
+  B. ONE STEP     -- the group's exlist sits exactly 1.1em right of a plain
+                    exlist that is a sibling of the group, i.e. the head's step
+                    is the only thing separating a group from the example
+                    stream around it.
+  C. ITEM ONE STEP-- the first example of the group sits 1.1em right of the
+                    first example of a sibling plain list (same step as B, but
+                    measured on the item, which is what the eye follows).
 
 Requires node + jsdom (scgen_test) and headless Chrome on CDP_TARGET, the same
 harness as regress_alignment; exit 2 when they are missing.
@@ -156,45 +162,45 @@ def main():
             checked += 1
             expected = STEP_EM * g["fs"]
             step = g["head"] - g["list"]
-            if abs(step - expected) > TOL:
-                step_bad.append((rec["id"], g["headText"], round(step, 2),
-                                 round(expected, 2)))
+            if abs(step) > TOL:
+                step_bad.append((rec["id"], g["headText"], round(step, 2)))
             if g["sibLists"]:
                 with_parity += 1
                 delta = g["list"] - g["sibLists"][0]
-                if abs(delta) > TOL:
-                    list_bad.append((rec["id"], g["headText"], round(g["list"], 2),
-                                     round(g["sibLists"][0], 2), round(delta, 2)))
+                if abs(delta - expected) > TOL:
+                    list_bad.append((rec["id"], g["headText"], round(delta, 2),
+                                     round(expected, 2)))
             if g["sibItem"] is not None and g["ownItem"] is not None:
                 delta = g["ownItem"] - g["sibItem"]
-                if abs(delta) > TOL:
-                    item_bad.append((rec["id"], g["headText"], round(delta, 2)))
+                if abs(delta - expected) > TOL:
+                    item_bad.append((rec["id"], g["headText"], round(delta, 2),
+                                     round(expected, 2)))
 
     print(f"measured: {checked} group head(s), {with_parity} with a plain list beside them")
-    print("\nA. head step == 1.1em")
+    print("\nA. group list on the head's column")
     print(f"   {len(step_bad)} wrong")
     for s in step_bad[:8]:
-        print(f"     step={s[2]} expected={s[3]}  {s[1]!r}")
-    print("\nB. group list on the plain-example column")
+        print(f"     head-list={s[2]} (expected 0)  {s[1]!r}")
+    print("\nB. group list one 1.1em step right of the plain-example column")
     print(f"   {len(list_bad)} wrong")
     for s in list_bad[:8]:
-        print(f"     group={s[2]} plain={s[3]} delta={s[4]}  {s[1]!r}")
-    print("\nC. first example in the group on the same column as a plain one")
+        print(f"     delta={s[2]} expected={s[3]}  {s[1]!r}")
+    print("\nC. first example in the group one 1.1em step right of a plain one")
     print(f"   {len(item_bad)} wrong")
     for s in item_bad[:8]:
-        print(f"     delta={s[2]}  {s[1]!r}")
+        print(f"     delta={s[2]} expected={s[3]}  {s[1]!r}")
 
     problems = []
     if not checked:
         problems.append("no group head was measured -- sample too small")
     if with_parity == 0:
-        problems.append("no group had a plain sibling list -- parity never checked")
+        problems.append("no group had a plain sibling list -- step never checked")
     if step_bad:
-        problems.append(f"{len(step_bad)} head(s) not one 1.1em step from their list")
+        problems.append(f"{len(step_bad)} group list(s) not on their head's column")
     if list_bad:
-        problems.append(f"{len(list_bad)} group list(s) off the example column")
+        problems.append(f"{len(list_bad)} group list(s) not one 1.1em step in")
     if item_bad:
-        problems.append(f"{len(item_bad)} group item(s) off the example column")
+        problems.append(f"{len(item_bad)} group item(s) not one 1.1em step in")
     if problems:
         print("\nGROUP GEOMETRY: FAIL")
         for p in problems:
