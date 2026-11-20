@@ -1,0 +1,12 @@
+[
+  {
+    "alias": "prove something",
+    "target": "go to show/prove/indicate etc something",
+    "reason": "The explicit infinitive choices share 'go to'. Keep the legitimate prove entry; remove only this incorrectly shortened target."
+  },
+  {
+    "alias": "prove sth",
+    "target": "go to show/prove/indicate etc something",
+    "reason": "Abbreviation of the same incorrectly shortened source choice. No production exception: the shared-prefix parser fixes both."
+  }
+]

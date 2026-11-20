@@ -1,0 +1,150 @@
+sample_id	surface	lemma_probe	source_probe	difference_after_lemma
+6	fancies herself as another Madonna	fancy herself as another Madonna	fancy yourself as something	reflexive_and_object
+25	out of my depth	out of my depth	out of your depth	possessive
+29	made good	make good	make good	none
+31	ended his days	end his days	end your days	possessive
+33	find herself	find herself	find yourself	reflexive
+40	cramps his style	cramp his style	cramp somebody's style	possessive
+52	swung the boat around	swing the boat around	swing around	internal_object
+90	added fuel to the fire	add fuel to the fire	add fuel to the fire	none
+98	What's his game?	What's his game?	what's your game?	possessive
+105	acquired a taste for European beer	acquire a taste for European beer	acquire a taste for something	terminal_object
+108	came alive	come alive	come alive	none
+109	captured the headlines	capture the headlines	capture the headlines	none
+119	Give me a shout	give me a shout	give somebody a shout	internal_object
+129	their chances	their chances	somebody's chances	possessive
+131	cut me some slack	cut me some slack	cut somebody some slack	internal_object
+150	casts a spell over the visitor	cast a spell over the visitor	cast a spell over somebody	terminal_object
+172	his or her people	his or her people	somebody's people	possessive_coordination
+218	in their imagination	in their imagination	in somebody's imagination	possessive
+219	looks down his nose at anyone foreign	look down his nose at anyone foreign	look down your nose at somebody	possessive_and_object
+221	came hot on the heels of another plane crash	come hot on the heels of another plane crash	come hot on the heels of something	terminal_object
+242	cut me short	cut me short	cut somebody short	internal_object
+269	speak his mind	speak his mind	speak your mind	possessive
+283	at his best	at his best	at your best	possessive
+284	pat yourselves on the back	pat yourselves on the back	pat somebody on the back	reflexive
+314	pressed the bolt home	press the bolt home	press something home	internal_object
+324	raised the bar	raise the bar	raise the bar	none
+326	worn well	wear well	wear well	none
+335	press his point home	press his point home	press something home	internal_object
+342	was called on the carpet	be called on the carpet	be called on the carpet	none
+359	cracked it	crack it	crack it	none
+464	has all the answers	have all the answers	have all the answers	none
+470	wended its way	wend its way	wend your way	possessive
+487	spinning my wheels	spin my wheels	spin your wheels	possessive
+490	credit me with a little intelligence	credit me with a little intelligence	credit somebody with something	internal_and_terminal_objects
+501	took matters into their own hands	take matters into their own hands	take matters into your own hands	possessive
+502	given them the slip	give them the slip	give somebody the slip	internal_object
+509	see you right	see you right	see somebody right	internal_object
+528	raked his fingers through his hair	rake his fingers through his hair	rake your fingers through something	possessive_and_object
+530	full of himself	full of himself	full of yourself	reflexive
+541	applied himself	apply himself	apply yourself	reflexive
+550	keep their distance	keep their distance	keep your distance	possessive
+564	had pride of place	have pride of place	have pride of place	none
+566	change her mind	change her mind	change your mind	possessive
+569	did me a good turn	do me a good turn	do somebody a good turn	internal_object
+572	in spite of herself	in spite of herself	in spite of yourself	reflexive
+594	have a mind of its own	have a mind of its own	have a mind of your own	possessive
+600	took aim at the president	take aim at the president	take aim at somebody	terminal_object
+615	make his mark	make his mark	make your mark	possessive
+636	up to his neck in debt	up to his neck in debt	up to your neck in something	possessive_and_object
+641	carrying a torch for your sister	carry a torch for your sister	carry a torch for somebody	terminal_object
+660	lay my hands on	lay my hands on	lay your hands on	possessive
+675	taking turns	take turns	take turns	none
+684	brought me through extremely difficult times	bring me through extremely difficult times	bring somebody through something	internal_and_terminal_objects
+729	keep them quiet	keep them quiet	keep somebody quiet	internal_object
+744	shuffled her feet	shuffle her feet	shuffle your feet	possessive
+747	getting nowhere	get nowhere	get nowhere	none
+765	kept my mouth shut	keep my mouth shut	keep your mouth shut	possessive
+837	got your head down	get your head down	get your head down	none
+848	overplayed their hand	overplay their hand	overplay your hand	possessive
+870	all on his own	all on his own	all on your own	possessive
+878	on her part	on her part	on somebody's part	possessive
+883	was chagrined	be chagrined	be chagrined	none
+896	blocked our view	block our view	block somebody's view	possessive
+902	sparing my feelings	spare my feelings	spare somebody's feelings	possessive
+905	were represented	be represented	be represented	none
+906	under his breath	under his breath	under your breath	possessive
+913	wasn't my type	be not my type	be somebody's type	negation_and_possessive
+914	caught on the raw	catch on the raw	catch somebody on the raw	passive_object_omission
+928	getting her claws into the child	get her claws into the child	get your claws into somebody	possessive_and_object
+939	was cut to the quick	be cut to the quick	cut somebody to the quick	passive_object_omission
+940	points the way	point the way	point the way	none
+950	their susceptibilities	their susceptibilities	somebody's susceptibilities	possessive
+960	was gone	be gone	be gone	none
+984	is worth £50,000	be worth £50,000	be worth something	terminal_object
+995	square it with my boss	square it with my boss	square something with somebody	internal_and_terminal_objects
+1014	presents her apologies	present her apologies	present your apologies	possessive
+1063	led him astray	lead him astray	lead somebody astray	internal_object
+1102	do my level best	do my level best	do your level best	possessive
+1114	had no parallel	have no parallel	have no parallel	none
+1116	making fun of you	make fun of you	make fun of somebody	terminal_object
+1122	in her shoes	in her shoes	in somebody's shoes	possessive
+1141	gave rise to a bitter argument	give rise to a bitter argument	give rise to something	terminal_object
+1147	break her spirit	break her spirit	break somebody's spirit	possessive
+1149	was too late	be too late	be too late	none
+1163	took turns	take turns	take turns	none
+1175	held the lead	hold the lead	hold the lead	none
+1195	under way	under way	under way	none
+1198	making headway	make headway	make headway	none
+1200	kept me sane	keep me sane	keep somebody sane	internal_object
+1203	pumped full of steroids	pump full of steroids	pump somebody full of something	passive_and_object
+1215	hot on his heels	hot on his heels	hot on somebody's heels	possessive
+1226	was to your liking	be to your liking	be to somebody's liking	possessive
+1227	are programmed	be programmed	be programmed	none
+1229	fall on her sword	fall on her sword	fall on your sword	possessive
+1237	goes to show	go to show	go to show something	terminal_object
+1257	let it slip	let it slip	let something slip	internal_object
+1267	had words	have words	have words	none
+1270	are born	be born	be born	none
+1294	talking tough on crime	talk tough on crime	talk tough on something	terminal_object
+1319	on my account	on my account	on somebody's account	possessive
+1348	lost touch	lose touch	lose touch	none
+1387	given himself over to pleasure	give himself over to pleasure	give yourself over to something	reflexive_and_object
+1397	took some doing	take some doing	take some doing	none
+1400	despite herself	despite herself	despite yourself	reflexive
+1414	won the day	win the day	win the day	none
+1426	run some figures by you	run some figures by you	run something by somebody	internal_and_terminal_objects
+1432	been involved	be involved	be involved	none
+1465	gives me the creeps	give me the creeps	give somebody the creeps	internal_object
+1481	tasted success	taste success	taste success	none
+1505	recharge my batteries	recharge my batteries	recharge your batteries	possessive
+1537	won't hurt Julia	will not hurt Julia	something won't hurt	contraction_and_subject
+1548	blocking my way	block my way	block somebody's way	possessive
+1553	rushed off their feet	rushed off their feet	rushed off your feet	possessive
+1566	egg on its face	egg on its face	egg on your face	possessive
+1582	shut herself in	shut herself in	shut somebody in	reflexive
+1589	fell short of a majority	fall short of a majority	fall short of something	terminal_object
+1595	on my case	on my case	be on somebody's case	copula_and_possessive
+1636	turned his ankle	turn his ankle	turn your ankle	possessive
+1644	found favour with restaurant owners	find favour with restaurant owners	find favour with somebody	terminal_object
+1667	knocks spots off the old one	knock spots off the old one	knock spots off something	terminal_object
+1696	met our eyes	meet our eyes	meet your eyes	possessive
+1698	picked a hole in his jumper	pick a hole in his jumper	pick a hole in something	terminal_object
+1702	modelled himself on his great hero	model himself on his great hero	model yourself on somebody	reflexive_and_object
+1703	look his father in the eye	look his father in the eye	look somebody in the eye	internal_object
+1720	keeps going	keep going	keep going	none
+1742	pissing me around	piss me around	piss somebody around	internal_object
+1745	see it for what it is	see it for what it is	see something for what it is	internal_object
+1747	ply their trade	ply their trade	ply your trade	possessive
+1757	flashed through my mind	flash through my mind	flash through somebody's mind	possessive
+1761	been brought to account	be brought to account	bring somebody to account	passive_object_omission
+1772	was widowed	be widowed	be widowed	none
+1776	keeps a tight rein on spending	keep a tight rein on spending	keep a tight rein on something	terminal_object
+1793	her handiwork	her handiwork	somebody's handiwork	possessive
+1797	blew the whistle on his colleagues	blow the whistle on his colleagues	blow the whistle on somebody	terminal_object
+1798	carried the torch of Greek independence	carry the torch of Greek independence	carry the torch of something	terminal_object
+1805	in my place	in my place	in somebody's place	possessive
+1842	behind my back	behind my back	behind somebody's back	possessive
+1857	by his own account	by his own account	by somebody's own account	possessive
+1871	was uppermost in her mind	be uppermost in her mind	be uppermost in your mind	possessive
+1923	With these aims in mind	with these aims in mind	with something in mind	internal_object
+1927	made the headlines	make the headlines	make the headlines	none
+1928	let their hair down	let their hair down	let your hair down	possessive
+1929	playing Cupid	play Cupid	play Cupid	none
+1952	pack her bags	pack her bags	pack your bags	possessive
+1957	broke the ice	break the ice	break the ice	none
+1959	took to his heels	take to his heels	take to your heels	possessive
+1961	had visions of the kids getting lost	have visions of the kids getting lost	have visions of something	terminal_object
+1971	done a 180	do a 180	do a 180	none
+1982	had eyes like a hawk	have eyes like a hawk	have eyes like a hawk	none
